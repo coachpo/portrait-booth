@@ -14,6 +14,7 @@ npm install                # 安装依赖
 npm run dev                # 开发服务器（端口 5173，/api 代理到 8000）
 npm run build              # 类型检查 + 生产构建到 dist/
 npm test                   # Vitest 单元测试
+npm run test:e2e           # Playwright 端到端（首次需先 npx playwright install chromium；后端需先 uv sync --extra dev）
 npm run lint               # ESLint
 npm run format:check       # Prettier 检查
 

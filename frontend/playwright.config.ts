@@ -29,6 +29,8 @@ export default defineConfig({
       port: 8000,
       reuseExistingServer: !process.env.CI,
       env: {
+        // 根密钥缺失时后端按设计拒绝启动；e2e 用临时 DB，固定测试值即可
+        PORTRAIT_SECRET_KEY_BASE: "ZTJlLXRlc3Qtb25seS1yb290LWtleS0zMmJ5dGVzISE=",
         PORTRAIT_DB_PATH: "/tmp/pb-e2e/portrait.db",
         PORTRAIT_STORAGE_DIR: "/tmp/pb-e2e/objects",
       },
