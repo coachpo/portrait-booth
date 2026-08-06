@@ -268,5 +268,7 @@ function statusText(status: CheckItem["status"]): string {
       return "未通过";
     case "unknown":
       return "未检查";
+    case "manual":
+      return "需人工确认";
   }
 }

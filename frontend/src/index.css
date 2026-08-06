@@ -412,6 +412,11 @@ a {
   color: var(--color-muted);
 }
 
+.check-manual::before {
+  content: "☐ ";
+  color: var(--color-muted);
+}
+
 /* 摄像头拍摄（CAM-001~008） */
 .camera-view video {
   width: 100%;

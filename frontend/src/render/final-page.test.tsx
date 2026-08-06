@@ -131,6 +131,25 @@ describe("FinalPage", () => {
     expect(screen.getByText("未检查")).toBeInTheDocument();
   });
 
+  it("renders a manual check item as 需人工确认 with the check-manual class (P8)", async () => {
+    vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
+    vi.mocked(buildChecks).mockResolvedValue([
+      {
+        id: "capture:x",
+        label: "拍摄要求",
+        status: "manual",
+        detail: "官方原文：plain white background",
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("需人工确认")).toBeInTheDocument();
+    expect(screen.getByText("（官方原文：plain white background）")).toBeInTheDocument();
+    const li = screen.getByText("需人工确认").closest("li");
+    expect(li).not.toBeNull();
+    expect(li!.className).toContain("check-manual");
+  });
+
   it("shows the export filename without identity info (OUT-008)", async () => {
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);

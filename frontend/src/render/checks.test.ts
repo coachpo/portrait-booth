@@ -331,4 +331,107 @@ describe("buildChecks", () => {
       expect(checks.find((c) => c.id === "source-resolution")!.status).toBe("pass");
     });
   });
+
+  describe("captureRules (P8)", () => {
+    it("renders a manual rule as 需人工确认 with its source literal (P8)", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template({
+          captureRules: [
+            {
+              id: "t-manual-bg",
+              check: "background",
+              expected: "plain_white",
+              evaluation: "manual",
+              enforcement: "mandatory",
+              provenance: "source_literal",
+              sourceRefs: ["s1"],
+              sourceLiteral: "plain white background",
+            },
+          ],
+        }),
+      );
+      const item = checks.find((c) => c.id === "capture:t-manual-bg");
+      expect(item).toBeDefined();
+      expect(item!.status).toBe("manual");
+      expect(item!.detail).toContain("plain white background");
+    });
+
+    it("never judges an automatic rule as pass: unknown instead of manual (P8)", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template({
+          captureRules: [
+            {
+              id: "t-manual-bg",
+              check: "background",
+              expected: "plain_white",
+              evaluation: "manual",
+              enforcement: "mandatory",
+              provenance: "source_literal",
+              sourceRefs: ["s1"],
+              sourceLiteral: "plain white background",
+            },
+            {
+              id: "t-auto-face",
+              check: "single_face",
+              expected: true,
+              evaluation: "automatic",
+              enforcement: "mandatory",
+              provenance: "derived",
+              sourceRefs: [],
+            },
+          ],
+        }),
+      );
+      const auto = checks.find((c) => c.id === "capture:t-auto-face");
+      expect(auto).toBeDefined();
+      expect(auto!.status).toBe("unknown");
+      expect(auto!.status).not.toBe("manual");
+      // 两条规则产出两个不同 id，不会互相覆盖
+      expect(new Set(checks.map((c) => c.id)).has("capture:t-manual-bg")).toBe(true);
+      expect(new Set(checks.map((c) => c.id)).has("capture:t-auto-face")).toBe(true);
+    });
+
+    it("marks non-mandatory rules as 拍摄要求（建议） (P8)", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template({
+          captureRules: [
+            {
+              id: "t-rec",
+              check: "lighting",
+              expected: "recent",
+              evaluation: "manual",
+              enforcement: "recommended",
+              provenance: "source_literal",
+              sourceRefs: [],
+            },
+          ],
+        }),
+      );
+      const item = checks.find((c) => c.id === "capture:t-rec");
+      expect(item).toBeDefined();
+      expect(item!.label).toBe("拍摄要求（建议）");
+      // 无 sourceLiteral 时降级为 expected 原文
+      expect(item!.detail).toBe("要求：recent");
+    });
+
+    it("leaves the base summary unchanged when captureRules is empty (P8)", async () => {
+      const checks = await buildChecks(artifact(96), template({ captureRules: [] }));
+      const ids = checks.map((c) => c.id).sort();
+      expect(ids).toEqual(
+        [
+          "exact-pixels",
+          "format",
+          "metadata",
+          "no-alpha",
+          "source-resolution",
+          "pose",
+          "exposure",
+        ].sort(),
+      );
+      expect(ids.some((id) => id.startsWith("capture:"))).toBe(false);
+    });
+  });
 });

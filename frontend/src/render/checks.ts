@@ -1,16 +1,17 @@
 /**
  * 终态检查摘要（OUT-007, GDE-008）。
- * 区分 pass/warn/fail/unknown。姿态与曝光取自静态复检的真实结果；
+ * 区分 pass/warn/fail/unknown/manual。姿态与曝光取自静态复检的真实结果；
  * 复检未运行或模型不可用时才是 unknown，不再无条件写「后续版本提供」。
+ * 模板 captureRules 中 evaluation 为 manual 的强制项显示为「需人工确认」。
  */
 
 import { outputSize } from "../editor/edit-transform";
-import type { TemplateEntry } from "../lib/templates/types";
+import type { TemplateEntry, TemplateRevision } from "../lib/templates/types";
 import type { StaticCheckResult } from "../pose/static-check";
 import { hasExifSegment, readJpegDensity } from "./jpeg";
 import type { FinalArtifact } from "./final-artifact";
 
-export type CheckStatus = "pass" | "warn" | "fail" | "unknown";
+export type CheckStatus = "pass" | "warn" | "fail" | "unknown" | "manual";
 
 export interface CheckItem {
   id: string;
@@ -144,6 +145,9 @@ export async function buildChecks(
     });
   }
 
+  // GDE-008：captureRules 里的强制拍摄要求模型判不了，逐条暴露为人工确认或未检查
+  checks.push(...captureRuleChecks(rev));
+
   return checks;
 }
 
@@ -182,7 +186,7 @@ function exposureCheck(staticChecks?: StaticCheckResult | null): CheckItem {
       id: "exposure",
       label: "曝光与清晰度",
       status: "unknown",
-      detail: quality ? quality.issues.join("；") : "本次未运行曝光与清晰度复检",
+      detail: quality ? quality.issues.join(";") : "本次未运行曝光与清晰度复检",
     };
   }
   const problems = quality.issues.filter((issue) => !issue.includes("未发现明显问题"));
@@ -198,6 +202,25 @@ function exposureCheck(staticChecks?: StaticCheckResult | null): CheckItem {
     id: "exposure",
     label: "曝光与清晰度",
     status: "warn",
-    detail: `${problems.join("；")}（${HEURISTIC_NOTICE}）`,
+    detail: `${problems.join(";")}（${HEURISTIC_NOTICE}）`,
   };
+}
+
+/**
+ * captureRules → 检查摘要（GDE-008）。
+ * 模板里的 check 字段被真实数据当分类桶乱用（fi-police 的「不得修改外观」
+ * 挂在 check: "background" 下），所以 label 固定为「拍摄要求」，不用 check
+ * 推导；evaluation 为 manual 的规则机器原则上判不了，显示为「需人工确认」，
+ * 其余一律 unknown，绝不伪造 pass。
+ */
+function captureRuleChecks(rev: TemplateRevision): CheckItem[] {
+  const rules = Array.isArray(rev.captureRules) ? rev.captureRules : [];
+  return rules.map((rule) => ({
+    id: `capture:${rule.id}`,
+    label: rule.enforcement !== "mandatory" ? "拍摄要求（建议）" : "拍摄要求",
+    status: rule.evaluation === "manual" ? "manual" : "unknown",
+    detail: rule.sourceLiteral
+      ? `官方原文：${rule.sourceLiteral}`
+      : `要求：${String(rule.expected)}`,
+  }));
 }
