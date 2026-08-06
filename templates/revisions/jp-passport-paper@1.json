@@ -1,0 +1,201 @@
+{
+  "revisionId": "jp-passport-paper@1",
+  "id": "jp-passport-paper",
+  "version": 1,
+  "schemaVersion": 1,
+  "label": {
+    "zh": "日本护照（纸质 35×45 毫米）",
+    "en": "Japan passport (paper 35x45 mm)"
+  },
+  "jurisdiction": "JP",
+  "documentType": "passport",
+  "submissionChannel": "paper",
+  "applicantClass": "adult",
+  "sources": [
+    {
+      "id": "mofa-passport-photo",
+      "url": "https://www.mofa.go.jp/mofaj/toko/passport/ic_photo.html",
+      "title": "旅券用写真の規格",
+      "authority": "外務省（日本）",
+      "sourceUpdatedAt": "2026-01-01",
+      "accessedAt": "2026-08-05"
+    },
+    {
+      "id": "mofa-photo-spec-pdf",
+      "url": "https://www.mofa.go.jp/mofaj/files/100171389.pdf",
+      "title": "旅券用写真の規格（PDF）",
+      "authority": "外務省（日本）",
+      "accessedAt": "2026-08-05"
+    }
+  ],
+  "output": {
+    "kind": "physical_raster",
+    "widthMm": 35,
+    "heightMm": 45,
+    "printPpi": 300,
+    "rounding": "nearest",
+    "widthPx": 413,
+    "heightPx": 531,
+    "pixelDerivation": "round(mm / 25.4 * printPpi)",
+    "ppiProvenance": "derived",
+    "calibrationProfileId": "pb-calib-paper-300ppi-v1"
+  },
+  "outputFile": {
+    "mime": ["image/jpeg"],
+    "colorSpace": "sRGB",
+    "bitsPerChannel": 8,
+    "channels": 3
+  },
+  "cropRules": [
+    {
+      "id": "jp-passport-paper-head-height",
+      "metric": "head_height",
+      "target": 34,
+      "tolerance": 2,
+      "min": 32,
+      "max": 36,
+      "unit": "mm",
+      "anchors": ["top_of_head", "chin_tip"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_physical_mm_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "34mm±2mm（頭頂からあご先まで）"
+    },
+    {
+      "id": "jp-passport-paper-head-top-margin",
+      "metric": "head_top_margin",
+      "target": 4,
+      "tolerance": 2,
+      "min": 2,
+      "max": 6,
+      "unit": "mm",
+      "anchors": ["top_of_head"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_physical_mm_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "頭頂から写真上辺まで 4mm±2mm"
+    },
+    {
+      "id": "jp-passport-paper-chin-bottom-margin",
+      "metric": "chin_bottom_margin",
+      "target": 7,
+      "tolerance": 2,
+      "min": 5,
+      "max": 9,
+      "unit": "mm",
+      "anchors": ["chin_tip"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_physical_mm_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "あご先から写真下辺まで 7mm±2mm"
+    },
+    {
+      "id": "jp-passport-paper-face-center",
+      "metric": "face_center_offset_x",
+      "target": 17,
+      "tolerance": 2,
+      "min": 15,
+      "max": 19,
+      "unit": "mm",
+      "anchors": ["face_center_line"],
+      "axis": "x",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_physical_mm_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "顔の中心線：水平中心 17mm±2mm"
+    },
+    {
+      "id": "jp-passport-paper-face-left-margin",
+      "metric": "face_left_margin",
+      "min": 2,
+      "unit": "mm",
+      "anchors": ["face_left"],
+      "axis": "x",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_physical_mm_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "顔から左右の端まで各 2mm 以上"
+    },
+    {
+      "id": "jp-passport-paper-face-right-margin",
+      "metric": "face_right_margin",
+      "min": 2,
+      "unit": "mm",
+      "anchors": ["face_right"],
+      "axis": "x",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_physical_mm_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "顔から左右の端まで各 2mm 以上"
+    }
+  ],
+  "captureRules": [
+    {
+      "id": "jp-passport-paper-background",
+      "check": "background",
+      "expected": "plain_no_pattern_no_shadow",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "無地・影なし背景、白が推奨"
+    },
+    {
+      "id": "jp-passport-paper-recent-photo",
+      "check": "lighting",
+      "expected": "within_last_6_months",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["mofa-passport-photo"],
+      "sourceLiteral": "最近6か月以内に撮影"
+    }
+  ],
+  "overlay": {
+    "kind": "combined",
+    "ruleIds": [
+      "jp-passport-paper-head-height",
+      "jp-passport-paper-head-top-margin",
+      "jp-passport-paper-chin-bottom-margin",
+      "jp-passport-paper-face-center"
+    ]
+  },
+  "capabilities": {
+    "selfCapture": "allowed",
+    "crop": "allowed",
+    "rotate": "allowed",
+    "mirror": "forbidden",
+    "retouch": "forbidden",
+    "backgroundReplace": "forbidden",
+    "requiresOriginalCameraFile": false,
+    "requiresProfessionalPhotographer": false
+  },
+  "sourceNotes": {
+    "zh": [
+      "reference_only：300 ppi 像素编码为 derived，须通过校准打印测试后才能发布为 active。",
+      "『水平中心 17±2 mm』按 SPEC §5.2 表录入；内容维护人复核时须对照日本外务省原文（§14.3 来源）确认度量语义。",
+      "禁止水平镜像和改变本人形象的修饰。"
+    ]
+  }
+}

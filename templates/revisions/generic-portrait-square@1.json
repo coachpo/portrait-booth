@@ -1,0 +1,59 @@
+{
+  "revisionId": "generic-portrait-square@1",
+  "id": "generic-portrait-square",
+  "version": 1,
+  "schemaVersion": 1,
+  "label": {
+    "zh": "通用肖像（正方形 1200×1200）",
+    "en": "Generic portrait (1200x1200 square)"
+  },
+  "jurisdiction": "generic",
+  "documentType": "portrait",
+  "submissionChannel": "digital_upload",
+  "applicantClass": "all",
+  "sources": [
+    {
+      "id": "pb-spec-5-2",
+      "url": "https://github.com/portrait-booth/spec",
+      "title": "Portrait Booth SPEC §5.2 首批模板候选",
+      "authority": "Portrait Booth 项目内部规格",
+      "accessedAt": "2026-08-05"
+    }
+  ],
+  "output": {
+    "kind": "exact_pixels",
+    "widthPx": 1200,
+    "heightPx": 1200,
+    "aspect": {
+      "width": 1,
+      "height": 1,
+      "enforcement": "mandatory",
+      "provenance": "derived"
+    }
+  },
+  "outputFile": {
+    "mime": ["image/jpeg"],
+    "colorSpace": "sRGB",
+    "bitsPerChannel": 8,
+    "channels": 3
+  },
+  "cropRules": [],
+  "captureRules": [],
+  "overlay": { "kind": "none", "ruleIds": [] },
+  "capabilities": {
+    "selfCapture": "allowed",
+    "crop": "allowed",
+    "rotate": "allowed",
+    "mirror": "allowed",
+    "retouch": "allowed",
+    "backgroundReplace": "allowed",
+    "requiresOriginalCameraFile": false,
+    "requiresProfessionalPhotographer": false
+  },
+  "sourceNotes": {
+    "zh": [
+      "非官方证件模板：本模板不是任何政府机构的证件照片规格，不得用于官方申请。",
+      "允许镜像、自由构图与基础编辑；输出仅用于通用肖像或开发验收。"
+    ]
+  }
+}

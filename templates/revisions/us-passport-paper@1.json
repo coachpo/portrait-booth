@@ -1,0 +1,108 @@
+{
+  "revisionId": "us-passport-paper@1",
+  "id": "us-passport-paper",
+  "version": 1,
+  "schemaVersion": 1,
+  "label": {
+    "zh": "美国护照（纸质 2×2 英寸）",
+    "en": "US passport (paper 2x2 inch)"
+  },
+  "jurisdiction": "US",
+  "documentType": "passport",
+  "submissionChannel": "paper",
+  "applicantClass": "adult",
+  "sources": [
+    {
+      "id": "travel-state-photos",
+      "url": "https://travel.state.gov/en/passports/apply/help/photos.html",
+      "title": "US passport photo requirements",
+      "authority": "US Department of State, Bureau of Consular Affairs",
+      "sourceUpdatedAt": "2026-01-01",
+      "accessedAt": "2026-08-05"
+    },
+    {
+      "id": "travel-state-photo-composition",
+      "url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/photo-composition-template.html",
+      "title": "Photo composition template",
+      "authority": "US Department of State",
+      "accessedAt": "2026-08-05"
+    }
+  ],
+  "output": {
+    "kind": "physical_raster",
+    "widthMm": 50.8,
+    "heightMm": 50.8,
+    "printPpi": 300,
+    "rounding": "nearest",
+    "widthPx": 600,
+    "heightPx": 600,
+    "pixelDerivation": "round(mm / 25.4 * printPpi)",
+    "ppiProvenance": "derived",
+    "calibrationProfileId": "pb-calib-paper-300ppi-v1"
+  },
+  "outputFile": {
+    "mime": ["image/jpeg"],
+    "colorSpace": "sRGB",
+    "bitsPerChannel": 8,
+    "channels": 3
+  },
+  "cropRules": [
+    {
+      "id": "us-passport-paper-head-height",
+      "metric": "head_height",
+      "min": 25,
+      "max": 35,
+      "unit": "mm",
+      "anchors": ["chin", "top_of_head"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_physical_mm_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["travel-state-photos"],
+      "sourceLiteral": "25 to 35mm from chin to top of head"
+    }
+  ],
+  "captureRules": [
+    {
+      "id": "us-passport-paper-no-modification",
+      "check": "background",
+      "expected": "no_ai_background_replacement",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["travel-state-photos"],
+      "sourceLiteral": "no AI-generated background, no editing or filters that alter appearance"
+    },
+    {
+      "id": "us-passport-paper-allow-friend-family",
+      "check": "front_facing",
+      "expected": true,
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["travel-state-photos"],
+      "sourceLiteral": "may be taken by a friend or family member; self-portrait with auto shutter not claimed as officially endorsed"
+    }
+  ],
+  "overlay": { "kind": "crown_chin_bands", "ruleIds": ["us-passport-paper-head-height"] },
+  "capabilities": {
+    "selfCapture": "allowed",
+    "crop": "allowed",
+    "rotate": "allowed",
+    "mirror": "warn",
+    "retouch": "forbidden",
+    "backgroundReplace": "forbidden",
+    "requiresOriginalCameraFile": false,
+    "requiresProfessionalPhotographer": false
+  },
+  "sourceNotes": {
+    "zh": [
+      "reference_only：本模板的 300 ppi 像素编码为 derived，须通过校准打印测试后才能发布为 active。",
+      "官方原文保留 anchor『top of head』，不擅自解释为 crown/hair。",
+      "不得声称手持自拍或单人自动快门获官方认可；禁止 AI、换背景、滤镜或改变外貌。",
+      "美国部分官方总览页面把 1 inch 写作 22 mm，构图页与数学换算为 25.4 mm；本模板采用 50.8×50.8 mm。"
+    ]
+  }
+}

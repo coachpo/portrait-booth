@@ -1,0 +1,174 @@
+{
+  "revisionId": "cn-visa-digital-ma-rabat@1",
+  "id": "cn-visa-digital-ma-rabat",
+  "version": 1,
+  "schemaVersion": 1,
+  "label": {
+    "zh": "中国签证（驻摩洛哥使馆，数字 354×472）",
+    "en": "China visa (Embassy in Morocco, digital 354x472)"
+  },
+  "jurisdiction": "CN",
+  "documentType": "visa",
+  "submissionChannel": "digital_upload",
+  "applicantClass": "adult",
+  "applicationPost": "ma-rabat",
+  "sources": [
+    {
+      "id": "china-embassy-ma-visa-photo",
+      "url": "https://ma.china-embassy.gov.cn/lsfw/lszj/fhqz/cjwd/202504/t20250427_11605605.htm",
+      "title": "赴华签证照片规格（常见问题）",
+      "authority": "中华人民共和国驻摩洛哥王国大使馆",
+      "sourceUpdatedAt": "2025-04-27",
+      "accessedAt": "2026-08-05"
+    }
+  ],
+  "output": {
+    "kind": "exact_pixels",
+    "widthPx": 354,
+    "heightPx": 472,
+    "aspect": {
+      "width": 3,
+      "height": 4,
+      "enforcement": "mandatory",
+      "provenance": "derived"
+    }
+  },
+  "outputFile": {
+    "mime": ["image/jpeg"],
+    "colorSpace": "sRGB",
+    "bitsPerChannel": 8,
+    "channels": 3
+  },
+  "cropRules": [
+    {
+      "id": "cn-visa-ma-face-width",
+      "metric": "face_width",
+      "min": 191,
+      "max": 219,
+      "unit": "px",
+      "anchors": ["face_left", "face_right"],
+      "axis": "x",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["china-embassy-ma-visa-photo"],
+      "sourceLiteral": "脸宽 191-219 像素（仅 354×472 尺寸）"
+    },
+    {
+      "id": "cn-visa-ma-head-top-margin",
+      "metric": "head_top_margin",
+      "min": 10,
+      "max": 70,
+      "unit": "px",
+      "anchors": ["hairline"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["china-embassy-ma-visa-photo"],
+      "sourceLiteral": "发际至上边 10-70 像素"
+    },
+    {
+      "id": "cn-visa-ma-eye-line-from-bottom",
+      "metric": "eye_line_from_bottom",
+      "min": 256,
+      "unit": "px",
+      "anchors": ["eye_line"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["china-embassy-ma-visa-photo"],
+      "sourceLiteral": "眼线距下边不小于 256 像素"
+    },
+    {
+      "id": "cn-visa-ma-interpupil-distance",
+      "metric": "interpupil_distance",
+      "min": 60,
+      "unit": "px",
+      "anchors": ["left_pupil", "right_pupil"],
+      "axis": "x",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["china-embassy-ma-visa-photo"],
+      "sourceLiteral": "瞳距大于 60 像素"
+    },
+    {
+      "id": "cn-visa-ma-yaw",
+      "metric": "yaw",
+      "target": 0,
+      "unit": "degree",
+      "anchors": ["face"],
+      "axis": "angle",
+      "bounds": "inclusive",
+      "coordinateSpace": "pose_camera_degrees",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["china-embassy-ma-visa-photo"],
+      "sourceLiteral": "正脸目标 0 度；来源最大偏航 20 度是上限而非目标"
+    },
+    {
+      "id": "cn-visa-ma-pitch",
+      "metric": "pitch",
+      "target": 0,
+      "unit": "degree",
+      "anchors": ["face"],
+      "axis": "angle",
+      "bounds": "inclusive",
+      "coordinateSpace": "pose_camera_degrees",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["china-embassy-ma-visa-photo"],
+      "sourceLiteral": "正脸目标 0 度；来源最大俯仰 25 度是上限而非目标"
+    }
+  ],
+  "captureRules": [
+    {
+      "id": "cn-visa-ma-recent-no-modification",
+      "check": "lighting",
+      "expected": "recent_photo_no_modification",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["china-embassy-ma-visa-photo"],
+      "sourceLiteral": "近期照片且未经修改"
+    }
+  ],
+  "overlay": {
+    "kind": "combined",
+    "ruleIds": [
+      "cn-visa-ma-face-width",
+      "cn-visa-ma-head-top-margin",
+      "cn-visa-ma-eye-line-from-bottom"
+    ]
+  },
+  "capabilities": {
+    "selfCapture": "not_confirmed",
+    "crop": "allowed",
+    "rotate": "allowed",
+    "mirror": "forbidden",
+    "retouch": "forbidden",
+    "backgroundReplace": "forbidden",
+    "requiresOriginalCameraFile": false,
+    "requiresProfessionalPhotographer": false
+  },
+  "sourceNotes": {
+    "zh": [
+      "reference_only：本 revision 绑定驻摩洛哥使馆（ma-rabat）及 2025-04-27 来源版本，经实际门户验证后才可激活。",
+      "不得称为中国全局规则；馆站间存在头宽等差异。",
+      "尺寸特定规则已由固定 354×472 首个 revision 约束。",
+      "3:4 为端点推导。"
+    ]
+  }
+}

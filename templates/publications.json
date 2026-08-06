@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "publications": [
+    {
+      "revisionId": "generic-portrait-square@1",
+      "status": "active",
+      "statusReason": "非官方通用肖像模板：按项目内部规格与测试档案发布，不继承任何官方合规文案。",
+      "owner": "Portrait Booth 内容维护",
+      "reviewer": "Portrait Booth 内容复核",
+      "verifiedAt": "2026-08-06",
+      "reviewDueAt": "2026-11-04",
+      "effectiveAt": "2026-08-06",
+      "publicationRevision": 1
+    },
+    {
+      "revisionId": "us-passport-paper@1",
+      "status": "reference_only",
+      "statusReason": "纸质模板：300 ppi 像素编码为 derived，尚未通过 PPI 编码与校准打印测试；镜像未获官方认可。",
+      "owner": "Portrait Booth 内容维护",
+      "reviewer": "Portrait Booth 内容复核",
+      "verifiedAt": "2026-08-06",
+      "reviewDueAt": "2026-11-04",
+      "effectiveAt": "2026-08-06",
+      "publicationRevision": 1
+    },
+    {
+      "revisionId": "us-visa-digital@1",
+      "status": "active",
+      "statusReason": "DS-160/DS-1648 数字上传；240 KB 阈值为 conservative_derived，门户实测后可更新。",
+      "owner": "Portrait Booth 内容维护",
+      "reviewer": "Portrait Booth 内容复核",
+      "verifiedAt": "2026-08-06",
+      "reviewDueAt": "2026-11-04",
+      "effectiveAt": "2026-08-06",
+      "publicationRevision": 1
+    },
+    {
+      "revisionId": "fi-police-digital@1",
+      "status": "active",
+      "statusReason": "芬兰警方数字证件 500×653；250 KB 阈值为 conservative_derived。",
+      "owner": "Portrait Booth 内容维护",
+      "reviewer": "Portrait Booth 内容复核",
+      "verifiedAt": "2026-08-06",
+      "reviewDueAt": "2026-11-04",
+      "effectiveAt": "2026-08-06",
+      "publicationRevision": 1
+    },
+    {
+      "revisionId": "cn-visa-digital-ma-rabat@1",
+      "status": "reference_only",
+      "statusReason": "绑定驻摩洛哥使馆来源版本；经实际门户验证前不激活，不得称为中国全局规则。",
+      "owner": "Portrait Booth 内容维护",
+      "reviewer": "Portrait Booth 内容复核",
+      "verifiedAt": "2026-08-06",
+      "reviewDueAt": "2026-11-04",
+      "effectiveAt": "2026-08-06",
+      "publicationRevision": 1
+    },
+    {
+      "revisionId": "jp-passport-paper@1",
+      "status": "reference_only",
+      "statusReason": "纸质模板：300 ppi 像素编码为 derived，尚未通过 PPI 编码与校准打印测试。",
+      "owner": "Portrait Booth 内容维护",
+      "reviewer": "Portrait Booth 内容复核",
+      "verifiedAt": "2026-08-06",
+      "reviewDueAt": "2026-11-04",
+      "effectiveAt": "2026-08-06",
+      "publicationRevision": 1
+    }
+  ]
+}

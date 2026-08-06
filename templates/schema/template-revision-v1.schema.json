@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://portrait-booth.dev/schema/template-revision/v1",
+  "title": "TemplateRevision v1",
+  "description": "SPEC §5.1 TemplateRevision 结构；revision 内容不可变。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "revisionId",
+    "id",
+    "version",
+    "schemaVersion",
+    "label",
+    "jurisdiction",
+    "documentType",
+    "submissionChannel",
+    "applicantClass",
+    "sources",
+    "output",
+    "cropRules",
+    "captureRules",
+    "overlay",
+    "capabilities",
+    "sourceNotes"
+  ],
+  "properties": {
+    "revisionId": { "type": "string", "pattern": "^[a-z0-9-]+@[0-9]+$" },
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "schemaVersion": { "const": 1 },
+    "label": { "type": "object", "additionalProperties": { "type": "string" } },
+    "jurisdiction": { "type": "string", "minLength": 2 },
+    "documentType": {
+      "enum": ["passport", "visa", "id", "permit", "portrait"]
+    },
+    "submissionChannel": {
+      "enum": ["paper", "digital_upload", "certified_transfer", "onsite_capture"]
+    },
+    "applicantClass": { "enum": ["adult", "child", "infant", "all"] },
+    "applicationPost": { "type": "string" },
+    "applicantNationalityScope": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "residenceScope": { "type": "array", "items": { "type": "string" } },
+    "visaPurposeScope": { "type": "array", "items": { "type": "string" } },
+    "validFrom": { "type": "string", "format": "date" },
+    "validUntil": { "type": "string", "format": "date" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "url", "title", "authority", "accessedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "title": { "type": "string" },
+          "authority": { "type": "string" },
+          "sourceUpdatedAt": { "type": "string", "format": "date" },
+          "accessedAt": { "type": "string", "format": "date" }
+        }
+      }
+    },
+    "output": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["kind", "widthPx", "heightPx", "aspect"],
+          "properties": {
+            "kind": { "const": "exact_pixels" },
+            "widthPx": { "type": "integer", "minimum": 1 },
+            "heightPx": { "type": "integer", "minimum": 1 },
+            "aspect": { "$ref": "#/$defs/aspect" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "minWidthPx",
+            "minHeightPx",
+            "maxWidthPx",
+            "maxHeightPx",
+            "defaultWidthPx",
+            "defaultHeightPx",
+            "aspect"
+          ],
+          "properties": {
+            "kind": { "const": "ranged_pixels" },
+            "minWidthPx": { "type": "integer", "minimum": 1 },
+            "minHeightPx": { "type": "integer", "minimum": 1 },
+            "maxWidthPx": { "type": "integer", "minimum": 1 },
+            "maxHeightPx": { "type": "integer", "minimum": 1 },
+            "defaultWidthPx": { "type": "integer", "minimum": 1 },
+            "defaultHeightPx": { "type": "integer", "minimum": 1 },
+            "aspect": { "$ref": "#/$defs/aspect" },
+            "allowedSizes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["widthPx", "heightPx"],
+                "properties": {
+                  "widthPx": { "type": "integer", "minimum": 1 },
+                  "heightPx": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "widthMm",
+            "heightMm",
+            "printPpi",
+            "rounding",
+            "widthPx",
+            "heightPx",
+            "pixelDerivation",
+            "ppiProvenance",
+            "calibrationProfileId"
+          ],
+          "properties": {
+            "kind": { "const": "physical_raster" },
+            "widthMm": { "type": "number", "exclusiveMinimum": 0 },
+            "heightMm": { "type": "number", "exclusiveMinimum": 0 },
+            "printPpi": { "type": "number", "exclusiveMinimum": 0 },
+            "rounding": { "const": "nearest" },
+            "widthPx": { "type": "integer", "minimum": 1 },
+            "heightPx": { "type": "integer", "minimum": 1 },
+            "pixelDerivation": { "const": "round(mm / 25.4 * printPpi)" },
+            "ppiProvenance": { "$ref": "#/$defs/provenance" },
+            "calibrationProfileId": { "type": "string" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["kind", "officialPortalPerformsCrop"],
+          "properties": {
+            "kind": { "const": "portal_source" },
+            "minWidthPx": { "type": "integer", "minimum": 1 },
+            "minHeightPx": { "type": "integer", "minimum": 1 },
+            "maxWidthPx": { "type": "integer", "minimum": 1 },
+            "maxHeightPx": { "type": "integer", "minimum": 1 },
+            "aspect": { "$ref": "#/$defs/aspect" },
+            "officialPortalPerformsCrop": { "type": "boolean" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["kind", "reason"],
+          "properties": {
+            "kind": { "const": "guidance_only" },
+            "reason": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "outputFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mime"],
+      "properties": {
+        "mime": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "const": "image/jpeg" }
+        },
+        "sizeLimit": { "$ref": "#/$defs/sizeLimit" },
+        "colorSpace": { "const": "sRGB" },
+        "bitsPerChannel": { "const": 8 },
+        "channels": { "const": 3 },
+        "maxCompressionRatio": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "portalInputFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mime"],
+      "properties": {
+        "mime": { "type": "array", "minItems": 1, "uniqueItems": true },
+        "sizeLimit": { "$ref": "#/$defs/sizeLimit" }
+      }
+    },
+    "cropRules": { "type": "array", "items": { "$ref": "#/$defs/measurementRule" } },
+    "captureRules": { "type": "array", "items": { "$ref": "#/$defs/captureRule" } },
+    "overlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ruleIds"],
+      "properties": {
+        "kind": {
+          "enum": ["none", "oval", "crown_chin_bands", "eye_band", "combined"]
+        },
+        "ruleIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selfCapture",
+        "crop",
+        "rotate",
+        "mirror",
+        "retouch",
+        "backgroundReplace",
+        "requiresOriginalCameraFile",
+        "requiresProfessionalPhotographer"
+      ],
+      "properties": {
+        "selfCapture": {
+          "enum": ["allowed", "not_confirmed", "forbidden", "certified_only"]
+        },
+        "crop": { "$ref": "#/$defs/policy" },
+        "rotate": { "$ref": "#/$defs/policy" },
+        "mirror": { "$ref": "#/$defs/policy" },
+        "retouch": { "$ref": "#/$defs/policy" },
+        "backgroundReplace": { "$ref": "#/$defs/policy" },
+        "requiresOriginalCameraFile": { "type": "boolean" },
+        "requiresProfessionalPhotographer": { "type": "boolean" }
+      }
+    },
+    "sourceNotes": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    }
+  },
+  "$defs": {
+    "aspect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "enforcement", "provenance"],
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "enforcement": { "enum": ["mandatory", "recommended"] },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "provenance": {
+      "enum": ["source_literal", "derived", "portal_verified"]
+    },
+    "policy": { "enum": ["allowed", "warn", "forbidden"] },
+    "sizeLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceLiteral", "normalization"],
+      "properties": {
+        "minBytes": { "type": "integer", "minimum": 0 },
+        "maxBytes": { "type": "integer", "minimum": 1 },
+        "sourceLiteral": { "type": "string" },
+        "normalization": {
+          "enum": ["source_exact", "conservative_derived", "portal_verified", "unresolved"]
+        }
+      }
+    },
+    "measurementRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "metric",
+        "unit",
+        "anchors",
+        "axis",
+        "bounds",
+        "coordinateSpace",
+        "evaluation",
+        "enforcement",
+        "provenance",
+        "sourceRefs"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "metric": {
+          "enum": [
+            "head_height",
+            "head_top_margin",
+            "chin_bottom_margin",
+            "eye_line_from_bottom",
+            "face_width",
+            "interpupil_distance",
+            "face_left_margin",
+            "face_right_margin",
+            "face_center_offset_x",
+            "yaw",
+            "pitch",
+            "roll"
+          ]
+        },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "target": { "type": "number" },
+        "tolerance": { "type": "number" },
+        "unit": { "enum": ["mm", "px", "ratio", "degree"] },
+        "ratioDenominator": { "enum": ["canvas_width", "canvas_height"] },
+        "anchors": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "axis": { "enum": ["x", "y", "angle"] },
+        "bounds": { "const": "inclusive" },
+        "appliesToOutputSize": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["widthPx", "heightPx"],
+          "properties": {
+            "widthPx": { "type": "integer", "minimum": 1 },
+            "heightPx": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "coordinateSpace": {
+          "enum": [
+            "output_physical_mm_top_left",
+            "output_pixel_top_left",
+            "output_normalized_top_left",
+            "pose_camera_degrees"
+          ]
+        },
+        "evaluation": {
+          "enum": ["automatic", "manual", "automatic_with_manual_confirmation"]
+        },
+        "enforcement": { "enum": ["mandatory", "recommended"] },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "sourceRefs": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "sourceLiteral": { "type": "string" }
+      }
+    },
+    "captureRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "check",
+        "expected",
+        "evaluation",
+        "enforcement",
+        "provenance",
+        "sourceRefs"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "check": {
+          "enum": [
+            "single_face",
+            "front_facing",
+            "neutral_expression",
+            "eyes_visible",
+            "mouth_closed",
+            "background",
+            "lighting",
+            "glasses",
+            "head_covering"
+          ]
+        },
+        "expected": { "type": ["boolean", "string", "number"] },
+        "evaluation": {
+          "enum": ["automatic", "manual", "automatic_with_manual_confirmation"]
+        },
+        "enforcement": { "enum": ["mandatory", "recommended"] },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "sourceRefs": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "sourceLiteral": { "type": "string" }
+      }
+    }
+  }
+}

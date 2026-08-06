@@ -1,0 +1,145 @@
+{
+  "revisionId": "us-visa-digital@1",
+  "id": "us-visa-digital",
+  "version": 1,
+  "schemaVersion": 1,
+  "label": {
+    "zh": "美国签证（DS-160/DS-1648 数字照片）",
+    "en": "US visa (DS-160/DS-1648 digital photo)"
+  },
+  "jurisdiction": "US",
+  "documentType": "visa",
+  "submissionChannel": "digital_upload",
+  "applicantClass": "adult",
+  "sources": [
+    {
+      "id": "travel-state-digital-visa-photo",
+      "url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/digital-image-requirements.html",
+      "title": "Digital image requirements",
+      "authority": "US Department of State, Bureau of Consular Affairs",
+      "sourceUpdatedAt": "2026-01-01",
+      "accessedAt": "2026-08-05"
+    },
+    {
+      "id": "travel-state-visa-photos",
+      "url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos.html",
+      "title": "US visa photo requirements",
+      "authority": "US Department of State",
+      "accessedAt": "2026-08-05"
+    },
+    {
+      "id": "travel-state-photo-composition",
+      "url": "https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/photo-composition-template.html",
+      "title": "Photo composition template",
+      "authority": "US Department of State",
+      "accessedAt": "2026-08-05"
+    }
+  ],
+  "output": {
+    "kind": "ranged_pixels",
+    "minWidthPx": 600,
+    "minHeightPx": 600,
+    "maxWidthPx": 1200,
+    "maxHeightPx": 1200,
+    "defaultWidthPx": 600,
+    "defaultHeightPx": 600,
+    "aspect": {
+      "width": 1,
+      "height": 1,
+      "enforcement": "mandatory",
+      "provenance": "derived"
+    }
+  },
+  "outputFile": {
+    "mime": ["image/jpeg"],
+    "sizeLimit": {
+      "minBytes": 0,
+      "maxBytes": 240000,
+      "sourceLiteral": "not more than 240 KB",
+      "normalization": "conservative_derived"
+    },
+    "colorSpace": "sRGB",
+    "bitsPerChannel": 8,
+    "channels": 3,
+    "maxCompressionRatio": 20
+  },
+  "cropRules": [
+    {
+      "id": "us-visa-digital-head-height",
+      "metric": "head_height",
+      "min": 0.5,
+      "max": 0.69,
+      "unit": "ratio",
+      "ratioDenominator": "canvas_height",
+      "anchors": ["chin", "top_of_head_including_hair"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_normalized_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["travel-state-digital-visa-photo"],
+      "sourceLiteral": "head between 50% and 69% of image height, measured from chin to top of head including hair"
+    },
+    {
+      "id": "us-visa-digital-eye-line",
+      "metric": "eye_line_from_bottom",
+      "min": 0.56,
+      "max": 0.69,
+      "unit": "ratio",
+      "ratioDenominator": "canvas_height",
+      "anchors": ["eye_line"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_normalized_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["travel-state-digital-visa-photo"],
+      "sourceLiteral": "eye line between 56% and 69% of image height from the bottom"
+    }
+  ],
+  "captureRules": [
+    {
+      "id": "us-visa-digital-white-background",
+      "check": "background",
+      "expected": "plain_white",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["travel-state-digital-visa-photo"],
+      "sourceLiteral": "plain white or off-white background"
+    },
+    {
+      "id": "us-visa-digital-recent-photo",
+      "check": "lighting",
+      "expected": "recent_photo",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["travel-state-digital-visa-photo"],
+      "sourceLiteral": "photo taken within the last 6 months"
+    }
+  ],
+  "overlay": {
+    "kind": "combined",
+    "ruleIds": ["us-visa-digital-head-height", "us-visa-digital-eye-line"]
+  },
+  "capabilities": {
+    "selfCapture": "allowed",
+    "crop": "allowed",
+    "rotate": "allowed",
+    "mirror": "warn",
+    "retouch": "warn",
+    "backgroundReplace": "forbidden",
+    "requiresOriginalCameraFile": false,
+    "requiresProfessionalPhotographer": false
+  },
+  "sourceNotes": {
+    "zh": [
+      "仅覆盖适用的 DS-160/DS-1648 数字上传；不覆盖 DS-260、DV 或馆站特殊要求。",
+      "240 KB 上限为 conservative_derived；门户实测后可更新为 portal_verified。",
+      "镜像与修饰标为 warn：不得改变脸部外观或引发真实性疑问。"
+    ]
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "revisionId": "fi-police-digital@1",
+  "id": "fi-police-digital",
+  "version": 1,
+  "schemaVersion": 1,
+  "label": {
+    "zh": "芬兰警方证件（数字 500×653）",
+    "en": "Finnish police document (digital 500x653)"
+  },
+  "jurisdiction": "FI",
+  "documentType": "id",
+  "submissionChannel": "digital_upload",
+  "applicantClass": "adult",
+  "sources": [
+    {
+      "id": "poliisi-submitting",
+      "url": "https://poliisi.fi/en/submitting-passport-photographs",
+      "title": "Submitting passport photographs",
+      "authority": "Police of Finland",
+      "sourceUpdatedAt": "2026-01-01",
+      "accessedAt": "2026-08-05"
+    },
+    {
+      "id": "poliisi-photo-instructions",
+      "url": "https://poliisi.fi/documents/25235045/31329600/Passport-photograph-instructions-by-the-police-2020-EN-fixed.pdf",
+      "title": "Passport photograph instructions by the police",
+      "authority": "Police of Finland",
+      "sourceUpdatedAt": "2020-01-01",
+      "accessedAt": "2026-08-05"
+    }
+  ],
+  "output": {
+    "kind": "exact_pixels",
+    "widthPx": 500,
+    "heightPx": 653,
+    "aspect": {
+      "width": 500,
+      "height": 653,
+      "enforcement": "mandatory",
+      "provenance": "derived"
+    }
+  },
+  "outputFile": {
+    "mime": ["image/jpeg"],
+    "sizeLimit": {
+      "minBytes": 0,
+      "maxBytes": 250000,
+      "sourceLiteral": "maximum 250 KB",
+      "normalization": "conservative_derived"
+    },
+    "colorSpace": "sRGB",
+    "bitsPerChannel": 8,
+    "channels": 3
+  },
+  "cropRules": [
+    {
+      "id": "fi-police-digital-head-height",
+      "metric": "head_height",
+      "min": 445,
+      "max": 500,
+      "unit": "px",
+      "anchors": ["crown_point", "chin_tip"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["poliisi-photo-instructions"],
+      "sourceLiteral": "32-36 mm crown point (without hair/beard) to chin tip"
+    },
+    {
+      "id": "fi-police-digital-head-top-margin",
+      "metric": "head_top_margin",
+      "min": 56,
+      "max": 84,
+      "unit": "px",
+      "anchors": ["crown_point"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["poliisi-photo-instructions"],
+      "sourceLiteral": "4-6 mm crown point to top edge"
+    },
+    {
+      "id": "fi-police-digital-chin-bottom-margin",
+      "metric": "chin_bottom_margin",
+      "min": 96,
+      "max": 124,
+      "unit": "px",
+      "anchors": ["chin_tip"],
+      "axis": "y",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["poliisi-photo-instructions"],
+      "sourceLiteral": "7-9 mm chin tip to bottom edge"
+    },
+    {
+      "id": "fi-police-digital-face-center-offset",
+      "metric": "face_center_offset_x",
+      "min": -21,
+      "max": 21,
+      "unit": "px",
+      "anchors": ["face_center_line", "photo_center_line"],
+      "axis": "x",
+      "bounds": "inclusive",
+      "coordinateSpace": "output_pixel_top_left",
+      "evaluation": "automatic_with_manual_confirmation",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["poliisi-photo-instructions"],
+      "sourceLiteral": "deviation of face centre line from photo centre line at most 1.5 mm"
+    }
+  ],
+  "captureRules": [
+    {
+      "id": "fi-police-digital-no-modification",
+      "check": "background",
+      "expected": "no_appearance_changes",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["poliisi-photo-instructions"],
+      "sourceLiteral": "processing must not change appearance details or raise doubts about authenticity"
+    },
+    {
+      "id": "fi-police-digital-format-colour-or-bw",
+      "check": "lighting",
+      "expected": "colour_or_black_and_white",
+      "evaluation": "manual",
+      "enforcement": "mandatory",
+      "provenance": "source_literal",
+      "sourceRefs": ["poliisi-submitting"],
+      "sourceLiteral": "colour or black and white"
+    }
+  ],
+  "overlay": {
+    "kind": "combined",
+    "ruleIds": [
+      "fi-police-digital-head-height",
+      "fi-police-digital-head-top-margin",
+      "fi-police-digital-chin-bottom-margin",
+      "fi-police-digital-face-center-offset"
+    ]
+  },
+  "capabilities": {
+    "selfCapture": "allowed",
+    "crop": "allowed",
+    "rotate": "allowed",
+    "mirror": "forbidden",
+    "retouch": "forbidden",
+    "backgroundReplace": "forbidden",
+    "requiresOriginalCameraFile": false,
+    "requiresProfessionalPhotographer": false
+  },
+  "sourceNotes": {
+    "zh": [
+      "用户可自行上传警方 photo server 或走摄影棚流程；本产品不能代传，也不混淆两种 KEY。",
+      "禁止改变外貌细节或引发真实性疑问的处理。",
+      "500×653 与头部像素区间按 SPEC §5.2 录入，内容维护人复核时须对照芬兰警方现行像素说明。"
+    ]
+  }
+}
