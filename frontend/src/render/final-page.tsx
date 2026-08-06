@@ -61,6 +61,14 @@ export function FinalPage({
   }, [previewUrl]);
 
   useEffect(() => {
+    // 每次渲染前清空旧值：失败态不留上一次成品，成功态不留上一次错误/重试按钮。
+    // 必须同步写在 effect 体最前（写进 then/catch 或另开 effect 都清不掉旧值），
+    // react-hooks/set-state-in-effect 的告警是此处有意例外（工单 A3 指定写法）
+    /* eslint-disable react-hooks/set-state-in-effect -- 同步清空旧渲染结果 */
+    setError(null);
+    setArtifact(null);
+    setChecks(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
     let cancelled = false;
     renderFinalArtifact(source, template, transform)
       .then(async (a) => {
@@ -163,25 +171,30 @@ export function FinalPage({
           {template.publication.status !== "active" && (
             <p className="warn-text">{template.publication.statusReason}</p>
           )}
-          <div className="step-actions">
-            <button type="button" className="primary" onClick={download}>
-              下载 {filename}
-            </button>
-            <button type="button" onClick={onBack}>
-              返回编辑
-            </button>
-            <button type="button" onClick={onRestart}>
-              重新开始
-            </button>
-          </div>
-          <StagingPanel
-            artifact={artifact}
-            template={template}
-            staged={staged}
-            stagedStale={stagedStale}
-            onStaged={onStaged}
-          />
         </>
+      )}
+      {/* 出口无条件渲染：渲染失败时也有回编辑/重开的确定路径 */}
+      <div className="step-actions">
+        {artifact && (
+          <button type="button" className="primary" onClick={download}>
+            下载 {filename}
+          </button>
+        )}
+        <button type="button" onClick={onBack}>
+          返回编辑
+        </button>
+        <button type="button" onClick={onRestart}>
+          重新开始
+        </button>
+      </div>
+      {artifact && (
+        <StagingPanel
+          artifact={artifact}
+          template={template}
+          staged={staged}
+          stagedStale={stagedStale}
+          onStaged={onStaged}
+        />
       )}
     </section>
   );

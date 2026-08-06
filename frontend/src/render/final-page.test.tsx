@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { IDENTITY_TRANSFORM } from "../editor/edit-transform";
@@ -181,6 +181,60 @@ describe("FinalPage", () => {
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent("渲染失败");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
+
+  it("offers escape hatches when rendering fails (A3)", async () => {
+    // 回归：失败态只剩「重试」，没有回编辑/重开的出口
+    vi.mocked(renderFinalArtifact).mockRejectedValue(new Error("BOOM"));
+    const onBack = vi.fn();
+    const onRestart = vi.fn();
+    renderPage(onBack, onRestart);
+
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "返回编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onRestart).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the retry from a clean slate (A3)", async () => {
+    // 回归：失败一次再重试成功，旧错误提示与「重试」按钮必须消失
+    vi.mocked(renderFinalArtifact)
+      .mockRejectedValueOnce(new Error("BOOM"))
+      .mockResolvedValue(fakeArtifact);
+    vi.mocked(buildChecks).mockResolvedValue([]);
+    renderPage();
+
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await screen.findByRole("button", { name: /下载/ });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+  });
+
+  it("drops the stale artifact when a re-render fails (A3)", async () => {
+    // 回归：先成功后失败，旧成品的「下载」「暂存」入口不得残留
+    vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
+    vi.mocked(buildChecks).mockResolvedValue([]);
+    const view = renderPage();
+    await screen.findByRole("button", { name: /下载/ });
+
+    vi.mocked(renderFinalArtifact).mockRejectedValue(new Error("BOOM"));
+    view.rerender(
+      <FinalPage
+        source={source}
+        template={template}
+        transform={{ ...IDENTITY_TRANSFORM }}
+        onBack={vi.fn()}
+        onRestart={vi.fn()}
+        staged={null}
+        stagedStale={false}
+        onStaged={vi.fn()}
+      />,
+    );
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: /下载/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /暂存/ })).toBeNull();
   });
 
   it("navigates back to editing and restart", async () => {
