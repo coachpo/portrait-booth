@@ -350,3 +350,62 @@ describe("RenderError", () => {
     expect(err).toBeInstanceOf(Error);
   });
 });
+
+describe("renderFinalArtifact ranged sizes (P6)", () => {
+  function rangedTemplate(): TemplateEntry {
+    return template({
+      revisionId: "visa@1",
+      id: "visa",
+      output: {
+        kind: "ranged_pixels",
+        minWidthPx: 600,
+        minHeightPx: 600,
+        maxWidthPx: 1200,
+        maxHeightPx: 1200,
+        defaultWidthPx: 600,
+        defaultHeightPx: 600,
+        aspect: { width: 1, height: 1, enforcement: "mandatory", provenance: "derived" },
+      },
+      outputFile: {
+        mime: ["image/jpeg"],
+        sizeLimit: {
+          maxBytes: 240000,
+          normalization: "recompress_lossy",
+          minBytes: undefined,
+        },
+      },
+    } as unknown as Partial<TemplateEntry["revision"]>);
+  }
+
+  it("renders the user-selected 1200x1200 instead of the hardcoded default (P6)", async () => {
+    const { deps, canvas } = makeDeps();
+    const artifact = await renderFinalArtifact(source, rangedTemplate(), IDENTITY_TRANSFORM, deps, {
+      width: 1200,
+      height: 1200,
+    });
+    expect(canvas.width).toBe(1200);
+    expect(canvas.height).toBe(1200);
+    expect(artifact.manifest.widthPx).toBe(1200);
+    expect(artifact.manifest.heightPx).toBe(1200);
+  });
+
+  it("falls back to the default for out-of-range selections (P6)", async () => {
+    const { deps, canvas } = makeDeps();
+    const artifact = await renderFinalArtifact(source, rangedTemplate(), IDENTITY_TRANSFORM, deps, {
+      width: 1400,
+      height: 1400,
+    });
+    expect(canvas.width).toBe(600);
+    expect(artifact.manifest.widthPx).toBe(600);
+  });
+
+  it("falls back to the default for off-aspect selections (P6)", async () => {
+    const { deps, canvas } = makeDeps();
+    const artifact = await renderFinalArtifact(source, rangedTemplate(), IDENTITY_TRANSFORM, deps, {
+      width: 1200,
+      height: 600,
+    });
+    expect(canvas.width).toBe(600);
+    expect(artifact.manifest.widthPx).toBe(600);
+  });
+});

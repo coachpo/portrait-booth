@@ -3,6 +3,7 @@
 physical_raster 模板写入规定 PPI；结果不满足则拒绝。"""
 
 import io
+from dataclasses import dataclass
 
 from PIL import Image, ImageCms, ImageOps
 
@@ -24,6 +25,21 @@ def _encode_at(img: Image.Image, quality: int) -> bytes:
     return out.getvalue()
 
 
+@dataclass(frozen=True)
+class SizeConstraint:
+    """模板输出尺寸约束（P6）：exact 与 bounds 二选一。
+
+    exact: exact_pixels / physical_raster 的精确尺寸。
+    bounds: (min_w, min_h, max_w, max_h) + aspect 宽高比 + allowed 白名单，
+    ranged_pixels 用；allowed 为 None 时不校验白名单。
+    """
+
+    exact: tuple[int, int] | None
+    bounds: tuple[int, int, int, int] | None
+    aspect: tuple[int, int] | None
+    allowed: list[tuple[int, int]] | None
+
+
 class ImageValidationError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -36,12 +52,11 @@ def validate_and_reencode(
     max_bytes: int | None,
     max_pixels: int,
     max_edge_px: int,
-    target_width: int,
-    target_height: int,
+    constraint: SizeConstraint,
     target_ppi: int | None,
     settings: Settings | None = None,
-) -> bytes:
-    """验证 → sRGB 重编码 → PPI 写入；任一不满足即抛 ImageValidationError。"""
+) -> tuple[bytes, int, int]:
+    """验证 → sRGB 重编码 → PPI 写入；返回 (字节, 实际宽, 实际高)。"""
     cfg = settings or get_settings()
     # §8.2：模板 maxBytes 与全局上限取交集——模板只是候选之一，不能再抬高全局值
     effective_max = (
@@ -66,13 +81,36 @@ def validate_and_reencode(
     if max(width, height) > max_edge_px:
         raise ImageValidationError("PHOTO_TOO_LARGE", "边长超过上限")
 
-    # 方向写入实际像素（OUT-004 服务端镜像要求）：剥离 EXIF 后应用方向
+    # 方向写入实际像素（OUT-004 服务端镜像要求）：剥离 EXIF 后应用方向，
+    # 尺寸校验必须发生在转置之后（旋转图存储尺寸 ≠ 实际方向尺寸）
     img = ImageOps.exif_transpose(img)
+    width, height = img.size
 
-    if img.size != (target_width, target_height):
-        raise ImageValidationError(
-            "PHOTO_SIZE_MISMATCH", f"像素尺寸 {img.size[0]}×{img.size[1]} 与模板不符"
-        )
+    if constraint.exact is not None:
+        if (width, height) != constraint.exact:
+            raise ImageValidationError(
+                "PHOTO_SIZE_MISMATCH",
+                f"像素尺寸 {width}×{height} 与模板不符",
+            )
+    else:
+        # ranged_pixels：范围 + 宽高比 + 白名单（allowed 为空时跳过）
+        min_w, min_h, max_w, max_h = constraint.bounds
+        if not (min_w <= width <= max_w and min_h <= height <= max_h):
+            raise ImageValidationError(
+                "PHOTO_SIZE_MISMATCH",
+                f"像素尺寸 {width}×{height} 不在模板允许范围 {min_w}×{min_h}–{max_w}×{max_h} 内",
+            )
+        aspect_w, aspect_h = constraint.aspect
+        if width * aspect_h != height * aspect_w:
+            raise ImageValidationError(
+                "PHOTO_SIZE_MISMATCH",
+                f"像素尺寸 {width}×{height} 不符合模板宽高比 {aspect_w}:{aspect_h}",
+            )
+        if constraint.allowed is not None and (width, height) not in constraint.allowed:
+            raise ImageValidationError(
+                "PHOTO_SIZE_MISMATCH",
+                f"像素尺寸 {width}×{height} 不在模板可选尺寸内",
+            )
 
     # sRGB 归一化
     if img.mode not in ("RGB", "RGBA", "L"):
@@ -81,7 +119,7 @@ def validate_and_reencode(
     if img.mode != "RGB":
         img = img.convert("RGB")
 
-    return _encode_within(img, effective_max, target_ppi)
+    return _encode_within(img, effective_max, target_ppi), width, height
 
 
 def _encode_within(

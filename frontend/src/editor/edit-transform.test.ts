@@ -15,6 +15,8 @@ import {
   minScaleForRotation,
   normalizeRotationDeg,
   renderMatrix,
+  allowedOutputSizes,
+  resolveOutputSize,
   type EditTransform,
 } from "./edit-transform";
 
@@ -258,6 +260,127 @@ describe("fitTransform", () => {
 
   it("keeps a valid transform unchanged", () => {
     expect(fitTransform(IDENTITY_TRANSFORM, TIGHT_SRC, TIGHT_OUT)).toEqual(IDENTITY_TRANSFORM);
+  });
+});
+
+describe("allowedOutputSizes / resolveOutputSize (P6)", () => {
+  function ranged(
+    overrides: Partial<TemplateRevision["output"] & { allowedSizes?: unknown }> = {},
+  ): TemplateRevision {
+    return {
+      revisionId: "visa@1",
+      id: "visa",
+      version: 1,
+      schemaVersion: 1,
+      label: { zh: "美国签证" },
+      jurisdiction: "US",
+      documentType: "visa",
+      submissionChannel: "digital_upload",
+      applicantClass: "adult",
+      sources: [],
+      output: {
+        kind: "ranged_pixels",
+        minWidthPx: 600,
+        minHeightPx: 600,
+        maxWidthPx: 1200,
+        maxHeightPx: 1200,
+        defaultWidthPx: 600,
+        defaultHeightPx: 600,
+        aspect: { width: 1, height: 1, enforcement: "mandatory", provenance: "derived" },
+        ...overrides,
+      },
+      cropRules: [],
+      captureRules: [],
+      overlay: { kind: "none", ruleIds: [] },
+      capabilities: {
+        selfCapture: "allowed",
+        crop: "allowed",
+        rotate: "allowed",
+        mirror: "warn",
+        retouch: "forbidden",
+        backgroundReplace: "forbidden",
+        requiresOriginalCameraFile: false,
+        requiresProfessionalPhotographer: false,
+      },
+      sourceNotes: {},
+    } as unknown as TemplateRevision;
+  }
+
+  it("derives exactly [default, max] when allowedSizes is absent (P6)", () => {
+    const sizes = allowedOutputSizes(ranged());
+    expect(sizes).toEqual([
+      { width: 600, height: 600 },
+      { width: 1200, height: 1200 },
+    ]);
+  });
+
+  it("dedupes when default equals max (P6)", () => {
+    const sizes = allowedOutputSizes(ranged({ defaultWidthPx: 1200, defaultHeightPx: 1200 }));
+    expect(sizes).toEqual([{ width: 1200, height: 1200 }]);
+  });
+
+  it("uses allowedSizes strictly, dropping items outside range or aspect (P6)", () => {
+    const sizes = allowedOutputSizes(
+      ranged({
+        allowedSizes: [
+          { widthPx: 600, heightPx: 600 },
+          { widthPx: 800, heightPx: 800 },
+          { widthPx: 1200, heightPx: 1200 },
+          { widthPx: 1400, heightPx: 1400 }, // 越界
+          { widthPx: 900, heightPx: 700 }, // 破 1:1
+        ],
+      }),
+    );
+    expect(sizes).toEqual([
+      { width: 600, height: 600 },
+      { width: 800, height: 800 },
+      { width: 1200, height: 1200 },
+    ]);
+  });
+
+  it("returns [] for non-ranged kinds (P6)", () => {
+    const exact = {
+      ...ranged(),
+      output: {
+        kind: "exact_pixels",
+        widthPx: 500,
+        heightPx: 653,
+        aspect: { width: 500, height: 653, enforcement: "mandatory", provenance: "derived" },
+      },
+    } as unknown as TemplateRevision;
+    expect(allowedOutputSizes(exact)).toEqual([]);
+    expect(resolveOutputSize(exact, { width: 999, height: 999 })).toEqual({
+      width: 500,
+      height: 653,
+    });
+  });
+
+  it("falls back to default for empty, out-of-range, off-aspect or non-whitelisted selections (P6)", () => {
+    const r = ranged();
+    const fallback = { width: 600, height: 600 };
+    expect(resolveOutputSize(r, null)).toEqual(fallback);
+    expect(resolveOutputSize(r, undefined)).toEqual(fallback);
+    expect(resolveOutputSize(r, { width: 1400, height: 1400 })).toEqual(fallback);
+    expect(resolveOutputSize(r, { width: 1200, height: 600 })).toEqual(fallback);
+    expect(resolveOutputSize(r, { width: 1200, height: 1200 })).toEqual({
+      width: 1200,
+      height: 1200,
+    });
+  });
+
+  it("honors the whitelist when allowedSizes is present (P6)", () => {
+    const r = ranged({
+      allowedSizes: [{ widthPx: 800, heightPx: 800 }],
+    });
+    // 800 在白名单内但既不是 default 也不是 max：allowedSizes 分支必须采纳
+    expect(resolveOutputSize(r, { width: 800, height: 800 })).toEqual({
+      width: 800,
+      height: 800,
+    });
+    expect(resolveOutputSize(r, { width: 1200, height: 1200 })).toEqual({
+      width: 600,
+      height: 600,
+    });
   });
 });
 

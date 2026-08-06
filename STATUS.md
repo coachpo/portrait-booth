@@ -54,7 +54,7 @@ SPEC §4.4 正文提到把推理放进 Worker，但 GDE-001~010 的验收表没�
 - 目录 API 的服务端筛选参数（jurisdiction/documentType/channel/applicantClass 与 `all` 回退）未实现，筛选仍在客户端完成。
 - 姿态模型没有「不加载模型」的手动路径与初始化前披露。
 - 位图预算计量、i18n、模型/WASM 版本锁定与构建期资产复制均未实现。print-ready 与参考图的区分已实现，但仅在纸质模板转 active 后可见（现有两个纸质模板均为 reference_only，前端不可选）。
-- P1/P2 扩展（冲印排版与 PDF、更深质量检测、ranged_pixels 尺寸可选、PWA 外壳）未实现。
+- P1/P2 扩展（冲印排版与 PDF、更深质量检测、PWA 外壳）未实现。ranged_pixels 尺寸可选已实现：us-visa-digital 可在确认页切 600/1200 档，贯穿编辑器、终态与暂存校验。
 - Playwright 端到端测试未接入 CI，需要手工执行。
 - **Public Beta 最低模板 manifest 未达成**：6 项硬门槛中 3 项仍是 `reference_only`（us-passport-paper、jp-passport-paper 缺 PPI 校准打印测试；cn-visa-digital-ma-rabat 缺门户实测），真正可产出证件成品的官方模板只有 2 个。补齐需要官方来源实测证据，属内容工作。
 

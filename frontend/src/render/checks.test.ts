@@ -480,4 +480,79 @@ describe("buildChecks", () => {
       expect(ids.some((id) => id.startsWith("capture:"))).toBe(false);
     });
   });
+
+  describe("ranged_pixels selected sizes (P6)", () => {
+    function rangedTemplate(): TemplateEntry {
+      return template({
+        revisionId: "visa@1",
+        id: "visa",
+        output: {
+          kind: "ranged_pixels",
+          minWidthPx: 600,
+          minHeightPx: 600,
+          maxWidthPx: 1200,
+          maxHeightPx: 1200,
+          defaultWidthPx: 600,
+          defaultHeightPx: 600,
+          aspect: { width: 1, height: 1, enforcement: "mandatory", provenance: "derived" },
+        },
+      } as unknown as Partial<TemplateEntry["revision"]>);
+    }
+
+    function manifestArtifact(w: number, h: number): FinalArtifact {
+      const bytes = jpegBytes(96, false);
+      return {
+        artifactId: "a1",
+        blob: new Blob([new Uint8Array(bytes)], { type: "image/jpeg" }),
+        coverage: { scannedPixels: w * h, transparentPixels: 0 },
+        manifest: {
+          schemaVersion: 1,
+          templateId: "visa",
+          templateVersion: 1,
+          widthPx: w,
+          heightPx: h,
+          mime: "image/jpeg",
+          orientationNormalized: true,
+          matrix: [1, 0, 0, 1, 0, 0],
+          flipX: false,
+        },
+      };
+    }
+
+    it("passes exact-pixels when the manifest matches the selected size (P6)", async () => {
+      const checks = await buildChecks(manifestArtifact(1200, 1200), rangedTemplate(), null, {
+        width: 1200,
+        height: 1200,
+      });
+      const item = checks.find((c) => c.id === "exact-pixels");
+      expect(item!.status).toBe("pass");
+      expect(item!.detail).toContain("1200×1200");
+    });
+
+    it("still fails for a 1300x1300 manifest with an out-of-range selection (P6)", async () => {
+      const checks = await buildChecks(manifestArtifact(1300, 1300), rangedTemplate(), null, {
+        width: 1300,
+        height: 1300,
+      });
+      const item = checks.find((c) => c.id === "exact-pixels");
+      // 越界选择被 resolve 回落 default（600），与 manifest 不再相等
+      expect(item!.status).toBe("fail");
+    });
+
+    it("fails for an off-aspect manifest (P6)", async () => {
+      const checks = await buildChecks(manifestArtifact(1200, 600), rangedTemplate(), null, {
+        width: 1200,
+        height: 1200,
+      });
+      const item = checks.find((c) => c.id === "exact-pixels");
+      expect(item!.status).toBe("fail");
+    });
+
+    it("defaults to 600x600 when no selection is passed (P6)", async () => {
+      const checks = await buildChecks(manifestArtifact(600, 600), rangedTemplate(), null);
+      expect(checks.find((c) => c.id === "exact-pixels")!.status).toBe("pass");
+      const fail = await buildChecks(manifestArtifact(1200, 1200), rangedTemplate(), null);
+      expect(fail.find((c) => c.id === "exact-pixels")!.status).toBe("fail");
+    });
+  });
 });

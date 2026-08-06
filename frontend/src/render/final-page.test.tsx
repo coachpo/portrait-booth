@@ -15,7 +15,7 @@ vi.mock("./checks", async (importOriginal) => {
   return { ...actual, buildChecks: vi.fn() };
 });
 
-import { renderFinalArtifact } from "./final-artifact";
+import { RenderError, renderFinalArtifact } from "./final-artifact";
 import { buildChecks } from "./checks";
 
 const template = {
@@ -323,6 +323,42 @@ describe("FinalPage", () => {
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent("渲染失败");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
+
+  it("offers a downgrade to the default size on size-limit errors (P6)", async () => {
+    vi.mocked(renderFinalArtifact).mockRejectedValue(
+      new RenderError("size-limit", "已尝试所有压缩档位，仍超出文件体积上限"),
+    );
+    const onUseDefaultSize = vi.fn();
+    render(
+      <FinalPage
+        source={source}
+        template={template}
+        transform={IDENTITY_TRANSFORM}
+        onBack={vi.fn()}
+        onRestart={vi.fn()}
+        staged={null}
+        stagedStale={false}
+        onStaged={vi.fn()}
+        selectedSize={{ width: 1200, height: 1200 }}
+        onUseDefaultSize={onUseDefaultSize}
+      />,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("已尝试所有压缩档位");
+    // 模板默认 500×653：重试跑同一尺寸必然再次失败，必须给出降档出口
+    const downgrade = screen.getByRole("button", { name: "改用 500×653 重新生成" });
+    fireEvent.click(downgrade);
+    expect(onUseDefaultSize).toHaveBeenCalled();
+  });
+
+  it("does not offer the downgrade when already on the default size (P6)", async () => {
+    vi.mocked(renderFinalArtifact).mockRejectedValue(
+      new RenderError("size-limit", "已尝试所有压缩档位，仍超出文件体积上限"),
+    );
+    renderPage(); // selectedSize 未传 = 默认档
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: /重新生成/ })).toBeNull();
   });
 
   it("discloses sources, restrictions and review notes on the final page (P3)", async () => {

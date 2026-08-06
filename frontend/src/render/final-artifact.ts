@@ -11,6 +11,7 @@ import {
   type Rect,
 } from "../editor/edit-transform";
 import type { SourceImage } from "../image/source";
+import { resolveOutputSize, type OutputSizeOption } from "../editor/edit-transform";
 import type { TemplateEntry } from "../lib/templates/types";
 import { rewriteJfifDensity } from "./jpeg";
 
@@ -111,6 +112,8 @@ export async function renderFinalArtifact(
   template: TemplateEntry,
   transform: EditTransform,
   deps: RenderDeps = browserRenderDeps,
+  /** ranged_pixels 模板的用户选定尺寸；空/非法回落 default（P6） */
+  selectedSize?: OutputSizeOption | null,
 ): Promise<FinalArtifact> {
   const rev = template.revision;
   let widthPx: number;
@@ -121,10 +124,15 @@ export async function renderFinalArtifact(
       widthPx = rev.output.widthPx;
       heightPx = rev.output.heightPx;
       break;
-    case "ranged_pixels":
-      widthPx = rev.output.defaultWidthPx;
-      heightPx = rev.output.defaultHeightPx;
+    case "ranged_pixels": {
+      const size = resolveOutputSize(rev, selectedSize) ?? {
+        width: rev.output.defaultWidthPx,
+        height: rev.output.defaultHeightPx,
+      };
+      widthPx = size.width;
+      heightPx = size.height;
       break;
+    }
     case "physical_raster":
       widthPx = rev.output.widthPx;
       heightPx = rev.output.heightPx;

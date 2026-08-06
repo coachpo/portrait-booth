@@ -22,7 +22,11 @@ from .hmac_utils import (
     secret_digest,
     session_digest,
 )
-from .image_validate import ImageValidationError, validate_and_reencode
+from .image_validate import (
+    ImageValidationError,
+    SizeConstraint,
+    validate_and_reencode,
+)
 from .keygen import generate_key, generate_secret, key_display, normalize_key
 from .storage import Storage
 from .template_store import load_template_catalog
@@ -143,17 +147,16 @@ def _do_save(
     rev = entry.revision
 
     target_ppi = rev["output"]["printPpi"] if rev["output"]["kind"] == "physical_raster" else None
-    target_size = _output_size(rev)
+    constraint = _size_constraint(rev)
     try:
-        encoded = validate_and_reencode(
+        encoded, actual_width, actual_height = validate_and_reencode(
             photo_bytes,
             max_bytes=rev["outputFile"]["sizeLimit"].get("maxBytes")
             if rev.get("outputFile") and rev["outputFile"].get("sizeLimit")
             else None,
             max_pixels=cfg.max_pixels,
             max_edge_px=cfg.max_edge_px,
-            target_width=target_size[0],
-            target_height=target_size[1],
+            constraint=constraint,
             target_ppi=target_ppi,
             settings=cfg,
         )
@@ -178,7 +181,11 @@ def _do_save(
             "deleteSecret": delete_secret,
             "expiresAt": expires_at,
             "template": {"id": template_id, "version": template_version},
-            "photo": {"width": target_size[0], "height": target_size[1], "mime": "image/jpeg"},
+            "photo": {
+                "width": actual_width,
+                "height": actual_height,
+                "mime": "image/jpeg",
+            },
         }
         encrypted = _envelope_fernet().encrypt(json.dumps(envelope).encode()).decode()
 
@@ -202,8 +209,8 @@ def _do_save(
                 entry.revision["revisionId"],
                 entry.contentHash,
                 "image/jpeg",
-                target_size[0],
-                target_size[1],
+                actual_width,
+                actual_height,
                 len(encoded),
                 hmac_utils.object_integrity_mac(
                     object_name, len(encoded), hmac_utils.sha256_hex(encoded)
@@ -358,14 +365,29 @@ def _reserve_key(conn: sqlite3.Connection, rng=None, settings: Settings | None =
     raise SaveError("KEY_EXHAUSTED", "KEY 分配失败，请重试", 503)
 
 
-def _output_size(rev) -> tuple[int, int]:
+def _size_constraint(rev) -> SizeConstraint:
+    """模板输出尺寸约束（P6）：exact 与 ranged 两族。"""
     out = rev["output"]
-    if out["kind"] == "exact_pixels":
-        return out["widthPx"], out["heightPx"]
     if out["kind"] == "ranged_pixels":
-        return out["defaultWidthPx"], out["defaultHeightPx"]
-    if out["kind"] == "physical_raster":
-        return out["widthPx"], out["heightPx"]
+        allowed = out.get("allowedSizes")
+        return SizeConstraint(
+            exact=None,
+            bounds=(
+                out["minWidthPx"],
+                out["minHeightPx"],
+                out["maxWidthPx"],
+                out["maxHeightPx"],
+            ),
+            aspect=(out["aspect"]["width"], out["aspect"]["height"]),
+            allowed=([(s["widthPx"], s["heightPx"]) for s in allowed] if allowed else None),
+        )
+    if out["kind"] in ("exact_pixels", "physical_raster"):
+        return SizeConstraint(
+            exact=(out["widthPx"], out["heightPx"]),
+            bounds=None,
+            aspect=None,
+            allowed=None,
+        )
     raise SaveError("TEMPLATE_UNAVAILABLE", "模板无本地渲染尺寸", 404)
 
 

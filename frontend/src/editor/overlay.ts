@@ -124,6 +124,11 @@ export function buildOverlayGuides(rev: TemplateRevision, out: Rect): OverlayGui
     const rule = byId.get(ruleId);
     if (!rule) continue; // 坏引用由 CI 的内容门拦截，运行期安静跳过
 
+    // 尺寸档位过滤位置（P6 坑 12）：SPEC:337 的 appliesToOutputSize 声明了
+    // 规则适用的输出尺寸档，buildOverlayGuides 目前未消费；一旦有模板按档位
+    // 声明不同参考线，必须在这里按当前 out 过滤规则后再走换算。
+    // MeasurementRule 的类型声明缺 appliesToOutputSize（坑 19），属于别的工作。
+
     const min = rule.min == null ? null : toOutputPixels(rule.min, rule, rev, out);
     const max = rule.max == null ? null : toOutputPixels(rule.max, rule, rev, out);
     if (min === null && max === null) continue;

@@ -20,6 +20,7 @@ import {
   type EditorHistory,
   type EditorState,
   type EditTransform,
+  type OutputSizeOption,
 } from "./edit-transform";
 
 export interface EditorStepProps {
@@ -27,6 +28,8 @@ export interface EditorStepProps {
   template: TemplateEntry;
   /** 上次离开编辑器时的状态；不传则从初始变换开始 */
   initialState?: EditorState | null;
+  /** ranged_pixels 模板的用户选定输出尺寸；不传用模板默认（P6） */
+  size?: OutputSizeOption | null;
   onDone: (state: EditorState) => void;
   onBack: (state: EditorState) => void;
 }
@@ -122,8 +125,15 @@ function drawTemplateOverlay(
 
 type History = EditorHistory;
 
-export function EditorStep({ source, template, initialState, onDone, onBack }: EditorStepProps) {
-  const out = outputSize(template.revision);
+export function EditorStep({
+  source,
+  template,
+  initialState,
+  size,
+  onDone,
+  onBack,
+}: EditorStepProps) {
+  const out = size ?? outputSize(template.revision);
   const policy = editorPolicy(template.revision);
   const [transform, setTransform] = useState<EditTransform>(() => {
     if (out !== null && policy.composeLocked && initialState) {

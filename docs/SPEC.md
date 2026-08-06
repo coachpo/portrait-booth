@@ -206,6 +206,7 @@ type EditTransform = {
 | OUT-004 | 输出必须去除 EXIF/GPS/嵌入缩略图和未知 metadata，方向写入实际像素 | 元数据扫描和旋转回归测试通过 |
 | OUT-005 | MVP 的 `FinalArtifact.blob`、本地导出和服务器暂存统一为 JPEG/sRGB；其他输出格式属于后续能力 | 美国签证数字满足 JPEG、24-bit sRGB；Save API 与导出 MIME 不冲突 |
 | OUT-006 | 物理尺寸模板若宣称“可按实际尺寸打印”，必须用锁定版本的确定性编码器写入正确 PPI，像素按 `round(mm / 25.4 * ppi)` 生成，并通过校准打印；否则只能标为参考图 | 原生 Canvas `toBlob` 常写 96 dpi；编码后重新解析尺寸、色彩和密度元数据，未通过不得标为 print-ready |
+| OUT-009 | `ranged_pixels` 模板可由用户选择输出尺寸；候选值必须落在模板 min/max 范围、符合宽高比，存在 `allowedSizes` 时严格用它；选择贯穿编辑器画布、终态渲染、检查摘要与服务端校验 | us-visa-digital 默认 600×600、可选 1200×1200；服务端对越界/破比例尺寸返回 `PHOTO_SIZE_MISMATCH`，对落在范围内但超体积的成品走 OUT-003 搜索，下界仍超限才 `PHOTO_TOO_LARGE` |
 | OUT-007 | 终态页必须显示输出像素、物理尺寸（若有）、格式、字节数、模板版本、警告及未检查项 | 下载前无需阅读隐藏说明即可看到关键风险 |
 | OUT-008 | 输出文件名不得包含姓名或 KEY，建议 `{country}-{document}-{channel}-{yyyyMMdd}.jpg` | 文件名不暴露人像身份或访问凭证 |
 
@@ -710,7 +711,7 @@ interface SaveIdempotencyRecord {
 - 只允许 JPEG canonical blob；忽略上传文件名，验证声明 MIME、magic bytes、完整且单图的实际解码结果，拒绝 polyglot、尾随数据和多图容器。
 - 默认最大 15 MB、24 MP、边长 8,000 px，并叠加模板级像素/字节限制；图片处理限制 CPU、内存、墙钟时间且有成本熔断。
 - 在无网络、低权限沙箱中解码，转换到 sRGB 后用锁定编码器重新编码；移除原 ICC、EXIF、GPS、未知元数据、脚本和嵌入缩略图。`physical_raster` 模板由服务端写入同一模板规定的 PPI，不信任上传元数据。
-- 重新编码后再次验证目标模板精确像素、颜色、打印密度（若适用）和文件大小；不满足则不进入 `active`。
+- 重新编码后再次验证目标模板精确像素（`ranged_pixels` 模板为范围 + 宽高比 + 可选白名单校验，并回传解码得到的实际尺寸写入记录与响应）、颜色、打印密度（若适用）和文件大小；不满足则不进入 `active`。
 - 对象使用私有 ACL、服务端/KMS envelope encryption；API 权限不允许列表整个 bucket。
 - staging、解码临时文件、失败/中止上传和拒绝的恶意输入使用随机名称、加密且不进入备份；请求结束立即删除，并以 15 分钟硬 TTL 的分钟级兜底任务清理崩溃残留。用户 filename 不得用于路径、日志或对象 metadata；默认不保留恶意样本。
 - 不做跨用户内容去重、普通内容哈希索引或“相同照片存在”查询。

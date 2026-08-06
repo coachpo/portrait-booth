@@ -18,8 +18,10 @@ import type { SourceImage } from "../image/source";
 import { EditorStep } from "../editor/editor-step";
 import {
   reprojectEditorState,
+  resolveOutputSize,
   type EditTransform,
   type EditorState,
+  type OutputSizeOption,
   type ReprojectNote,
 } from "../editor/edit-transform";
 import { FinalPage } from "../render/final-page";
@@ -63,6 +65,8 @@ export function CreatePage() {
   const [sourceMode, setSourceMode] = useState<"upload" | "camera" | null>(null);
   const [source, setSource] = useState<SourceImage | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
+  // ranged_pixels 模板的用户选定输出尺寸（P6）；null = 模板默认档
+  const [selectedSize, setSelectedSize] = useState<OutputSizeOption | null>(null);
   // 已暂存回执（仅会话内存，不落盘）：从终态返回编辑再回来时原样恢复，
   // 服务端不会因为这一趟多出第二张照片（§9.2 编辑状态只在会话内存）
   const [staged, setStaged] = useState<{
@@ -139,9 +143,12 @@ export function CreatePage() {
     replaceSource(null);
     setSourceMode(null);
     setSelected(null);
+    setSelectedSize(null);
     setStaged(null);
     setStep("template");
   }, [replaceSource, staged]);
+
+  const selectedOut = selected ? resolveOutputSize(selected.revision, selectedSize) : null;
 
   const currentGroup = groupIndexOf(step);
 
@@ -167,6 +174,8 @@ export function CreatePage() {
             <TemplateStep
               onSelect={(entry) => {
                 setSelected(entry);
+                // 换模板后尺寸档回到该模板默认（不改 editorState，见 P6 坑 10）
+                setSelectedSize(null);
                 if (source === null) {
                   // 首次选模板：还没有照片，照旧进来源选择
                   setStep("source");
@@ -272,6 +281,8 @@ export function CreatePage() {
             source={source}
             template={selected}
             origin={sourceMode === "camera" ? "camera" : "upload"}
+            selectedSize={selectedSize}
+            onSizeChange={setSelectedSize}
             onConfirm={() => setStep("edit")}
             onRetake={() => {
               replaceSource(null);
@@ -290,6 +301,7 @@ export function CreatePage() {
           <EditorStep
             source={source}
             template={selected}
+            size={selectedOut}
             initialState={editorState}
             onDone={(state) => {
               setEditorState(state);
@@ -308,6 +320,8 @@ export function CreatePage() {
             source={source}
             template={selected}
             transform={editorState.transform}
+            selectedSize={selectedSize}
+            onUseDefaultSize={() => setSelectedSize(null)}
             onBack={() => setStep("edit")}
             onRestart={restart}
             staged={staged}

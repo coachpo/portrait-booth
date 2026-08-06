@@ -12,7 +12,11 @@ import type { SourceImage } from "../image/source";
 import { entryLabel } from "../lib/templates/catalog";
 import type { TemplateEntry } from "../lib/templates/types";
 import { staticCheckWarnings } from "../pose/static-check";
-import { outputSize } from "../editor/edit-transform";
+import {
+  allowedOutputSizes,
+  resolveOutputSize,
+  type OutputSizeOption,
+} from "../editor/edit-transform";
 
 export interface ReviewStepProps {
   source: SourceImage;
@@ -26,6 +30,9 @@ export interface ReviewStepProps {
   onChangeTemplate: () => void;
   /** 换模板投影产生的可见说明（role=status） */
   notice?: string | null;
+  /** ranged_pixels 模板的用户选定输出尺寸（P6） */
+  selectedSize?: OutputSizeOption | null;
+  onSizeChange?: (size: OutputSizeOption) => void;
 }
 
 export function ReviewStep({
@@ -37,6 +44,8 @@ export function ReviewStep({
   onBack,
   onChangeTemplate,
   notice,
+  selectedSize,
+  onSizeChange,
 }: ReviewStepProps) {
   // 源图自带 previewUrl 时直接用；否则临时造一个，并在源切换时释放
   const previewUrl = useMemo(() => source.previewUrl ?? URL.createObjectURL(source.file), [source]);
@@ -50,7 +59,22 @@ export function ReviewStep({
     [source.staticChecks],
   );
 
-  const out = outputSize(template.revision);
+  const rev = template.revision;
+  const sizeOptions = allowedOutputSizes(rev);
+  const out = resolveOutputSize(rev, selectedSize);
+  const defaultOut = resolveOutputSize(rev, null);
+  const chosen = sizeOptions.find(
+    (s) => out !== null && s.width === out.width && s.height === out.height,
+  );
+  // 高档位与体积上限之间可能只剩窄窗口，切档前必须让用户知道（P6 坑 7）
+  const maxBytes = rev.outputFile?.sizeLimit?.maxBytes;
+  const maxRatio = rev.outputFile?.maxCompressionRatio;
+  const sizeLimitNote =
+    sizeOptions.length > 1 &&
+    chosen !== undefined &&
+    defaultOut !== null &&
+    chosen.width > defaultOut.width &&
+    maxBytes !== undefined;
   // 源图分辨率是否够填满模板输出（EDT-004）
   const shortfall =
     out !== null && Math.max(out.width / source.width, out.height / source.height) > 1.001;
@@ -62,6 +86,32 @@ export function ReviewStep({
         模板：{entryLabel(template, "zh")}
         {out && `（输出 ${out.width}×${out.height} 像素）`}。确认后进入裁剪与编辑。
       </p>
+
+      {sizeOptions.length > 1 && (
+        <fieldset aria-label="输出尺寸">
+          <legend>输出尺寸</legend>
+          {sizeOptions.map((s) => (
+            <label key={`${s.width}x${s.height}`} className="size-option">
+              <input
+                type="radio"
+                name="output-size"
+                value={`${s.width}x${s.height}`}
+                checked={out !== null && s.width === out.width && s.height === out.height}
+                onChange={() => onSizeChange?.(s)}
+              />
+              {s.width}×{s.height} 像素
+            </label>
+          ))}
+          {sizeLimitNote && (
+            <p className="muted">
+              注意：{out?.width}×{out?.height} 档的文件体积窗口很窄（≤
+              {Math.round(maxBytes! / 1024)} KB
+              {maxRatio !== undefined && ` 且压缩比 ≤${maxRatio}:1`}），源图噪点较重时可能
+              无法生成成品，可切回默认尺寸。
+            </p>
+          )}
+        </fieldset>
+      )}
 
       <div className="source-preview">
         <img src={previewUrl} alt="待确认的照片" />

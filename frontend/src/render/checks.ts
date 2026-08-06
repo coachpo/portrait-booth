@@ -5,7 +5,7 @@
  * 模板 captureRules 中 evaluation 为 manual 的强制项显示为「需人工确认」。
  */
 
-import { outputSize } from "../editor/edit-transform";
+import { resolveOutputSize, type OutputSizeOption } from "../editor/edit-transform";
 import type { TemplateEntry, TemplateRevision } from "../lib/templates/types";
 import type { StaticCheckResult } from "../pose/static-check";
 import { hasExifSegment, readJpegDensity } from "./jpeg";
@@ -27,13 +27,17 @@ export async function buildChecks(
   artifact: FinalArtifact,
   template: TemplateEntry,
   staticChecks?: StaticCheckResult | null,
+  /** ranged_pixels 模板的用户选定尺寸；不传回落 default（P6） */
+  selectedSize?: OutputSizeOption | null,
 ): Promise<CheckItem[]> {
   const rev = template.revision;
   const bytes = new Uint8Array(await artifact.blob.arrayBuffer());
   const checks: CheckItem[] = [];
 
-  // OUT-002：精确像素
-  const expected = outputSize(rev);
+  // OUT-002：精确像素。expected 来自「选定尺寸」独立路径，越界/破比例的
+  // 选择会被 resolveOutputSize 回落 default——manifest 与 expected 永远不会
+  // 退化成自己跟自己比；对 exact/ranged/physical 三种 kind 一律生效。
+  const expected = resolveOutputSize(rev, selectedSize);
   const sizeOk =
     expected !== null &&
     artifact.manifest.widthPx === expected.width &&

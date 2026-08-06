@@ -209,6 +209,62 @@ export function outputSize(rev: TemplateRevision): { width: number; height: numb
   }
 }
 
+export interface OutputSizeOption {
+  width: number;
+  height: number;
+}
+
+/**
+ * ranged_pixels 模板的候选尺寸档（P6）。
+ * allowedSizes 存在时严格用它（并剔除不满足 min/max 与宽高比的项）；
+ * 不存在时只返回 {default, max} 两档，两者相同则一档。候选集只含官方
+ * 支撑的值，不凭空生造中间档（SPEC:446 推导值不得冒充官方原文）。
+ * 非 ranged 的 kind 一律返回空数组。
+ */
+export function allowedOutputSizes(rev: TemplateRevision): OutputSizeOption[] {
+  const out = rev.output;
+  if (out.kind !== "ranged_pixels") return [];
+  const inRange = (w: number, h: number) =>
+    w >= out.minWidthPx &&
+    w <= out.maxWidthPx &&
+    h >= out.minHeightPx &&
+    h <= out.maxHeightPx &&
+    w * out.aspect.height === h * out.aspect.width;
+  if (out.allowedSizes && out.allowedSizes.length > 0) {
+    return out.allowedSizes
+      .map((s) => ({ width: s.widthPx, height: s.heightPx }))
+      .filter((s) => inRange(s.width, s.height));
+  }
+  const cands: OutputSizeOption[] = [
+    { width: out.defaultWidthPx, height: out.defaultHeightPx },
+    { width: out.maxWidthPx, height: out.maxHeightPx },
+  ];
+  return cands.filter(
+    (c, i) => cands.findIndex((x) => x.width === c.width && x.height === c.height) === i,
+  );
+}
+
+/**
+ * 选定尺寸的解析入口（P6）：非 ranged 一律忽略 selected 与 outputSize 行为
+ * 完全一致；ranged 时 selected 为空、越界、破宽高比或不在白名单内都回落
+ * default。所有消费方（确认页/编辑器/终态渲染/检查摘要/服务端除外）共用。
+ */
+export function resolveOutputSize(
+  rev: TemplateRevision,
+  selected?: OutputSizeOption | null,
+): OutputSizeOption | null {
+  if (rev.output.kind !== "ranged_pixels") return outputSize(rev);
+  const fallback = {
+    width: rev.output.defaultWidthPx,
+    height: rev.output.defaultHeightPx,
+  };
+  if (!selected) return fallback;
+  const valid = allowedOutputSizes(rev).some(
+    (s) => s.width === selected.width && s.height === selected.height,
+  );
+  return valid ? selected : fallback;
+}
+
 export interface EditorHistory {
   undo: EditTransform[];
   redo: EditTransform[];

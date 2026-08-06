@@ -11,7 +11,11 @@ from PIL import Image
 
 from app.config import get_settings
 from app.db import connect
-from app.image_validate import ImageValidationError, validate_and_reencode
+from app.image_validate import (
+    ImageValidationError,
+    SizeConstraint,
+    validate_and_reencode,
+)
 from app.worker import purge_expired, sweep_orphans
 
 # DB、对象目录与根密钥由 conftest.py 的 isolated_runtime fixture 逐用例隔离
@@ -29,6 +33,39 @@ def make_jpeg(width=500, height=653, quality=92) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
+
+
+def textured_jpeg(width=600, height=600, seed=7) -> bytes:
+    """轻微纹理图：比纯色图更接近真实照片的量级，但仍可被压缩进 240 KB。"""
+    rng = random.Random(seed)
+    img = Image.new("RGB", (width, height))
+    img.putdata(
+        [
+            (
+                max(0, min(255, 60 + rng.randint(-18, 18))),
+                max(0, min(255, 120 + rng.randint(-18, 18))),
+                max(0, min(255, 200 + rng.randint(-18, 18))),
+            )
+            for _ in range(width * height)
+        ]
+    )
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=60)  # 输入字节本身必须 ≤ 上限（入参门）
+    return buf.getvalue()
+
+
+def save_us_visa(client, photo: bytes, key: str):
+    """us-visa-digital 专用保存（P6）：save_flow 硬编码 fi 模板，不可复用。"""
+    session = client.post("/api/v1/save-sessions")
+    assert session.status_code == 204
+    cookie = session.cookies["pb_save_session"]
+    return client.post(
+        "/api/v1/saves",
+        files={"photo": ("p.jpg", photo, "image/jpeg")},
+        data={"templateId": "us-visa-digital", "templateVersion": 1},
+        headers={"Idempotency-Key": key},
+        cookies={"pb_save_session": cookie},
+    )
 
 
 def noise_image(width=600, height=600) -> Image.Image:
@@ -138,12 +175,37 @@ class TestSaveFlow:
                 max_bytes=90000,
                 max_pixels=settings.max_pixels,
                 max_edge_px=settings.max_edge_px,
-                target_width=600,
-                target_height=600,
+                constraint=SizeConstraint(exact=(600, 600), bounds=None, aspect=None, allowed=None),
                 target_ppi=None,
                 settings=settings,
             )
         assert exc.value.code == "PHOTO_TOO_LARGE"
+
+    def test_us_visa_accepts_1200x1200_within_limit(self, client):
+        """P6：ranged 模板的高档位可保存，响应回传实际尺寸 1200。"""
+        resp = save_us_visa(client, textured_jpeg(1200, 1200), "test-idem-key-p6-1200")
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["photo"]["width"] == 1200
+        assert body["photo"]["height"] == 1200
+
+    def test_us_visa_accepts_default_600x600(self, client):
+        """P6：默认档行为不变。"""
+        resp = save_us_visa(client, textured_jpeg(600, 600), "test-idem-key-p6-0600")
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["photo"]["width"] == 600
+
+    def test_us_visa_rejects_out_of_range_1300(self, client):
+        """P6：越出模板范围的高档位必须 422，且入参不是过大（1300² 未超像素门）。"""
+        resp = save_us_visa(client, textured_jpeg(1300, 1300), "test-idem-key-p6-1300")
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error"]["code"] == "PHOTO_SIZE_MISMATCH"
+
+    def test_us_visa_rejects_off_aspect_1200x600(self, client):
+        """P6：破坏 1:1 宽高比的尺寸必须 422。"""
+        resp = save_us_visa(client, textured_jpeg(1200, 600), "test-idem-key-p6-1206")
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error"]["code"] == "PHOTO_SIZE_MISMATCH"
 
     def test_save_requires_session(self, client):
         resp = client.post(

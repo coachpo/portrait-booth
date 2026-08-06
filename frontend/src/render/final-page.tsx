@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { EditTransform } from "../editor/edit-transform";
+import type { EditTransform, OutputSizeOption } from "../editor/edit-transform";
+import { resolveOutputSize } from "../editor/edit-transform";
 import type { SourceImage } from "../image/source";
 import { entryLabel, jurisdictionName } from "../lib/templates/catalog";
 import type { TemplateEntry } from "../lib/templates/types";
 import { buildChecks, isPrintReady, type CheckItem } from "./checks";
 import { StagingPanel, type StagedReceipt } from "./staging-panel";
-import { renderFinalArtifact, type FinalArtifact } from "./final-artifact";
+import { renderFinalArtifact, RenderError, type FinalArtifact } from "./final-artifact";
 import { capabilityRestrictions, sourceNotesFor } from "../lib/templates/disclosure";
 
 export interface FinalPageProps {
@@ -18,6 +19,10 @@ export interface FinalPageProps {
   staged: StagedReceipt | null;
   stagedStale: boolean;
   onStaged: (receipt: StagedReceipt | null) => void;
+  /** ranged_pixels 模板的用户选定尺寸（P6） */
+  selectedSize?: OutputSizeOption | null;
+  /** 体积超限时降回默认尺寸重新生成 */
+  onUseDefaultSize?: () => void;
 }
 
 function todayStamp(): string {
@@ -109,9 +114,12 @@ export function FinalPage({
   staged,
   stagedStale,
   onStaged,
+  selectedSize,
+  onUseDefaultSize,
 }: FinalPageProps) {
   const [artifact, setArtifact] = useState<FinalArtifact | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<string | null>(null);
   const [checks, setChecks] = useState<CheckItem[] | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -129,29 +137,41 @@ export function FinalPage({
     // react-hooks/set-state-in-effect 的告警是此处有意例外（工单 A3 指定写法）
     /* eslint-disable react-hooks/set-state-in-effect -- 同步清空旧渲染结果 */
     setError(null);
+    setErrorKind(null);
     setArtifact(null);
     setChecks(null);
     /* eslint-enable react-hooks/set-state-in-effect */
     let cancelled = false;
-    renderFinalArtifact(source, template, transform)
+    renderFinalArtifact(source, template, transform, undefined, selectedSize)
       .then(async (a) => {
         if (cancelled) return;
         setArtifact(a);
         // 静态复检已经跑出真实结果，检查摘要必须用它，而不是写「后续版本提供」
-        setChecks(await buildChecks(a, template, source.staticChecks ?? null));
+        setChecks(await buildChecks(a, template, source.staticChecks ?? null, selectedSize));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
+        setErrorKind(err instanceof RenderError ? err.kind : null);
         setError(err instanceof Error ? err.message : "终态渲染失败");
       });
     return () => {
       cancelled = true;
     };
-  }, [source, template, transform, attempt]);
+  }, [source, template, transform, attempt, selectedSize]);
 
   const filename = exportFilename(template);
   const physical = physicalSizeInfo(template);
   const rev = template.revision;
+  // 体积超限时的降档目标：模板默认尺寸（P6 坑 8：重试跑同一尺寸必然再次失败）
+  const defaultSize = resolveOutputSize(rev, null);
+  const canDowngrade =
+    errorKind === "size-limit" &&
+    onUseDefaultSize !== undefined &&
+    selectedSize !== null &&
+    defaultSize !== null &&
+    (selectedSize === undefined ||
+      selectedSize.width !== defaultSize.width ||
+      selectedSize.height !== defaultSize.height);
 
   const download = () => {
     if (!artifact) return;
@@ -174,6 +194,11 @@ export function FinalPage({
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
             重试
           </button>
+          {canDowngrade && (
+            <button type="button" onClick={onUseDefaultSize}>
+              改用 {defaultSize.width}×{defaultSize.height} 重新生成
+            </button>
+          )}
         </div>
       )}
       {!artifact && !error && <p aria-live="polite">正在渲染终态照片…</p>}

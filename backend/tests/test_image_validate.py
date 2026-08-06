@@ -10,7 +10,11 @@ import pytest
 from PIL import Image
 
 from app.config import Settings
-from app.image_validate import ImageValidationError, validate_and_reencode
+from app.image_validate import (
+    ImageValidationError,
+    SizeConstraint,
+    validate_and_reencode,
+)
 
 
 def make_jpeg(width=500, height=653, quality=92, noise=False) -> bytes:
@@ -37,8 +41,7 @@ def encode(photo, *, width=500, height=653, max_bytes=None, settings=None) -> by
         max_bytes=max_bytes,
         max_pixels=Settings().max_pixels,
         max_edge_px=Settings().max_edge_px,
-        target_width=width,
-        target_height=height,
+        constraint=SizeConstraint(exact=(width, height), bounds=None, aspect=None, allowed=None),
         target_ppi=None,
         settings=settings,
     )
