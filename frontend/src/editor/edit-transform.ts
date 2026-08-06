@@ -1,0 +1,173 @@
+/**
+ * 非破坏性编辑变换（EDT-001, §4.5.1）。
+ * 只保存参数快照，不重采样位图；预览与终态渲染共用 renderMatrix。
+ * 矩阵约定：列向量、CSS 像素中心坐标，组合顺序 cover → scale → flipX → rotation → translation。
+ */
+
+import type { Transform2D } from "../image/exif";
+import type { TemplateRevision } from "../lib/templates/types";
+
+export interface EditTransform {
+  /** 归一化到输出宽度 */
+  translateX: number;
+  /** 归一化到输出高度 */
+  translateY: number;
+  /** 相对「刚好 cover」的倍率，>= 1（EDT-004 下限） */
+  scale: number;
+  rotationDeg: number;
+  flipX: boolean;
+}
+
+export const IDENTITY_TRANSFORM: EditTransform = {
+  translateX: 0,
+  translateY: 0,
+  scale: 1,
+  rotationDeg: 0,
+  flipX: false,
+};
+
+export const MIN_SCALE = 1;
+export const MAX_SCALE = 8;
+
+export interface Rect {
+  width: number;
+  height: number;
+}
+
+export function coverScale(src: Rect, out: Rect): number {
+  return Math.max(out.width / src.width, out.height / src.height);
+}
+
+/** 列向量矩阵组合：a · b（先应用 b） */
+function compose(a: Transform2D, b: Transform2D): Transform2D {
+  return {
+    a: a.a * b.a + a.c * b.b,
+    b: a.b * b.a + a.d * b.b,
+    c: a.a * b.c + a.c * b.d,
+    d: a.b * b.c + a.d * b.d,
+    e: a.a * b.e + a.c * b.f + a.e,
+    f: a.b * b.e + a.d * b.f + a.f,
+  };
+}
+
+export function invert(m: Transform2D): Transform2D {
+  const det = m.a * m.d - m.b * m.c;
+  if (det === 0) throw new Error("singular matrix");
+  const a = m.d / det;
+  const b = -m.b / det;
+  const c = -m.c / det;
+  const d = m.a / det;
+  const e = -(a * m.e + c * m.f);
+  const f = -(b * m.e + d * m.f);
+  return { a, b, c, d, e, f };
+}
+
+const identity = (): Transform2D => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+
+/** 把方向已归一化的源位图映射到输出画布的最终矩阵（§4.5.1）。 */
+export function renderMatrix(transform: EditTransform, src: Rect, out: Rect): Transform2D {
+  const cs = coverScale(src, out);
+  const offX = (out.width - src.width * cs) / 2;
+  const offY = (out.height - src.height * cs) / 2;
+  const theta = (transform.rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const cx = out.width / 2;
+  const cy = out.height / 2;
+
+  // cover：缩放后按缩放后尺寸居中（单一仿射）
+  const CS: Transform2D = { a: cs, b: 0, c: 0, d: cs, e: offX, f: offY };
+  // 用户 scale 绕画布中心放大（中心不动，EDT-004）
+  const S: Transform2D = { a: transform.scale, b: 0, c: 0, d: transform.scale, e: 0, f: 0 };
+  const T_center: Transform2D = { a: 1, b: 0, c: 0, d: 1, e: cx, f: cy };
+  const T_centerBack: Transform2D = { a: 1, b: 0, c: 0, d: 1, e: -cx, f: -cy };
+  const F: Transform2D = transform.flipX
+    ? { a: -1, b: 0, c: 0, d: 1, e: out.width, f: 0 }
+    : identity();
+  const R: Transform2D = { a: cos, b: -sin, c: sin, d: cos, e: 0, f: 0 };
+  const T_trans: Transform2D = {
+    a: 1,
+    b: 0,
+    c: 0,
+    d: 1,
+    e: transform.translateX * out.width,
+    f: transform.translateY * out.height,
+  };
+
+  // 从右到左：cover → 绕中心用户缩放 → 镜像 → 绕中心旋转 → 平移
+  return compose(
+    T_trans,
+    compose(
+      T_center,
+      compose(
+        R,
+        compose(T_centerBack, compose(F, compose(T_center, compose(S, compose(T_centerBack, CS))))),
+      ),
+    ),
+  );
+}
+
+/** 裁剪框四角是否全部落在源图内（EDT-003：不允许透明/空白边缘）。 */
+export function isValidTransform(transform: EditTransform, src: Rect, out: Rect): boolean {
+  const inv = invert(renderMatrix(transform, src, out));
+  const corners: Array<[number, number]> = [
+    [0, 0],
+    [out.width, 0],
+    [0, out.height],
+    [out.width, out.height],
+  ];
+  for (const [x, y] of corners) {
+    const sx = inv.a * x + inv.c * y + inv.e;
+    const sy = inv.b * x + inv.d * y + inv.f;
+    if (sx < -1e-6 || sx > src.width + 1e-6 || sy < -1e-6 || sy > src.height + 1e-6) return false;
+  }
+  return true;
+}
+
+/**
+ * 把平移投影回合法区域：合法集为含中心 (0,0) 的凸多边形，
+ * 沿中心到目标点的线段二分找最近合法点（EDT-003）。
+ */
+export function clampTranslation(transform: EditTransform, src: Rect, out: Rect): EditTransform {
+  if (isValidTransform(transform, src, out)) return transform;
+  const base: EditTransform = { ...transform, translateX: 0, translateY: 0 };
+  const tx = transform.translateX;
+  const ty = transform.translateY;
+  let lo = 0;
+  let hi = 1;
+  // 线段参数 t：合法则提高 lo，非法则降低 hi
+  const probe = (t: number): boolean => {
+    const candidate: EditTransform = { ...base, translateX: tx * t, translateY: ty * t };
+    return isValidTransform(candidate, src, out);
+  };
+  if (!probe(1)) {
+    for (let i = 0; i < 24 && hi - lo > 1e-5; i++) {
+      const mid = (lo + hi) / 2;
+      if (probe(mid)) lo = mid;
+      else hi = mid;
+    }
+  }
+  return { ...base, translateX: tx * lo, translateY: ty * lo };
+}
+
+/** 模板渲染尺寸；portal_source/guidance_only 模板不需要本地编辑 */
+export function outputSize(rev: TemplateRevision): { width: number; height: number } | null {
+  switch (rev.output.kind) {
+    case "exact_pixels":
+      return { width: rev.output.widthPx, height: rev.output.heightPx };
+    case "ranged_pixels":
+      return { width: rev.output.defaultWidthPx, height: rev.output.defaultHeightPx };
+    case "physical_raster":
+      return { width: rev.output.widthPx, height: rev.output.heightPx };
+    default:
+      return null;
+  }
+}
+
+/** 剪辑旋转到 ±360°，方便撤销栈比较。 */
+export function normalizeRotationDeg(deg: number): number {
+  let d = deg % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return d;
+}

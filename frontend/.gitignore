@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+*.local
+.env
+.env.*
+!.env.example
+
+# tsc incremental cache
+tsconfig.*.tsbuildinfo
+# playwright
+test-results/
+playwright-report/
