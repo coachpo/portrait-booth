@@ -29,13 +29,26 @@ function resolved() {
   };
 }
 
+let createdUrls: string[] = [];
+let revokedUrls: string[] = [];
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(downloadPhoto).mockResolvedValue(new Blob([new Uint8Array(10)]));
+  createdUrls = [];
+  revokedUrls = [];
+  let counter = 0;
   vi.stubGlobal("URL", {
     ...URL,
-    createObjectURL: vi.fn(() => "blob:photo"),
-    revokeObjectURL: vi.fn(),
+    createObjectURL: vi.fn(() => {
+      counter += 1;
+      const url = `blob:photo-${counter}`;
+      createdUrls.push(url);
+      return url;
+    }),
+    revokeObjectURL: vi.fn((url: string) => {
+      revokedUrls.push(url);
+    }),
   });
 });
 
@@ -88,6 +101,54 @@ describe("RetrievePage", () => {
     const input = screen.getByLabelText("取回码");
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(input.getAttribute("aria-describedby")).toBe(alert.id);
+  });
+
+  it("revokes the previous preview when a second photo is resolved", async () => {
+    // 回归：blob URL 从不撤销，同一会话里每取回一张就多一份驻留内存的照片字节
+    vi.mocked(resolvePhoto).mockResolvedValue(resolved());
+    render(<RetrievePage />);
+
+    typeKey("A7C2F9");
+    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    await screen.findByText("600×600");
+
+    typeKey("B8D3G1");
+    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    await waitFor(() => expect(revokedUrls).toContain("blob:photo-1"));
+    // 当前显示的这张不能被撤销，否则预览裂图
+    expect(revokedUrls).not.toContain("blob:photo-2");
+  });
+
+  it("revokes the preview after a successful delete", async () => {
+    vi.mocked(resolvePhoto).mockResolvedValue(resolved());
+    vi.mocked(deletePhoto).mockResolvedValue(undefined);
+    render(<RetrievePage />);
+
+    typeKey("A7C2F9");
+    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    await screen.findByText("600×600");
+
+    fireEvent.change(screen.getByLabelText("删除密钥"), {
+      target: { value: "secret-value-123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "删除这张照片" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await screen.findByRole("status");
+
+    await waitFor(() => expect(revokedUrls).toContain("blob:photo-1"));
+  });
+
+  it("revokes the preview when the page unmounts", async () => {
+    vi.mocked(resolvePhoto).mockResolvedValue(resolved());
+    const { unmount } = render(<RetrievePage />);
+
+    typeKey("A7C2F9");
+    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    await screen.findByText("600×600");
+
+    unmount();
+    // 创建的 URL 全部被撤销，无残留
+    await waitFor(() => expect(revokedUrls).toEqual(createdUrls));
   });
 
   it("offers a delete entry point outside the staging page", async () => {

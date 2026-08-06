@@ -4,7 +4,7 @@
  * 删除入口也在这里：删除密钥一旦离开暂存页，别处就再也用不上了。
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiError, deletePhoto, downloadPhoto, resolvePhoto } from "../api/save";
 import { formatKeyGroups, isCompleteKey, KEY_LENGTH, normalizeKeyInput } from "../lib/key";
@@ -43,6 +43,14 @@ export function RetrievePage() {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
   const [deleteSecret, setDeleteSecret] = useState("");
   const [deleteStage, setDeleteStage] = useState<DeleteStage>({ kind: "idle" });
+
+  // 唯一的 blob URL 释放点：URL 被覆盖、删除/失败回 idle、组件卸载时都由
+  // effect cleanup 撤销，不再散落 revoke 调用
+  const previewUrl = stage.kind === "resolved" ? stage.photoUrl : null;
+  useEffect(() => {
+    if (!previewUrl) return;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   const complete = isCompleteKey(key);
 
@@ -86,7 +94,7 @@ export function RetrievePage() {
     try {
       await deletePhoto(key, deleteSecret);
       setDeleteStage({ kind: "done" });
-      // 删除后这张照片不该还能取回：清掉本地预览与 token 状态
+      // 删除后这张照片不该还能取回：回到 idle，预览 URL 由上面的 effect 撤销
       setStage({ kind: "idle" });
     } catch (err) {
       setDeleteStage({
