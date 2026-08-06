@@ -110,7 +110,7 @@ vi.mock("../editor/editor-step", async () => {
     }: {
       initialState?: EditorState | null;
       onDone: (s: EditorState) => void;
-      onBack: () => void;
+      onBack: (s: EditorState) => void;
     }) => (
       <>
         <p>编辑器：缩放 {initialState?.transform.scale ?? "初始"}</p>
@@ -126,7 +126,7 @@ vi.mock("../editor/editor-step", async () => {
         >
           完成编辑
         </button>
-        <button type="button" onClick={onBack}>
+        <button type="button" onClick={() => onBack(INITIAL_EDITOR_STATE)}>
           编辑器返回
         </button>
       </>

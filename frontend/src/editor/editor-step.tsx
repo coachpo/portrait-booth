@@ -26,7 +26,7 @@ export interface EditorStepProps {
   /** 上次离开编辑器时的状态；不传则从初始变换开始 */
   initialState?: EditorState | null;
   onDone: (state: EditorState) => void;
-  onBack: () => void;
+  onBack: (state: EditorState) => void;
 }
 
 const UNDO_LIMIT = 50;
@@ -267,7 +267,7 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
           <button type="button" className="primary" onClick={() => onDone(INITIAL_EDITOR_STATE)}>
             继续
           </button>
-          <button type="button" onClick={onBack}>
+          <button type="button" onClick={() => onBack(INITIAL_EDITOR_STATE)}>
             返回
           </button>
         </div>
@@ -593,7 +593,7 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
             >
               下一步（终态检查）
             </button>
-            <button type="button" onClick={onBack}>
+            <button type="button" onClick={() => onBack({ transform, history })}>
               返回重新选择照片
             </button>
           </div>
