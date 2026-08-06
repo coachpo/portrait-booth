@@ -183,6 +183,51 @@ describe("FinalPage", () => {
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   });
 
+  it("discloses sources, restrictions and review notes on the final page (P3)", async () => {
+    // 旧实现：终态页无来源、无限制短语、无复核注记
+    vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
+    vi.mocked(buildChecks).mockResolvedValue([]);
+    const withSources = {
+      ...template,
+      revision: {
+        ...template.revision,
+        sources: [
+          {
+            id: "s1",
+            url: "https://example.com/spec",
+            title: "官方规格",
+            authority: "测试机构",
+            accessedAt: "2026-08-06",
+            sourceUpdatedAt: "2026-01-01",
+          },
+        ],
+        sourceNotes: { zh: ["复核注记甲", "复核注记乙"] },
+      },
+    } as unknown as TemplateEntry;
+    render(
+      <FinalPage
+        source={source}
+        template={withSources}
+        transform={IDENTITY_TRANSFORM}
+        onBack={vi.fn()}
+        onRestart={vi.fn()}
+        staged={null}
+        stagedStale={false}
+        onStaged={vi.fn()}
+      />,
+    );
+    await screen.findByRole("heading", { name: "终态照片" });
+    expect(screen.getByText("2026-08-06")).toBeInTheDocument(); // 本项目复核日期
+    expect(screen.getByText("更新于 2026-01-01")).toBeInTheDocument();
+    expect(screen.getByText("复核注记甲")).toBeInTheDocument();
+    expect(screen.getByText("复核注记乙")).toBeInTheDocument();
+    // 限制短语：fi 夹具的 mirror/retouch/backgroundReplace 都是 forbidden
+    expect(screen.getByText(/模板禁止镜像/)).toBeInTheDocument();
+    // 不出现无依据的合规/可提交文案
+    expect(screen.queryByText(/可提交成品/)).toBeNull();
+    expect(screen.queryByText(/已合规/)).toBeNull();
+  });
+
   it("offers escape hatches when rendering fails (A3)", async () => {
     // 回归：失败态只剩「重试」，没有回编辑/重开的出口
     vi.mocked(renderFinalArtifact).mockRejectedValue(new Error("BOOM"));

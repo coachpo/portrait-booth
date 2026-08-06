@@ -7,6 +7,7 @@ import type { TemplateEntry } from "../lib/templates/types";
 import { buildChecks, type CheckItem } from "./checks";
 import { StagingPanel, type StagedReceipt } from "./staging-panel";
 import { renderFinalArtifact, type FinalArtifact } from "./final-artifact";
+import { capabilityRestrictions, sourceNotesFor } from "../lib/templates/disclosure";
 
 export interface FinalPageProps {
   source: SourceImage;
@@ -35,6 +36,58 @@ function exportFilename(template: TemplateEntry): string {
 function physicalSizeLabel(template: TemplateEntry): string | null {
   const out = template.revision.output;
   return out.kind === "physical_raster" ? `${out.widthMm}×${out.heightMm} 毫米` : null;
+}
+
+/** TMP-002 披露块：来源、限制短语、复核注记三个子块各自判空，全空则不渲染 */
+function TemplateDisclosure({ entry }: { entry: TemplateEntry }) {
+  const rev = entry.revision;
+  const restrictions = capabilityRestrictions(rev.capabilities);
+  const notes = sourceNotesFor(rev, "zh");
+  if (rev.sources.length === 0 && restrictions.length === 0 && notes.length === 0) return null;
+  return (
+    <section className="template-disclosure" aria-label="模板披露">
+      <h3>模板披露</h3>
+      {rev.sources.length > 0 && (
+        <div>
+          <h4>来源</h4>
+          <ul>
+            {rev.sources.map((s) => (
+              <li key={s.id}>
+                <a href={s.url} target="_blank" rel="noreferrer noopener">
+                  {s.title}（{s.authority}）
+                </a>
+                {s.sourceUpdatedAt && <span className="muted"> 更新于 {s.sourceUpdatedAt}</span>}
+                <span className="muted"> 访问于 {s.accessedAt}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {restrictions.length > 0 && (
+        <div>
+          <h4>模板限制</h4>
+          <ul>
+            {restrictions.map((r) => (
+              <li key={r.id}>
+                <strong>{r.level === "forbidden" ? "禁止" : "警告"}：</strong>
+                {r.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {notes.length > 0 && (
+        <div>
+          <h4>模板复核记录</h4>
+          <ul>
+            {notes.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function FinalPage({
@@ -146,6 +199,10 @@ export function FinalPage({
                 {rev.id}@{rev.version}
               </dd>
             </div>
+            <div>
+              <dt>本项目复核日期</dt>
+              <dd>{template.publication.verifiedAt}</dd>
+            </div>
             {transform.rotationDeg !== 0 && (
               <div>
                 <dt>旋转</dt>
@@ -164,6 +221,7 @@ export function FinalPage({
               ))}
             </ul>
           )}
+          <TemplateDisclosure entry={template} />
           <p className="muted">
             姿态、曝光与清晰度为启发式判断，未经官方容差校准，不代表签发机关一定受理。
             若因医疗或身体原因无法保持标准姿态，仍可继续导出；部分签发机关提供医疗或残障例外。

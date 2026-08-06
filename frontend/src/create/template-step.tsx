@@ -10,6 +10,7 @@ import {
   jurisdictionName,
   uniqueJurisdictions,
 } from "../lib/templates/catalog";
+import { capabilityRestrictions, sourceNotesFor } from "../lib/templates/disclosure";
 import { editorPolicy } from "../lib/templates/policy";
 import type {
   DocumentType,
@@ -190,6 +191,8 @@ function TemplateCard({
   const rev = entry.revision;
   const status = entry.publication.status;
   const official = isOfficialDocument(entry);
+  const restrictions = capabilityRestrictions(rev.capabilities);
+  const notes = sourceNotesFor(rev, "zh");
   return (
     <li className="template-card">
       <div className="template-card-head">
@@ -197,6 +200,7 @@ function TemplateCard({
         <span className={`badge badge-${status}`}>{status === "active" ? "可用" : "仅供参考"}</span>
         {!official && <span className="badge badge-portrait">非证件模板</span>}
       </div>
+      {status !== "active" && <p className="warn-text">{entry.publication.statusReason}</p>}
       <dl className="template-card-details">
         <div>
           <dt>规格</dt>
@@ -206,6 +210,14 @@ function TemplateCard({
           <dt>来源</dt>
           <dd>{rev.sources.map((s) => s.authority).join("、")}</dd>
         </div>
+        <div>
+          <dt>版本</dt>
+          <dd>{rev.version}</dd>
+        </div>
+        <div>
+          <dt>本项目复核日期</dt>
+          <dd>{entry.publication.verifiedAt}</dd>
+        </div>
         {rev.applicationPost && (
           <div>
             <dt>适用领区</dt>
@@ -213,8 +225,17 @@ function TemplateCard({
           </div>
         )}
       </dl>
-      {status !== "active" && <p className="warn-text">{entry.publication.statusReason}</p>}
-      {!official && <p className="muted">{rev.sourceNotes?.zh?.[0]}</p>}
+      {restrictions.length > 0 && (
+        <ul className="muted">
+          {restrictions.map((r) => (
+            <li key={r.id}>
+              <strong>{r.level === "forbidden" ? "禁止" : "警告"}：</strong>
+              {r.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!official && notes.length > 0 && <p className="muted">{notes[0]}</p>}
       {editorPolicy(entry.revision).sourceRequirements.length > 0 && (
         <ul className="muted">
           {editorPolicy(entry.revision).sourceRequirements.map((r) => (
@@ -233,17 +254,29 @@ function TemplateCard({
           </button>
         )}
         <details className="sources">
-          <summary>官方来源</summary>
+          <summary>{official ? "官方来源" : "项目内部规格来源"}</summary>
           <ul>
             {rev.sources.map((s) => (
               <li key={s.id}>
                 <a href={s.url} target="_blank" rel="noreferrer noopener">
                   {s.title}（{s.authority}）
                 </a>
+                {s.sourceUpdatedAt && <span className="muted"> 更新于 {s.sourceUpdatedAt}</span>}
+                <span className="muted"> 访问于 {s.accessedAt}</span>
               </li>
             ))}
           </ul>
         </details>
+        {notes.length > 0 && (
+          <details className="sources">
+            <summary>模板复核记录（{notes.length} 条）</summary>
+            <ul>
+              {notes.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
     </li>
   );

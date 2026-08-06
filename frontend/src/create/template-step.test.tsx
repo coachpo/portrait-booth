@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchTemplateCatalog } from "../lib/templates/catalog";
@@ -179,9 +179,14 @@ describe("TemplateStep", () => {
     });
     render(<TemplateStep onSelect={vi.fn()} />);
     await screen.findByRole("heading", { name: "需专业拍摄" });
-    expect(screen.getByText(/要求认证摄影师拍摄/)).toBeInTheDocument();
-    expect(screen.getByText(/原始相机文件/)).toBeInTheDocument();
-    expect(screen.getByText(/认证渠道拍摄/)).toBeInTheDocument();
+    const card = screen
+      .getByRole("heading", { name: "需专业拍摄" })
+      .closest("li.template-card") as HTMLElement;
+    // 限制短语（TMP-002，以句号结尾）与前置约束（以分号承接工具说明）各出现一次
+    expect(within(card).getByText(/要求认证摄影师拍摄。/)).toBeInTheDocument();
+    expect(within(card).getByText(/要求原始相机文件。/)).toBeInTheDocument();
+    expect(within(card).getByText(/重新编码的 JPEG/)).toBeInTheDocument();
+    expect(within(card).getByText(/本工具不产出认证摄影师出品/)).toBeInTheDocument();
   });
 
   it("hides requirement markers when all prerequisites are satisfied (P2)", async () => {
@@ -190,5 +195,56 @@ describe("TemplateStep", () => {
     await screen.findByRole("heading", { name: "测试模板" });
     expect(screen.queryByText(/认证摄影师/)).toBeNull();
     expect(screen.queryByText(/原始相机文件/)).toBeNull();
+  });
+
+  it("discloses review date, source update time, notes and restrictions (P3)", async () => {
+    // 旧实现：官方模板一条注记都看不到、dl 无复核日期/版本、来源无更新时间
+    mockedFetch.mockResolvedValue({
+      ...catalog,
+      templates: catalog.templates.map((t) =>
+        t.revision.revisionId === "t@1"
+          ? entry({
+              revisionId: "t@1",
+              sourceNotes: { zh: ["注记甲", "注记乙"] },
+              sources: [
+                {
+                  id: "s1",
+                  url: "https://example.com/spec",
+                  title: "官方规格",
+                  authority: "测试机构",
+                  accessedAt: "2026-08-06",
+                  sourceUpdatedAt: "2026-01-01",
+                },
+              ],
+            })
+          : t,
+      ),
+    });
+    render(<TemplateStep onSelect={vi.fn()} />);
+    await screen.findByRole("heading", { name: "测试模板" });
+    const card = screen
+      .getByRole("heading", { name: "测试模板" })
+      .closest("li.template-card") as HTMLElement;
+    expect(within(card).getByText("2026-08-06")).toBeInTheDocument(); // 本项目复核日期
+    expect(within(card).getByText("更新于 2026-01-01")).toBeInTheDocument();
+    expect(within(card).getByText("访问于 2026-08-06")).toBeInTheDocument();
+    expect(within(card).getByText("注记甲")).toBeInTheDocument();
+    expect(within(card).getByText("注记乙")).toBeInTheDocument();
+    expect(within(card).getByText(/模板禁止镜像/)).toBeInTheDocument(); // 限制短语
+    expect(within(card).getByText("官方来源")).toBeInTheDocument(); // 官方模板保持原标题
+  });
+
+  it("places the statusReason above the card details (P3)", async () => {
+    mockedFetch.mockResolvedValue(catalog);
+    render(<TemplateStep onSelect={vi.fn()} />);
+    await screen.findByRole("heading", { name: "测试模板" });
+    const card = screen
+      .getByRole("heading", { name: "美国护照纸质" })
+      .closest("li.template-card") as HTMLElement;
+    const reason = within(card).getByText("尚未通过校准打印测试");
+    const details = card.querySelector(".template-card-details")!;
+    // reason 排在 details 之前（旧实现在 dl 之后）
+    const following = reason.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(following).toBeTruthy();
   });
 });
