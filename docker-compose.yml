@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PORTRAIT_LIFETIME_KEY=${PORTRAIT_LIFETIME_KEY:-}
+      - PORTRAIT_REQUEST_KEY=${PORTRAIT_REQUEST_KEY:-}
+      - PORTRAIT_OBJECT_KEY=${PORTRAIT_OBJECT_KEY:-}
+      - PORTRAIT_TOKEN_KEY=${PORTRAIT_TOKEN_KEY:-}
+      - PORTRAIT_RATE_KEY=${PORTRAIT_RATE_KEY:-}
+      - PORTRAIT_ENVELOPE_KEY=${PORTRAIT_ENVELOPE_KEY:-}
+    volumes:
+      - portrait-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  portrait-data:
