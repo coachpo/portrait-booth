@@ -3,6 +3,7 @@
 import contextlib
 import os
 import shutil
+import time
 from pathlib import Path
 
 from .config import get_settings
@@ -44,14 +45,28 @@ class Storage:
         with contextlib.suppress(FileNotFoundError):
             self._path(object_name).unlink()
 
-    def sweep_orphans(self, known_names: set[str]) -> int:
-        """删除无数据库引用的 staging 对象（§8.2 orphan sweep）。"""
+    def sweep_orphans(
+        self,
+        known_names: set[str],
+        min_age_seconds: float = 0.0,
+        now: float | None = None,
+    ) -> int:
+        """删除无数据库引用的 staging 对象（§8.2 orphan sweep）。
+
+        min_age_seconds 是必须的：保存请求先写对象、再提交事务，
+        没有年龄门限时这一趟清理会删掉正在进行中的请求刚写下的字节，
+        用户拿到一个 KEY，对应的照片却已经不在磁盘上。
+        """
+        cutoff = (now if now is not None else time.time()) - min_age_seconds
         removed = 0
         for entry in self.base.iterdir():
-            if entry.is_file() and entry.name not in known_names:
-                with contextlib.suppress(FileNotFoundError):
-                    entry.unlink()
-                    removed += 1
+            if not entry.is_file() or entry.name in known_names:
+                continue
+            with contextlib.suppress(FileNotFoundError):
+                if entry.stat().st_mtime > cutoff:
+                    continue  # 太新，可能属于正在进行中的保存
+                entry.unlink()
+                removed += 1
         return removed
 
     def clear_all(self) -> None:

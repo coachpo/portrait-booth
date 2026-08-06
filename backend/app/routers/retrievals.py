@@ -1,5 +1,6 @@
 """SPEC §6.3：解析取回与下载。统一 PHOTO_UNAVAILABLE 404；下载 token 原子消费。"""
 
+import hmac
 import sqlite3
 import time
 import uuid
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from .. import hmac_utils
 from ..config import get_settings
 from ..db import connect, init_schema
+from ..http_utils import same_origin_violation
 from ..keygen import normalize_key, random_token
 from ..rate_limit import RateLimiter
 from ..storage import Storage
@@ -44,6 +46,9 @@ def _unavailable(request_id: str) -> JSONResponse:
 @router.post("/resolve")
 def resolve(request: Request, body: dict) -> JSONResponse:
     """§6.5：KEY 不存在/过期/已删/未激活一律 404 PHOTO_UNAVAILABLE；限速（§9.3）。"""
+    rejected = same_origin_violation(request)
+    if rejected is not None:
+        return rejected
     cfg = get_settings()
     conn = _db()
     request_id = _request_id()
@@ -70,7 +75,8 @@ def resolve(request: Request, body: dict) -> JSONResponse:
 
     fp = hmac_utils.key_fingerprint(normalized)
     row = conn.execute(
-        "SELECT p.id, p.status, p.expires_at, p.revocation_epoch, p.object_key, p.mime "
+        "SELECT p.id, p.status, p.expires_at, p.revocation_epoch, p.object_key, p.mime, "
+        "p.width_px, p.height_px, p.byte_length, p.template_id, p.template_version "
         "FROM photo_records p JOIN key_registry k ON k.key_fingerprint = p.key_fingerprint "
         "WHERE k.key_fingerprint=? AND k.state='active'",
         (fp,),
@@ -105,12 +111,15 @@ def resolve(request: Request, body: dict) -> JSONResponse:
 
     resp = JSONResponse(
         content={
+            # 摘要必须给出真实尺寸：取回页要在下载前告诉用户这是哪一张照片
             "photo": {
-                "width": None,
-                "height": None,
+                "width": row["width_px"],
+                "height": row["height_px"],
                 "mime": row["mime"],
+                "byteLength": row["byte_length"],
                 "expiresAt": row["expires_at"],
             },
+            "template": {"id": row["template_id"], "version": row["template_version"]},
             "downloadToken": token,
             "tokenExpiresAt": token_expires,
         }
@@ -138,8 +147,8 @@ def download(request: Request, authorization: str | None = Header(default=None))
         return _unavailable(_request_id())
 
     photo = conn.execute(
-        "SELECT p.status, p.expires_at, p.revocation_epoch, p.object_key, p.mime, p.byte_length "
-        "FROM photo_records p WHERE p.id=?",
+        "SELECT p.status, p.expires_at, p.revocation_epoch, p.object_key, p.mime, p.byte_length, "
+        "p.object_integrity_mac FROM photo_records p WHERE p.id=?",
         (row["photo_id"],),
     ).fetchone()
     if (
@@ -150,12 +159,27 @@ def download(request: Request, authorization: str | None = Header(default=None))
     ):
         return _unavailable(_request_id())
 
-    # 原子消费：先标记 consumed，成功读取对象后提交
-    conn.execute("UPDATE download_grants SET consumed_at=? WHERE token_digest=?", (now, digest))
+    # 原子消费：把「未消费」写进 WHERE，由数据库裁决谁赢。
+    # 先 SELECT 再无条件 UPDATE 是 check-then-act：两个并发请求都能通过上面的检查，
+    # 然后都拿到同一张照片，单次用途的凭证事实上变成可重复使用。
+    cursor = conn.execute(
+        "UPDATE download_grants SET consumed_at=? WHERE token_digest=? AND consumed_at IS NULL",
+        (now, digest),
+    )
     conn.commit()
+    if cursor.rowcount != 1:
+        return _unavailable(_request_id())
 
     data = Storage().read(photo["object_key"])
     if data is None or len(data) != photo["byte_length"]:
+        return _unavailable(_request_id())
+
+    # §8.2 对象完整性：MAC 写入后必须真的被校验，否则这层保护形同虚设。
+    # 只比对象名与长度也不够——等长替换完全看不出来，所以 MAC 绑定内容摘要。
+    expected_mac = hmac_utils.object_integrity_mac(
+        photo["object_key"], len(data), hmac_utils.sha256_hex(data)
+    )
+    if not hmac.compare_digest(expected_mac, photo["object_integrity_mac"]):
         return _unavailable(_request_id())
 
     resp = Response(content=data, media_type=photo["mime"])

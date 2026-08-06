@@ -3,7 +3,6 @@
 import hmac
 import sqlite3
 import time
-import uuid
 
 from fastapi import APIRouter, Form, Header, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -11,8 +10,10 @@ from fastapi.responses import JSONResponse, Response
 from .. import hmac_utils
 from ..config import get_settings
 from ..db import connect, init_schema
+from ..http_utils import error_response, new_request_id, same_origin_violation
 from ..save_service import SaveError, save_photo
 from ..storage import Storage
+from ..worker import purge_photo
 
 router = APIRouter(prefix="/api/v1/saves")
 
@@ -28,10 +29,10 @@ def _storage() -> Storage:
 
 
 def _request_id() -> str:
-    return uuid.uuid4().hex
+    return new_request_id()
 
 
-def _no_store(resp: JSONResponse) -> JSONResponse:
+def _no_store(resp: Response) -> Response:
     resp.headers["Cache-Control"] = "no-store, private"
     return resp
 
@@ -43,24 +44,18 @@ async def create_save(
     templateId: str = Form(...),
     templateVersion: int = Form(...),
     idempotency_key: str | None = Header(default=None),
-) -> JSONResponse:
+) -> Response:
+    # §9.4：状态改变请求先过同源校验，再碰任何数据
+    rejected = same_origin_violation(request)
+    if rejected is not None:
+        return rejected
     conn = _db()
     try:
         if not idempotency_key or len(idempotency_key) < 16:
-            return _no_store(
-                JSONResponse(
-                    status_code=400,
-                    content=_err("IDEMPOTENCY_KEY_REQUIRED", "缺少幂等键", _request_id()),
-                )
-            )
+            return error_response("IDEMPOTENCY_KEY_REQUIRED", "缺少幂等键", 400)
         session_id = request.cookies.get("pb_save_session")
         if not session_id:
-            return _no_store(
-                JSONResponse(
-                    status_code=403,
-                    content=_err("SESSION_REQUIRED", "需要先建立保存会话", _request_id()),
-                )
-            )
+            return error_response("SESSION_REQUIRED", "需要先建立保存会话", 403)
 
         data = await photo.read()
         result = save_photo(
@@ -80,21 +75,21 @@ async def create_save(
             "template": {"id": result.template_id, "version": result.template_version},
             "photo": {"width": result.width, "height": result.height, "mime": "image/jpeg"},
         }
-        resp = JSONResponse(status_code=201, content=payload)
+        resp: Response = JSONResponse(status_code=201, content=payload)
         return _no_store(resp)
     except SaveError as e:
-        return _no_store(
-            JSONResponse(status_code=e.status, content=_err(e.code, str(e), _request_id()))
-        )
+        # 409 IDEMPOTENCY_IN_PROGRESS 必须带 Retry-After，客户端才知道等多久
+        return error_response(e.code, str(e), e.status, retry_after=e.retry_after)
     except Exception:  # 内部错误不泄露细节
-        return _no_store(
-            JSONResponse(status_code=500, content=_err("INTERNAL", "服务器内部错误", _request_id()))
-        )
+        return error_response("INTERNAL", "服务器内部错误", 500)
 
 
 @router.delete("")
-def delete_save(request: Request, body: dict) -> JSONResponse:
+def delete_save(request: Request, body: dict) -> Response:
     """§6.4：幂等 204；key 只定址，deleteSecret 授权；不披露对象先前是否存在。"""
+    rejected = same_origin_violation(request)
+    if rejected is not None:
+        return rejected
     conn = _db()
     try:
         key = body.get("key", "")
@@ -122,16 +117,10 @@ def delete_save(request: Request, body: dict) -> JSONResponse:
             "revocation_epoch=revocation_epoch+1, purge_due_at=? WHERE id=?",
             (now, now, row["id"]),
         )
-        conn.execute(
-            "UPDATE download_grants SET consumed_at=COALESCE(consumed_at, ?) "
-            "WHERE photo_id=? AND consumed_at IS NULL",
-            (now, row["id"]),
-        )
+        # 用户主动删除要立刻落到磁盘上。只标记状态的话，UI 说「已删除」，
+        # 而照片原件继续留在卷里，最长滞留到 30 天 TTL 结束。
+        purge_photo(conn, _storage(), row["id"], row["object_key"], now)
         conn.commit()
         return _no_store(Response(status_code=204))
     except Exception:  # 幂等 204；不披露对象先前是否存在
         return _no_store(Response(status_code=204))
-
-
-def _err(code: str, message: str, request_id: str) -> dict:
-    return {"error": {"code": code, "message": message, "requestId": request_id}}

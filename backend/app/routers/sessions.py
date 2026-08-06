@@ -1,12 +1,11 @@
 """SPEC §6.0：服务政策与保存会话。"""
 
 import secrets
-import uuid
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse
 
 from ..config import RETRIEVAL_MODE, get_settings
+from ..http_utils import same_origin_violation
 
 router = APIRouter(prefix="/api/v1")
 
@@ -24,22 +23,10 @@ def get_service_policy() -> dict:
 
 @router.post("/save-sessions", status_code=204)
 def create_save_session(request: Request):
-    """§6.0/§9.4：同源 Origin 校验；设置 Secure; HttpOnly; SameSite=Strict; 会话 Cookie。"""
-    origin = request.headers.get("origin")
-    if origin:
-        from urllib.parse import urlparse
-
-        if urlparse(origin).netloc != request.headers.get("host", ""):
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "error": {
-                        "code": "CROSS_ORIGIN_REJECTED",
-                        "message": "跨站请求被拒绝",
-                        "requestId": uuid.uuid4().hex,
-                    }
-                },
-            )
+    """§6.0/§9.4：同源校验；设置 Secure; HttpOnly; SameSite=Strict; 会话 Cookie。"""
+    rejected = same_origin_violation(request)
+    if rejected is not None:
+        return rejected
     cfg = get_settings()
     session_id = secrets.token_hex(16)
     resp = Response(status_code=204)

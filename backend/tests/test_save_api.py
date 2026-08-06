@@ -2,6 +2,7 @@
 
 import io
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,20 +10,11 @@ from PIL import Image
 
 from app.worker import purge_expired, sweep_orphans
 
-# 每个测试独立 DB/存储目录
-TEST_DB = "/tmp/pb-test-portrait.db"
-TEST_STORAGE = "/tmp/pb-test-storage"
+# DB、对象目录与根密钥由 conftest.py 的 isolated_runtime fixture 逐用例隔离
 
 
 @pytest.fixture()
-def client(monkeypatch, tmp_path):
-    db = str(tmp_path / "test.db")
-    storage = str(tmp_path / "objects")
-    monkeypatch.setenv("PORTRAIT_DB_PATH", db)
-    monkeypatch.setenv("PORTRAIT_STORAGE_DIR", storage)
-    from cryptography.fernet import Fernet
-
-    monkeypatch.setenv("PORTRAIT_ENVELOPE_KEY", Fernet.generate_key().decode())
+def client():
     from app.main import app
 
     return TestClient(app)
@@ -266,7 +258,10 @@ class TestWorker:
         finally:
             conn.close()
 
-    def test_orphan_sweep_removes_unreferenced_objects(self, client):
+    def test_orphan_sweep_spares_objects_younger_than_the_age_gate(self, client):
+        """回归：没有年龄门限时，这一趟清理会删掉进行中请求刚写下的字节。"""
+        import os
+
         from app import db
         from app.config import get_settings
         from app.storage import Storage
@@ -276,11 +271,77 @@ class TestWorker:
         conn = db.connect(cfg.db_path)
         storage = Storage()
         try:
-            orphan = storage.write(b"orphan-staging-bytes")
-            assert storage.read(orphan) is not None
-            swept = sweep_orphans(conn, storage)
-            assert swept >= 1
-            assert storage.read(orphan) is None
+            fresh = storage.write(b"in-flight-staging-bytes")
+            assert sweep_orphans(conn, storage) == 0
+            assert storage.read(fresh) is not None
+
+            # 把它改老到超过门限，再扫一次
+            old = time.time() - cfg.orphan_min_age_seconds - 60
+            os.utime(storage.base / fresh, (old, old))
+            assert sweep_orphans(conn, storage) == 1
+            assert storage.read(fresh) is None
+        finally:
+            conn.close()
+
+    def test_orphan_sweep_keeps_referenced_objects(self, client):
+        from app import db
+        from app.config import get_settings
+        from app.storage import Storage
+
+        body = save_flow(client)
+        cfg = get_settings()
+        conn = db.connect(cfg.db_path)
+        storage = Storage()
+        try:
+            row = conn.execute(
+                "SELECT object_key FROM photo_records WHERE status='active'"
+            ).fetchone()
+            assert row is not None
+            # 引用中的对象无论多老都不能被扫掉
+            assert sweep_orphans(conn, storage, min_age_seconds=0) == 0
+            assert storage.read(row["object_key"]) is not None
+            assert body["key"]
+        finally:
+            conn.close()
+
+    def test_user_delete_removes_the_bytes_immediately(self, client):
+        """回归：删除曾只标记状态，照片原件继续留到 30 天 TTL 结束。"""
+        from app import db
+        from app.config import get_settings
+        from app.storage import Storage
+
+        body = save_flow(client)
+        cfg = get_settings()
+        conn = db.connect(cfg.db_path)
+        storage = Storage()
+        try:
+            row = conn.execute(
+                "SELECT id, object_key FROM photo_records WHERE status='active'"
+            ).fetchone()
+            assert storage.read(row["object_key"]) is not None
+        finally:
+            conn.close()
+
+        resp = client.request(
+            "DELETE",
+            "/api/v1/saves",
+            content=json.dumps({"key": body["key"], "deleteSecret": body["deleteSecret"]}),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 204
+        assert Storage().read(row["object_key"]) is None
+
+        conn = db.connect(cfg.db_path)
+        try:
+            after = conn.execute(
+                "SELECT status, purged_at FROM photo_records WHERE id=?", (row["id"],)
+            ).fetchone()
+            assert after["status"] == "purged"
+            assert after["purged_at"] is not None
+            retired = conn.execute(
+                "SELECT state FROM key_registry WHERE photo_id IS NULL AND state='retired'"
+            ).fetchone()
+            assert retired is not None
         finally:
             conn.close()
 
