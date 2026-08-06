@@ -1,10 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SourceImage } from "../image/source";
 import type { TemplateEntry } from "../lib/templates/types";
 import type { EditorState } from "../editor/edit-transform";
-import { CreatePage } from "./create-page";
+import { routes } from "../app/App";
 
 const template = {
   revision: {
@@ -133,27 +134,55 @@ vi.mock("../editor/editor-step", async () => {
   };
 });
 
-vi.mock("../render/final-page", () => ({
-  FinalPage: ({ onBack, onRestart }: { onBack: () => void; onRestart: () => void }) => (
-    <>
-      <p>终态页</p>
-      <button type="button" onClick={onBack}>
-        返回编辑
-      </button>
-      <button type="button" onClick={onRestart}>
-        重新开始
-      </button>
-    </>
-  ),
-}));
+vi.mock("../render/final-page", () => {
+  const saved = {
+    key: "ABC123",
+    keyDisplay: "ABC-123",
+    deleteSecret: "secret-value-1234567890",
+    expiresAt: "2026-09-05T10:00:00Z",
+    template: { id: "us", version: 1 },
+    photo: { width: 600, height: 600, mime: "image/jpeg" },
+  };
+  return {
+    FinalPage: ({
+      onBack,
+      onRestart,
+      onStaged,
+    }: {
+      onBack: () => void;
+      onRestart: () => void;
+      onStaged: (r: { saved: typeof saved; idempotencyKey: string } | null) => void;
+    }) => (
+      <>
+        <p>终态页</p>
+        <button type="button" onClick={onBack}>
+          返回编辑
+        </button>
+        <button type="button" onClick={onRestart}>
+          重新开始
+        </button>
+        <button type="button" onClick={() => onStaged({ saved, idempotencyKey: "k" })}>
+          模拟暂存成功
+        </button>
+      </>
+    ),
+  };
+});
 
 function click(name: string) {
   fireEvent.click(screen.getByRole("button", { name }));
 }
 
+/** 带真实 Layout 导航与路由拦截图腾的挂载（useBlocker 需要数据路由上下文） */
+function mount() {
+  const router = createMemoryRouter(routes, { initialEntries: ["/create"] });
+  render(<RouterProvider router={router} />);
+  return router;
+}
+
 /** 走到编辑器之前的公共路径 */
 function walkToEditor() {
-  render(<CreatePage />);
+  mount();
   click("选择这个模板");
   click("上传照片");
   click("完成上传");
@@ -166,7 +195,7 @@ beforeEach(() => {
 
 describe("CreatePage 状态机", () => {
   it("shows a progress bar with the current step", () => {
-    render(<CreatePage />);
+    mount();
     const bar = screen.getByRole("list", { name: "创建进度" });
     expect(bar).toBeInTheDocument();
     expect(screen.getByText("1. 选择模板").getAttribute("aria-current")).toBe("step");
@@ -174,7 +203,7 @@ describe("CreatePage 状态机", () => {
 
   it("inserts a review step between capture and the editor (SPEC 流程)", () => {
     // 回归：拍摄或上传后曾直接跳进编辑器，用户没有确认或重拍的机会
-    render(<CreatePage />);
+    mount();
     click("选择这个模板");
     click("使用摄像头拍摄");
     click("完成拍摄");
@@ -234,5 +263,83 @@ describe("CreatePage 状态机", () => {
     walkToEditor();
     expect(screen.getByText("4. 编辑").getAttribute("aria-current")).toBe("step");
     expect(screen.getByText("1. 选择模板").className).toContain("done");
+  });
+});
+
+describe("离开创建流程的拦截（A11）", () => {
+  it.each(["取回照片", "隐私说明", "Portrait Booth", "隐私与留存说明"])(
+    "blocks leaving via the %s link and keeps the flow intact",
+    (exit) => {
+      // 回归：四个出口任一点击即静默卸载，照片/裁剪/撤销栈全部蒸发
+      walkToEditor();
+
+      fireEvent.click(screen.getByRole("link", { name: exit }));
+      // 编辑步骤仍在、资源未释放、出现应用内确认块
+      expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+      expect(dispose).not.toHaveBeenCalled();
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/未保存/);
+
+      fireEvent.click(screen.getByRole("button", { name: "留在本页" }));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+      expect(dispose).not.toHaveBeenCalled();
+    },
+  );
+
+  it("releases resources only after confirming the leave", () => {
+    walkToEditor();
+    fireEvent.click(screen.getByRole("link", { name: "取回照片" }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(dispose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "继续离开" }));
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "取回照片" })).toBeInTheDocument();
+  });
+
+  it("names the retrieval code and delete secret in the staged leave confirmation", () => {
+    // 已暂存时确认文案必须点名取回码与删除密钥无法找回，并就地提供回执下载
+    mount();
+    click("选择这个模板");
+    click("上传照片");
+    click("完成上传");
+    click("使用这张照片");
+    click("完成编辑");
+    fireEvent.click(screen.getByRole("button", { name: "模拟暂存成功" }));
+
+    fireEvent.click(screen.getByRole("link", { name: "取回照片" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("取回码");
+    expect(dialog).toHaveTextContent("删除密钥");
+    expect(dialog).toHaveTextContent("无法找回");
+    expect(screen.getByRole("button", { name: /下载回执/ })).toBeInTheDocument();
+  });
+
+  it("does not silently drop the flow on the browser back gesture", async () => {
+    const router = createMemoryRouter(routes, {
+      initialEntries: ["/", "/create"],
+      initialIndex: 1,
+    });
+    render(<RouterProvider router={router} />);
+    click("选择这个模板");
+    click("上传照片");
+    click("完成上传");
+    click("使用这张照片");
+
+    await act(async () => {
+      await router.navigate(-1);
+    });
+    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+    expect(dispose).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(/未保存/);
+  });
+
+  it("does not block when navigating to the same route", () => {
+    // 防过度修复：已在 /create 时点「创建照片」不弹确认
+    walkToEditor();
+    fireEvent.click(screen.getByRole("link", { name: "创建照片" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(dispose).not.toHaveBeenCalled();
+    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
   });
 });

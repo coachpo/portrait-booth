@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBlocker } from "react-router-dom";
 
 import type { SaveResponse } from "../api/save";
 import type { TemplateEntry } from "../lib/templates/types";
@@ -15,6 +16,7 @@ import type { SourceImage } from "../image/source";
 import { EditorStep } from "../editor/editor-step";
 import type { EditTransform, EditorState } from "../editor/edit-transform";
 import { FinalPage } from "../render/final-page";
+import { downloadReceipt } from "../render/staging-panel";
 import { CaptureStep } from "./capture-step";
 import { ReviewStep } from "./review-step";
 import { SourceStep } from "./source-step";
@@ -54,6 +56,17 @@ export function CreatePage() {
     source: SourceImage;
     transform: EditTransform;
   } | null>(null);
+
+  // 有未保存内容才算脏：只选了模板（还没取照片）时离开不丢任何东西
+  const dirty = !!source || !!editorState || staged !== null;
+  // 站内导航与返回手势的统一拦截：同路径点击（已在 /create 再点「创建照片」）不拦
+  const blocker = useBlocker(
+    useCallback(
+      ({ currentLocation, nextLocation }) =>
+        dirty && currentLocation.pathname !== nextLocation.pathname,
+      [dirty],
+    ),
+  );
   const sourceRef = useRef<SourceImage | null>(null);
   const stepHeadingRef = useRef<HTMLDivElement>(null);
   const firstRender = useRef(true);
@@ -75,16 +88,17 @@ export function CreatePage() {
     stepHeadingRef.current?.focus();
   }, [step]);
 
-  // 刷新或误关标签页会丢掉全部内存态：照片、裁剪参数、撤销栈都不落盘（§9.2）
+  // 刷新或误关标签页会丢掉全部内存态：照片、裁剪参数、撤销栈都不落盘（§9.2）。
+  // 与 dirty 同判：只选了模板时不该弹刷新确认（站内跳转由上面的 blocker 拦截）
   useEffect(() => {
-    if (!source && !selected) return;
+    if (!dirty) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [source, selected]);
+  }, [dirty]);
 
   const replaceSource = useCallback((next: SourceImage | null) => {
     sourceRef.current?.dispose();
@@ -249,6 +263,44 @@ export function CreatePage() {
           />
         )}
       </div>
+
+      {blocker.state === "blocked" && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="leave-title"
+          className="confirm-box"
+        >
+          <h3 id="leave-title">离开创建流程？</h3>
+          {staged ? (
+            <>
+              <p>
+                这张照片已暂存成功。取回码与删除密钥只显示一次，离开后无法找回；
+                尚未暂存的照片与编辑内容也会丢失。
+              </p>
+              <div className="step-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => downloadReceipt(staged.saved)}
+                >
+                  下载回执（含取回码与删除密钥）
+                </button>
+              </div>
+            </>
+          ) : (
+            <p>当前有未保存的照片与编辑内容（裁剪参数、撤销栈），离开后都会丢失。</p>
+          )}
+          <div className="step-actions">
+            <button type="button" className="primary" onClick={() => blocker.proceed()}>
+              继续离开
+            </button>
+            <button type="button" onClick={() => blocker.reset()}>
+              留在本页
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

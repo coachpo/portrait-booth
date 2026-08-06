@@ -3,8 +3,7 @@
  * 每个页面都必须有回到首页的出口——内页走进死胡同是最容易被忽略的可用性缺陷。
  */
 
-import type { ReactNode } from "react";
-import { NavLink, Link } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { ErrorBoundary } from "./error-boundary";
 
@@ -14,7 +13,7 @@ const NAV = [
   { to: "/privacy", label: "隐私说明" },
 ];
 
-export function Layout({ children }: { children: ReactNode }) {
+export function Layout() {
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -34,7 +33,9 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
       </header>
       <main className="container">
-        <ErrorBoundary>{children}</ErrorBoundary>
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
       <footer className="app-footer">
         <p className="muted">

@@ -52,7 +52,10 @@ function formatExpiry(iso: string): string {
 }
 
 /** 删除回执：刷新页面后仍能找回删除权的唯一载体 */
-function receiptText(saved: SaveResponse): string {
+// 与组件同文件导出供 CreatePage 复用（工单约定不新建模块）；
+// react-refresh 规则对「组件文件导出工具函数」的告警是此处有意例外
+// eslint-disable-next-line react-refresh/only-export-components
+export function receiptText(saved: SaveResponse): string {
   return [
     "Portrait Booth 暂存回执",
     "",
@@ -64,6 +67,17 @@ function receiptText(saved: SaveResponse): string {
     "取回码用于取回照片，删除密钥用于提前删除。",
     "两者都无法找回，请妥善保存本文件。",
   ].join("\n");
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function downloadReceipt(saved: SaveResponse): void {
+  const blob = new Blob([receiptText(saved)], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "portrait-booth-回执.txt";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function StagingPanel({
@@ -176,17 +190,6 @@ export function StagingPanel({
       // 剪贴板不可用时用户可手动复制
     }
   };
-
-  const downloadReceipt = (saved: SaveResponse) => {
-    const blob = new Blob([receiptText(saved)], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "portrait-booth-回执.txt";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   /** 移动端拿到成品的实际路径：<a download> 在 iOS 上常常只是打开新标签页 */
   const canShare = (): boolean => {
     if (typeof navigator === "undefined" || !navigator.canShare || !navigator.share) return false;

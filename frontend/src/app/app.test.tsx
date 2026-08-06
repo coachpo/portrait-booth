@@ -1,20 +1,17 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearServicePolicyCache } from "../api/service-policy";
-import { App } from "./App";
+import { routes } from "./App";
 import { ErrorBoundary } from "./error-boundary";
 
 vi.mock("../create/create-page", () => ({ CreatePage: () => <p>创建流程占位</p> }));
 vi.mock("../pages/retrieve-page", () => ({ RetrievePage: () => <p>取回流程占位</p> }));
 
 function renderAt(path: string) {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <App />
-    </MemoryRouter>,
-  );
+  const router = createMemoryRouter(routes, { initialEntries: [path] });
+  return render(<RouterProvider router={router} />);
 }
 
 beforeEach(() => {

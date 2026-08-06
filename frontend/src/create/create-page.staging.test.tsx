@@ -1,10 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SourceImage } from "../image/source";
 import type { TemplateEntry } from "../lib/templates/types";
 import type { EditorState } from "../editor/edit-transform";
-import { CreatePage } from "./create-page";
+import { routes } from "../app/App";
 
 const template = {
   revision: {
@@ -188,7 +189,7 @@ function click(name: string) {
 
 /** 走完整流程到终态页并暂存成功 */
 async function walkToStaged() {
-  render(<CreatePage />);
+  render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ["/create"] })} />);
   click("选择这个模板");
   click("上传照片");
   click("完成上传");
