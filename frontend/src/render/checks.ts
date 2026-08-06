@@ -83,7 +83,9 @@ export async function buildChecks(
       label: "打印密度",
       status: ok ? "pass" : "fail",
       detail: ok
-        ? `${rev.output.printPpi} dpi（JFIF APP0）`
+        ? isPrintReady(template)
+          ? `${rev.output.printPpi} dpi（JFIF APP0）；已通过校准打印验证`
+          : `${rev.output.printPpi} dpi（JFIF APP0）；PPI 来源 ${rev.output.ppiProvenance}，未经校准打印验证`
         : `密度 ${density ? `${density.xdensity} dpi` : "缺失"}，模板要求 ${rev.output.printPpi} dpi`,
     });
   }
@@ -177,6 +179,21 @@ function poseCheck(staticChecks?: StaticCheckResult | null): CheckItem {
     status: "warn",
     detail: `${pose.guidance}（${HEURISTIC_NOTICE}）`,
   };
+}
+
+/**
+ * 纸质模板是否可标注「可按实际尺寸打印」（OUT-006）。
+ * 结论被建模在 publication.status 上：只有模板通过校准打印测试转 active，
+ * 且 PPI 取值经官方入口确认（portal_verified）才成立；两者是合取，
+ * 只看 ppiProvenance 会把 reference_only 的模板误标成可打印。
+ */
+export function isPrintReady(template: TemplateEntry): boolean {
+  const out = template.revision.output;
+  return (
+    out.kind === "physical_raster" &&
+    template.publication.status === "active" &&
+    out.ppiProvenance === "portal_verified"
+  );
 }
 
 function exposureCheck(staticChecks?: StaticCheckResult | null): CheckItem {

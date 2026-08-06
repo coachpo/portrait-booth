@@ -214,6 +214,52 @@ describe("buildChecks", () => {
     expect((await statuses(t, artifact(96)))["print-density"]).toBe("fail");
   });
 
+  it("qualifies a passing density as uncalibrated when PPI is not portal_verified (P5)", async () => {
+    const t = template({
+      output: {
+        kind: "physical_raster",
+        widthMm: 35,
+        heightMm: 45,
+        printPpi: 300,
+        rounding: "nearest",
+        widthPx: 413,
+        heightPx: 531,
+        pixelDerivation: "round(mm / 25.4 * printPpi)",
+        ppiProvenance: "derived",
+        calibrationProfileId: "none",
+      },
+    });
+    const checks = await buildChecks(artifact(300), t);
+    const item = checks.find((c) => c.id === "print-density");
+    expect(item!.status).toBe("pass");
+    expect(item!.detail).toMatch(/derived|未经校准/);
+  });
+
+  it("appends the calibration confirmation only when print-ready (P5)", async () => {
+    const t = template(
+      {
+        output: {
+          kind: "physical_raster",
+          widthMm: 35,
+          heightMm: 45,
+          printPpi: 300,
+          rounding: "nearest",
+          widthPx: 413,
+          heightPx: 531,
+          pixelDerivation: "round(mm / 25.4 * printPpi)",
+          ppiProvenance: "portal_verified",
+          calibrationProfileId: "none",
+        },
+      },
+      { status: "active" },
+    );
+    const checks = await buildChecks(artifact(300), t);
+    const item = checks.find((c) => c.id === "print-density");
+    expect(item!.status).toBe("pass");
+    expect(item!.detail).toContain("已通过校准打印验证");
+    expect(item!.detail).not.toContain("未经校准");
+  });
+
   it("fails when EXIF survives (OUT-004)", async () => {
     const s = await statuses(template(), artifact(96, true));
     expect(s["metadata"]).toBe("fail");

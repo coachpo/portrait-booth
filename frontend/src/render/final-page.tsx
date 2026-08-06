@@ -4,7 +4,7 @@ import type { EditTransform } from "../editor/edit-transform";
 import type { SourceImage } from "../image/source";
 import { entryLabel, jurisdictionName } from "../lib/templates/catalog";
 import type { TemplateEntry } from "../lib/templates/types";
-import { buildChecks, type CheckItem } from "./checks";
+import { buildChecks, isPrintReady, type CheckItem } from "./checks";
 import { StagingPanel, type StagedReceipt } from "./staging-panel";
 import { renderFinalArtifact, type FinalArtifact } from "./final-artifact";
 import { capabilityRestrictions, sourceNotesFor } from "../lib/templates/disclosure";
@@ -33,9 +33,19 @@ function exportFilename(template: TemplateEntry): string {
   return `${rev.jurisdiction.toLowerCase()}-${rev.documentType}-${rev.submissionChannel}-${todayStamp()}.jpg`;
 }
 
-function physicalSizeLabel(template: TemplateEntry): string | null {
+export interface PhysicalSizeInfo {
+  mm: string;
+  printReady: boolean;
+}
+
+/** OUT-006：毫米数值必须与打印结论绑定在同一处，不得裸展示 */
+export function physicalSizeInfo(template: TemplateEntry): PhysicalSizeInfo | null {
   const out = template.revision.output;
-  return out.kind === "physical_raster" ? `${out.widthMm}×${out.heightMm} 毫米` : null;
+  if (out.kind !== "physical_raster") return null;
+  return {
+    mm: `${out.widthMm}×${out.heightMm} 毫米`,
+    printReady: isPrintReady(template),
+  };
 }
 
 /** TMP-002 披露块：来源、限制短语、复核注记三个子块各自判空，全空则不渲染 */
@@ -140,7 +150,7 @@ export function FinalPage({
   }, [source, template, transform, attempt]);
 
   const filename = exportFilename(template);
-  const physical = physicalSizeLabel(template);
+  const physical = physicalSizeInfo(template);
   const rev = template.revision;
 
   const download = () => {
@@ -182,7 +192,12 @@ export function FinalPage({
             {physical && (
               <div>
                 <dt>物理尺寸</dt>
-                <dd>{physical}</dd>
+                <dd>
+                  {physical.mm}
+                  {physical.printReady
+                    ? "（可按实际尺寸打印）"
+                    : "（参考图：打印密度未经校准打印验证）"}
+                </dd>
               </div>
             )}
             <div>

@@ -5,8 +5,8 @@ import type { TemplateEntry } from "../lib/templates/types";
 import type { SourceImage } from "../image/source";
 import { renderFinalArtifact, RenderError, type RenderDeps } from "./final-artifact";
 
-/** 最小 JPEG（带 JFIF APP0），用于密度改写与字节扫描 */
-function jpegBytes(): Uint8Array {
+/** 最小 JPEG（带 JFIF APP0），用于密度改写与字节扫描；noJfif 时跳过 APP0 段 */
+function jpegBytes(noJfif = false): Uint8Array {
   const app0 = [0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 1, 0, 96, 0, 96, 0, 0];
   const seg = (marker: number, payload: number[]): number[] => [
     0xff,
@@ -16,7 +16,7 @@ function jpegBytes(): Uint8Array {
     ...payload,
   ];
   const parts: number[] = [0xff, 0xd8];
-  parts.push(...seg(0xe0, app0));
+  if (!noJfif) parts.push(...seg(0xe0, app0));
   parts.push(...seg(0xc0, [8, 0x01, 0x90, 0x01, 0x40, 1, 0x11, 0x00, 0x00, 0x00]));
   parts.push(0xff, 0xd9);
   return new Uint8Array(parts);
@@ -97,6 +97,7 @@ function makeDeps(
     failToBlob?: boolean;
     transparentPixels?: number;
     unreadablePixels?: boolean;
+    noJfif?: boolean;
   } = {},
 ) {
   const ctx = { setTransform: vi.fn(), drawImage: vi.fn() };
@@ -107,7 +108,7 @@ function makeDeps(
     qualities.push(q);
     const effective = q >= 0 && q <= 1 ? q : 0.92;
     const size = opts.sizeAt ? opts.sizeAt(effective) : 60;
-    const base = jpegBytes();
+    const base = jpegBytes(opts.noJfif);
     const out = new Uint8Array(Math.max(size, base.length));
     out.set(base);
     return new Blob([out], { type: "image/jpeg" });
@@ -317,6 +318,28 @@ describe("renderFinalArtifact print density (OUT-006)", () => {
     expect(bytes[p + 7]).toBe(1); // units = dpi
     expect((bytes[p + 8] << 8) | bytes[p + 9]).toBe(300);
     expect((bytes[p + 10] << 8) | bytes[p + 11]).toBe(300);
+  });
+
+  it("throws a ppi-failed RenderError when the JPEG has no JFIF APP0 (P5)", async () => {
+    const { deps } = makeDeps({ noJfif: true });
+    const t = template({
+      output: {
+        kind: "physical_raster",
+        widthMm: 35,
+        heightMm: 45,
+        printPpi: 300,
+        rounding: "nearest",
+        widthPx: 413,
+        heightPx: 531,
+        pixelDerivation: "round(mm / 25.4 * printPpi)",
+        ppiProvenance: "derived",
+        calibrationProfileId: "none",
+      },
+    });
+    const promise = renderFinalArtifact(source, t, IDENTITY_TRANSFORM, deps);
+    await expect(promise).rejects.toMatchObject({ kind: "ppi-failed" });
+    await expect(promise).rejects.toBeInstanceOf(RenderError);
+    await expect(promise).rejects.toThrow(/无法写入打印密度/);
   });
 });
 

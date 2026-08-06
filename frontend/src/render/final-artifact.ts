@@ -159,7 +159,17 @@ export async function renderFinalArtifact(
     ? await searchQuality(canvas, maxBytes, deps)
     : await encode(canvas, MAX_QUALITY, deps);
 
-  const finalBlob = ppi ? await rewriteJfifDensity(blob, ppi) : blob;
+  let finalBlob = blob;
+  if (ppi) {
+    try {
+      finalBlob = await rewriteJfifDensity(blob, ppi);
+    } catch {
+      throw new RenderError(
+        "ppi-failed",
+        "当前浏览器编码的 JPEG 无法写入打印密度，这个纸质模板暂时无法在本机生成成品，请更换浏览器后重试",
+      );
+    }
+  }
 
   return {
     artifactId: deps.randomId(),

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { IDENTITY_TRANSFORM } from "../editor/edit-transform";
 import type { SourceImage } from "../image/source";
 import type { TemplateEntry } from "../lib/templates/types";
-import { FinalPage } from "./final-page";
+import { FinalPage, physicalSizeInfo } from "./final-page";
 
 vi.mock("./final-artifact", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./final-artifact")>();
@@ -175,7 +175,7 @@ describe("FinalPage", () => {
           widthPx: 413,
           heightPx: 531,
           pixelDerivation: "round(mm / 25.4 * printPpi)",
-          ppiProvenance: "source_literal",
+          ppiProvenance: "derived",
           calibrationProfileId: "none",
         },
       },
@@ -192,7 +192,130 @@ describe("FinalPage", () => {
         onStaged={vi.fn()}
       />,
     );
-    expect(await screen.findByText("35×45 毫米")).toBeInTheDocument();
+    const dd = await screen.findByText(/35×45 毫米/);
+    expect(dd).toBeInTheDocument();
+    expect(dd.textContent).toContain("参考图");
+    expect(screen.queryByText(/可按实际尺寸打印/)).toBeNull();
+  });
+
+  it("labels portal_verified + active paper as 可按实际尺寸打印 (P5)", async () => {
+    vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
+    vi.mocked(buildChecks).mockResolvedValue([]);
+    const paper = {
+      ...template,
+      publication: { ...template.publication, status: "active" as const },
+      revision: {
+        ...template.revision,
+        output: {
+          kind: "physical_raster",
+          widthMm: 35,
+          heightMm: 45,
+          printPpi: 300,
+          rounding: "nearest",
+          widthPx: 413,
+          heightPx: 531,
+          pixelDerivation: "round(mm / 25.4 * printPpi)",
+          ppiProvenance: "portal_verified",
+          calibrationProfileId: "none",
+        },
+      },
+    } as unknown as TemplateEntry;
+    render(
+      <FinalPage
+        source={source}
+        template={paper}
+        transform={IDENTITY_TRANSFORM}
+        onBack={vi.fn()}
+        onRestart={vi.fn()}
+        staged={null}
+        stagedStale={false}
+        onStaged={vi.fn()}
+      />,
+    );
+    const dd = await screen.findByText(/35×45 毫米/);
+    expect(dd.textContent).toContain("可按实际尺寸打印");
+    expect(dd.textContent).not.toContain("参考图");
+  });
+
+  it("never labels portal_verified + reference_only paper as printable (P5)", async () => {
+    // 合取判据：只看 ppiProvenance 会把尚未通过校准打印的模板误标成可打印
+    vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
+    vi.mocked(buildChecks).mockResolvedValue([]);
+    const paper = {
+      ...template,
+      publication: { ...template.publication, status: "reference_only" as const },
+      revision: {
+        ...template.revision,
+        output: {
+          kind: "physical_raster",
+          widthMm: 35,
+          heightMm: 45,
+          printPpi: 300,
+          rounding: "nearest",
+          widthPx: 413,
+          heightPx: 531,
+          pixelDerivation: "round(mm / 25.4 * printPpi)",
+          ppiProvenance: "portal_verified",
+          calibrationProfileId: "none",
+        },
+      },
+    } as unknown as TemplateEntry;
+    render(
+      <FinalPage
+        source={source}
+        template={paper}
+        transform={IDENTITY_TRANSFORM}
+        onBack={vi.fn()}
+        onRestart={vi.fn()}
+        staged={null}
+        stagedStale={false}
+        onStaged={vi.fn()}
+      />,
+    );
+    const dd = await screen.findByText(/35×45 毫米/);
+    expect(dd.textContent).toContain("参考图");
+    expect(screen.queryByText(/可按实际尺寸打印/)).toBeNull();
+  });
+
+  it("physicalSizeInfo judges print-readiness by provenance and status (P5)", () => {
+    const base = {
+      ...template,
+      publication: { ...template.publication, status: "active" as const },
+      revision: {
+        ...template.revision,
+        output: {
+          kind: "physical_raster",
+          widthMm: 35,
+          heightMm: 45,
+          printPpi: 300,
+          rounding: "nearest",
+          widthPx: 413,
+          heightPx: 531,
+          pixelDerivation: "round(mm / 25.4 * printPpi)",
+          ppiProvenance: "source_literal",
+          calibrationProfileId: "none",
+        },
+      },
+    } as unknown as TemplateEntry;
+    const withProvenance = (ppiProvenance: string) =>
+      ({
+        ...base,
+        revision: { ...base.revision, output: { ...base.revision.output, ppiProvenance } },
+      }) as unknown as TemplateEntry;
+    expect(physicalSizeInfo(withProvenance("source_literal"))!.printReady).toBe(false);
+    expect(physicalSizeInfo(withProvenance("derived"))!.printReady).toBe(false);
+    expect(physicalSizeInfo(withProvenance("portal_verified"))!.printReady).toBe(true);
+    expect(physicalSizeInfo(template as unknown as TemplateEntry)).toBeNull(); // exact_pixels 无物理尺寸
+    expect(physicalSizeInfo(withProvenance("portal_verified"))!.mm).toBe("35×45 毫米");
+  });
+
+  it("does not show mm or print claims for pixel templates (P5)", async () => {
+    vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
+    vi.mocked(buildChecks).mockResolvedValue([]);
+    renderPage();
+    await screen.findByRole("heading", { name: "终态照片" });
+    expect(screen.queryByText(/毫米/)).toBeNull();
+    expect(screen.queryByText(/打印/)).toBeNull();
   });
 
   it("shows an error with retry when rendering fails", async () => {
