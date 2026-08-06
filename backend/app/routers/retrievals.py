@@ -82,14 +82,15 @@ def resolve(request: Request, body: dict) -> JSONResponse:
         (fp,),
     ).fetchone()
 
-    if not limiter.check(
-        "resolve-fail", fp, cfg.resolve_fail_window_seconds, cfg.resolve_fail_limit
-    ):
-        return _unavailable(request_id)
-
     now = time.gmtime()
     now_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", now)
     if row is None or row["status"] != "active" or row["expires_at"] <= now_str:
+        # 失败结局才消耗失败限速额度：记录不存在 / 非 active / 已过期
+        limiter.check("resolve-fail", fp, cfg.resolve_fail_window_seconds, cfg.resolve_fail_limit)
+        return _unavailable(request_id)
+
+    # 闸门：本窗口内同一 KEY 指纹失败满额则拒绝签发；成功路径不写失败桶
+    if limiter.peek("resolve-fail", fp, cfg.resolve_fail_window_seconds) >= cfg.resolve_fail_limit:
         return _unavailable(request_id)
 
     token = random_token()

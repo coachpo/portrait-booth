@@ -348,9 +348,81 @@ class TestWorker:
 
 class TestRateLimit:
     def test_resolve_failures_are_rate_limited(self, client):
+        """未知 KEY 的每次失败都写失败桶（回归：旧断言恒真，删掉自增也不会红）。"""
         for _ in range(3):
             resp = client.post("/api/v1/retrievals/resolve", json={"key": "ZZZZZZ"})
             assert resp.status_code == 404
-        # 超过限额后仍统一 404（不泄露原因）
-        resp = client.post("/api/v1/retrievals/resolve", json={"key": "ZZZZZZ"})
+
+        from app.config import get_settings
+        from app.db import connect
+
+        conn = connect(get_settings().db_path)
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(count), 0) AS total FROM rate_limit_counts "
+                "WHERE scope='resolve-fail'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["total"] == 3
+
+    def test_successful_resolves_do_not_burn_the_failure_budget(self, client):
+        """回归：同一合法 KEY 在窗口内可反复取回，成功路径一次都不写 resolve-fail 桶。"""
+        key = save_flow(client)["key"]
+        for _ in range(6):
+            resp = client.post("/api/v1/retrievals/resolve", json={"key": key})
+            assert resp.status_code == 200
+            assert resp.json()["downloadToken"]
+
+        from app.config import get_settings
+        from app.db import connect
+
+        conn = connect(get_settings().db_path)
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(count), 0) AS total FROM rate_limit_counts "
+                "WHERE scope='resolve-fail'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["total"] == 0
+
+    def test_resolve_fail_budget_gates_issuance_after_limit(self, client, monkeypatch):
+        """闸门：同一 KEY 指纹本窗口失败满额后，记录恢复有效也拒绝签发（指纹/窗口对齐）。"""
+        monkeypatch.setenv("PORTRAIT_RESOLVE_FAIL_LIMIT", "2")
+        key = save_flow(client)["key"]
+
+        from app import hmac_utils
+        from app.config import get_settings
+        from app.db import connect
+
+        conn = connect(get_settings().db_path)
+        try:
+            # 先让记录过期，制造失败结局
+            conn.execute(
+                "UPDATE photo_records SET expires_at='2000-01-01T00:00:00Z' "
+                "WHERE id IN (SELECT photo_id FROM key_registry WHERE key_fingerprint=?)",
+                (hmac_utils.key_fingerprint(key),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        for _ in range(2):
+            resp = client.post("/api/v1/retrievals/resolve", json={"key": key})
+            assert resp.status_code == 404
+
+        conn = connect(get_settings().db_path)
+        try:
+            # 恢复有效；失败额度已耗尽，闸门必须仍然拒绝签发
+            conn.execute(
+                "UPDATE photo_records SET expires_at='2099-01-01T00:00:00Z' "
+                "WHERE id IN (SELECT photo_id FROM key_registry WHERE key_fingerprint=?)",
+                (hmac_utils.key_fingerprint(key),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        resp = client.post("/api/v1/retrievals/resolve", json={"key": key})
         assert resp.status_code == 404

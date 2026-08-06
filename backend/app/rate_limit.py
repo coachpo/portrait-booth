@@ -30,3 +30,14 @@ class RateLimiter:
         window_start = now - (now % window_seconds)
         count = self._record(scope, bucket, window_start)
         return count <= limit
+
+    def peek(self, scope: str, bucket: str, window_seconds: int) -> int:
+        """只读当前窗口计数：不自增、不提交，供成功路径做签发闸门。"""
+        now = int(time.time())
+        window_start = now - (now % window_seconds)
+        fp = rate_fingerprint(scope, bucket)
+        row = self.conn.execute(
+            "SELECT count FROM rate_limit_counts WHERE scope=? AND bucket=? AND window_start=?",
+            (scope, fp, window_start),
+        ).fetchone()
+        return int(row["count"]) if row is not None else 0
