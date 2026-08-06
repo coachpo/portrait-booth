@@ -15,6 +15,14 @@ vi.mock("../camera/camera", async (importOriginal) => {
     isFrontCamera: vi.fn(),
   };
 });
+vi.mock("../pose/landmarker", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../pose/landmarker")>();
+  return {
+    ...actual,
+    acquireVideoLandmarker: vi.fn(),
+    releaseVideoLandmarker: vi.fn(),
+  };
+});
 vi.mock("../image/source", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../image/source")>();
   return { ...actual, loadSourceImage: vi.fn() };
@@ -22,6 +30,7 @@ vi.mock("../image/source", async (importOriginal) => {
 
 import { captureStill, isFrontCamera, listVideoDevices, openCamera } from "../camera/camera";
 import { loadSourceImage } from "../image/source";
+import { acquireVideoLandmarker, releaseVideoLandmarker } from "../pose/landmarker";
 import { runStaticCheck } from "../pose/static-check";
 
 const template = {
@@ -109,6 +118,11 @@ beforeEach(() => {
       issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
       metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0 },
     },
+  });
+  // 姿态推理栈隔离：默认走「模型可用」，PoseGuide 在 jsdom 下渲染 null，
+  // 不注入模型 <script>、不留悬挂 Promise
+  vi.mocked(acquireVideoLandmarker).mockResolvedValue({
+    detectVideo: vi.fn().mockReturnValue([]),
   });
   vi.mocked(isFrontCamera).mockReturnValue(true);
   vi.mocked(listVideoDevices).mockResolvedValue([]);
@@ -249,6 +263,42 @@ describe("CaptureStep", () => {
     const select = await screen.findByRole("combobox", { name: /切换摄像头/ });
     fireEvent.change(select, { target: { value: "cam-2" } });
     expect(openCamera).toHaveBeenCalledWith({ deviceId: "cam-2" });
+  });
+
+  it("acquires the pose model only in live and releases it on unmount", async () => {
+    // 回归：status === "live" 门控零覆盖，PoseGuide 接线被删也不会红
+    vi.mocked(releaseVideoLandmarker).mockClear();
+    const { unmount } = renderStep();
+    expect(acquireVideoLandmarker).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
+    await screen.findByRole("button", { name: "拍摄" });
+    await vi.waitFor(() => expect(acquireVideoLandmarker).toHaveBeenCalledTimes(1));
+
+    unmount();
+    expect(releaseVideoLandmarker).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the shutter usable when the pose model fails (GDE-006)", async () => {
+    // 规格要求模型失败时只关自动指导、不阻止手动拍摄
+    vi.mocked(acquireVideoLandmarker).mockRejectedValue(new Error("no wasm"));
+    renderStep();
+    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
+    await screen.findByText(/自动姿态指导不可用/);
+    expect(screen.getByRole("button", { name: "拍摄" })).toBeEnabled();
+  });
+
+  it("reports the source even when the static recheck fails (GDE-006)", async () => {
+    // 静态复检失败是步骤层第二条降级支路：仍把照片交给下一步
+    const blob = new Blob([new Uint8Array([0xff, 0xd8])], { type: "image/jpeg" });
+    vi.mocked(captureStill).mockResolvedValue(blob);
+    vi.mocked(loadSourceImage).mockResolvedValue(fakeSource());
+    vi.mocked(runStaticCheck).mockRejectedValue(new Error("x"));
+    const onReady = vi.fn();
+    renderStep(onReady);
+    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
+    fireEvent.click(await screen.findByRole("button", { name: "拍摄" }));
+    expect(await vi.waitFor(() => expect(onReady).toHaveBeenCalledTimes(1)));
   });
 
   it("reports a capture failure without locking the flow", async () => {
