@@ -154,4 +154,41 @@ describe("TemplateStep", () => {
     const disabled = screen.getByRole("button", { name: "不可用于提交" });
     expect(disabled).toBeDisabled();
   });
+
+  it("shows source requirement markers when the template demands them (P2)", async () => {
+    mockedFetch.mockResolvedValue({
+      ...catalog,
+      templates: [
+        ...catalog.templates,
+        entry({
+          revisionId: "pro@1",
+          id: "pro",
+          label: { zh: "需专业拍摄" },
+          capabilities: {
+            selfCapture: "certified_only",
+            crop: "allowed",
+            rotate: "allowed",
+            mirror: "forbidden",
+            retouch: "forbidden",
+            backgroundReplace: "forbidden",
+            requiresOriginalCameraFile: true,
+            requiresProfessionalPhotographer: true,
+          },
+        }),
+      ],
+    });
+    render(<TemplateStep onSelect={vi.fn()} />);
+    await screen.findByRole("heading", { name: "需专业拍摄" });
+    expect(screen.getByText(/要求认证摄影师拍摄/)).toBeInTheDocument();
+    expect(screen.getByText(/原始相机文件/)).toBeInTheDocument();
+    expect(screen.getByText(/认证渠道拍摄/)).toBeInTheDocument();
+  });
+
+  it("hides requirement markers when all prerequisites are satisfied (P2)", async () => {
+    mockedFetch.mockResolvedValue(catalog);
+    render(<TemplateStep onSelect={vi.fn()} />);
+    await screen.findByRole("heading", { name: "测试模板" });
+    expect(screen.queryByText(/认证摄影师/)).toBeNull();
+    expect(screen.queryByText(/原始相机文件/)).toBeNull();
+  });
 });

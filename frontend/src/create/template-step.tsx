@@ -10,6 +10,7 @@ import {
   jurisdictionName,
   uniqueJurisdictions,
 } from "../lib/templates/catalog";
+import { editorPolicy } from "../lib/templates/policy";
 import type {
   DocumentType,
   OutputProfile,
@@ -214,6 +215,13 @@ function TemplateCard({
       </dl>
       {status !== "active" && <p className="warn-text">{entry.publication.statusReason}</p>}
       {!official && <p className="muted">{rev.sourceNotes?.zh?.[0]}</p>}
+      {editorPolicy(entry.revision).sourceRequirements.length > 0 && (
+        <ul className="muted">
+          {editorPolicy(entry.revision).sourceRequirements.map((r) => (
+            <li key={r.id}>{r.text}</li>
+          ))}
+        </ul>
+      )}
       <div className="template-card-actions">
         {status === "active" ? (
           <button type="button" className="primary" onClick={() => onSelect(entry)}>

@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SourceImage } from "../image/source";
 import { buildOverlayGuides, headEllipse, type OverlayGuide } from "./overlay";
 import { entryLabel } from "../lib/templates/catalog";
+import { editorPolicy } from "../lib/templates/policy";
 import type { TemplateEntry } from "../lib/templates/types";
+import { PolicyNotices } from "./policy-notice";
 import {
   coverScale,
   fitTransform,
@@ -122,9 +124,22 @@ type History = EditorHistory;
 
 export function EditorStep({ source, template, initialState, onDone, onBack }: EditorStepProps) {
   const out = outputSize(template.revision);
-  const [transform, setTransform] = useState<EditTransform>(
-    initialState?.transform ?? IDENTITY_TRANSFORM,
-  );
+  const policy = editorPolicy(template.revision);
+  const [transform, setTransform] = useState<EditTransform>(() => {
+    if (out !== null && policy.composeLocked && initialState) {
+      // 构图锁定兜底：继承的 scale/translate 不得带入，仅保留旋转/镜像并按新模板适配
+      return fitTransform(
+        {
+          ...IDENTITY_TRANSFORM,
+          rotationDeg: initialState.transform.rotationDeg,
+          flipX: initialState.transform.flipX,
+        },
+        { width: source.width, height: source.height },
+        out,
+      );
+    }
+    return initialState?.transform ?? IDENTITY_TRANSFORM;
+  });
   const [history, setHistory] = useState<History>(initialState?.history ?? { undo: [], redo: [] });
   const [autoScaled, setAutoScaled] = useState(false);
   // 带外来 transform 挂载（会话内换模板后回到编辑）时，越界护栏也要在挂载时求值一次
@@ -148,7 +163,6 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
     () => ({ width: source.width, height: source.height }),
     [source.width, source.height],
   );
-  const caps = template.revision.capabilities;
 
   // EDT-004：cover 本身就大于 1 时，源图分辨率已低于模板输出要求。
   // 这里不锁死缩放——分辨率不足时用户仍然需要能调整构图——而是给出不可忽略的警告。
@@ -212,6 +226,7 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
   const rotate90 = useCallback(
     (clockwise: boolean) => {
       if (!out) return;
+      if (policy.rotateLocked) return;
       // 旋转 90° 后 cover 比例可能变化，自动抬升 scale 保证覆盖（EDT-003）
       const rotated = { width: src.height, height: src.width };
       const csOld = coverScale(src, out);
@@ -222,13 +237,13 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
         scale: transform.scale * Math.max(1, csNew / csOld),
       });
     },
-    [apply, out, src, transform],
+    [apply, out, policy.rotateLocked, src, transform],
   );
 
   const toggleFlip = useCallback(() => {
-    if (caps.mirror === "forbidden") return;
+    if (policy.mirrorLocked) return;
     apply({ ...transform, flipX: !transform.flipX });
-  }, [apply, caps.mirror, transform]);
+  }, [apply, policy.mirrorLocked, transform]);
 
   // 预览绘制：预览与导出共用 renderMatrix（§4.5.1）
   useEffect(() => {
@@ -292,6 +307,7 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (policy.composeLocked) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointersRef.current.size === 2) {
@@ -306,6 +322,7 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (policy.composeLocked) return;
     if (!pointersRef.current.has(e.pointerId)) return;
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -341,11 +358,22 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
 
   /** EDT-007 / WCAG 2.5.7：拖动之外的等效操作 */
   const nudge = (dx: number, dy: number) => {
+    if (policy.composeLocked) return;
     const cur = transformRef.current;
     apply({ ...cur, translateX: cur.translateX + dx, translateY: cur.translateY + dy });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 构图锁定：方向键与 +/- 缩放停用（撤销/重做保留），并阻止方向键滚动页面
+    if (
+      policy.composeLocked &&
+      ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "+", "=", "-"].includes(e.key)
+    ) {
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+        e.preventDefault();
+      }
+      return;
+    }
     const cur = transformRef.current;
     const step = e.shiftKey ? 5 : 1;
     const move = (tx: number, ty: number) => {
@@ -404,7 +432,9 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
             width={out.width}
             height={out.height}
             tabIndex={0}
-            aria-label="照片预览，可拖移调整位置"
+            aria-label={
+              policy.composeLocked ? "照片预览（构图已锁定）" : "照片预览，可拖移调整位置"
+            }
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -412,7 +442,9 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
             onKeyDown={handleKeyDown}
           />
           <p className="muted">
-            拖移调整位置，双指捏合缩放；方向键微调（Shift 大步）、+/- 缩放、Ctrl+Z 撤销。
+            {policy.composeLocked
+              ? "模板禁止调整构图：缩放、平移与方向键均已停用。"
+              : "拖移调整位置，双指捏合缩放；方向键微调（Shift 大步）、+/- 缩放、Ctrl+Z 撤销。"}
           </p>
 
           {guides.length > 0 && (
@@ -445,23 +477,47 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
 
           {/* EDT-007 / WCAG 2.5.7：拖动之外必须有等效的单点操作 */}
           <div className="nudge-pad" role="group" aria-label="平移照片">
-            <button type="button" onClick={() => nudge(0, -NUDGE_STEP)} aria-label="上移">
+            <button
+              type="button"
+              onClick={() => nudge(0, -NUDGE_STEP)}
+              aria-label="上移"
+              disabled={policy.composeLocked}
+            >
               ↑
             </button>
-            <button type="button" onClick={() => nudge(-NUDGE_STEP, 0)} aria-label="左移">
+            <button
+              type="button"
+              onClick={() => nudge(-NUDGE_STEP, 0)}
+              aria-label="左移"
+              disabled={policy.composeLocked}
+            >
               ←
             </button>
             <button
               type="button"
-              onClick={() => apply({ ...transform, translateX: 0, translateY: 0 })}
+              onClick={() => {
+                if (policy.composeLocked) return;
+                apply({ ...transform, translateX: 0, translateY: 0 });
+              }}
               aria-label="居中"
+              disabled={policy.composeLocked}
             >
               ⌾
             </button>
-            <button type="button" onClick={() => nudge(NUDGE_STEP, 0)} aria-label="右移">
+            <button
+              type="button"
+              onClick={() => nudge(NUDGE_STEP, 0)}
+              aria-label="右移"
+              disabled={policy.composeLocked}
+            >
               →
             </button>
-            <button type="button" onClick={() => nudge(0, NUDGE_STEP)} aria-label="下移">
+            <button
+              type="button"
+              onClick={() => nudge(0, NUDGE_STEP)}
+              aria-label="下移"
+              disabled={policy.composeLocked}
+            >
               ↓
             </button>
           </div>
@@ -474,8 +530,12 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
                 max={0.5}
                 step={0.01}
                 value={Math.round(transform.translateX * 100) / 100}
-                onChange={(e) => apply({ ...transform, translateX: Number(e.target.value) })}
+                onChange={(e) => {
+                  if (policy.composeLocked) return;
+                  apply({ ...transform, translateX: Number(e.target.value) });
+                }}
                 aria-label="水平位置数值"
+                disabled={policy.composeLocked}
               />
             </label>
             <label>
@@ -486,8 +546,12 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
                 max={0.5}
                 step={0.01}
                 value={Math.round(transform.translateY * 100) / 100}
-                onChange={(e) => apply({ ...transform, translateY: Number(e.target.value) })}
+                onChange={(e) => {
+                  if (policy.composeLocked) return;
+                  apply({ ...transform, translateY: Number(e.target.value) });
+                }}
                 aria-label="垂直位置数值"
+                disabled={policy.composeLocked}
               />
             </label>
           </div>
@@ -502,7 +566,11 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
                 max={MAX_SCALE}
                 step={0.05}
                 value={transform.scale}
-                onChange={(e) => apply({ ...transform, scale: Number(e.target.value) })}
+                onChange={(e) => {
+                  if (policy.composeLocked) return;
+                  apply({ ...transform, scale: Number(e.target.value) });
+                }}
+                disabled={policy.composeLocked}
               />
               <input
                 type="number"
@@ -510,8 +578,12 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
                 max={MAX_SCALE}
                 step={0.05}
                 value={Math.round(transform.scale * 100) / 100}
-                onChange={(e) => apply({ ...transform, scale: Number(e.target.value) })}
+                onChange={(e) => {
+                  if (policy.composeLocked) return;
+                  apply({ ...transform, scale: Number(e.target.value) });
+                }}
                 aria-label="缩放数值"
+                disabled={policy.composeLocked}
               />
             </label>
             <label>
@@ -522,12 +594,14 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
                 max={90}
                 step={0.5}
                 value={Math.max(-90, Math.min(90, transform.rotationDeg))}
-                onChange={(e) =>
+                onChange={(e) => {
+                  if (policy.rotateLocked) return;
                   apply({
                     ...transform,
                     rotationDeg: normalizeRotationDeg(Number(e.target.value)),
-                  })
-                }
+                  });
+                }}
+                disabled={policy.rotateLocked}
               />
               <input
                 type="number"
@@ -535,25 +609,30 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
                 max={180}
                 step={0.5}
                 value={Math.round(transform.rotationDeg * 10) / 10}
-                onChange={(e) => apply({ ...transform, rotationDeg: Number(e.target.value) })}
+                onChange={(e) => {
+                  if (policy.rotateLocked) return;
+                  apply({ ...transform, rotationDeg: Number(e.target.value) });
+                }}
                 aria-label="旋转数值"
+                disabled={policy.rotateLocked}
               />
             </label>
+            {policy.composeLockReason && <p className="warn-text">{policy.composeLockReason}</p>}
           </div>
           <div className="step-actions">
             <button
               type="button"
               onClick={() => rotate90(true)}
-              disabled={caps.rotate === "forbidden"}
-              title={caps.rotate === "forbidden" ? "模板禁止旋转" : "顺时针旋转 90°"}
+              disabled={policy.rotateLocked}
+              title={policy.rotateLocked ? "模板禁止旋转" : "顺时针旋转 90°"}
             >
               旋转 90°
             </button>
             <button
               type="button"
               onClick={toggleFlip}
-              disabled={caps.mirror === "forbidden"}
-              title={caps.mirror === "forbidden" ? "模板禁止镜像" : "水平镜像"}
+              disabled={policy.mirrorLocked}
+              title={policy.mirrorLocked ? "模板禁止镜像" : "水平镜像"}
             >
               水平镜像
             </button>
@@ -587,12 +666,7 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
               已自动放大以填满裁剪框——当前旋转角度下不放大会在成品边角留下空白。
             </p>
           )}
-          {caps.mirror === "warn" && (
-            <p className="warn-text">模板对镜像操作有警告：请核对官方规则。</p>
-          )}
-          {caps.rotate === "warn" && (
-            <p className="warn-text">模板对旋转操作有警告：请核对官方规则。</p>
-          )}
+          <PolicyNotices policy={policy} />
           <div className="step-actions">
             <button
               type="button"

@@ -5,7 +5,8 @@
  * 1. 「返回」只改变当前步骤，不销毁下游状态——从终态返回编辑、从编辑返回确认、
  *    会话内更换模板都必须能看到原来的裁剪参数与撤销栈，否则每次核对都等于
  *    从头再来一遍；换模板时变换按新模板的输出尺寸重新投影；
- * 2. 只有源照片真正被替换时，编辑状态才作废。
+ * 2. 只有源照片真正被替换时，编辑状态才作废；换到禁止调整构图的模板时
+ *    编辑状态同样作废（构图锁定不能被继承的构图绕过）。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,6 +24,7 @@ import {
 } from "../editor/edit-transform";
 import { FinalPage } from "../render/final-page";
 import { downloadReceipt } from "../render/staging-panel";
+import { editorPolicy } from "../lib/templates/policy";
 import { CaptureStep } from "./capture-step";
 import { ReviewStep } from "./review-step";
 import { SourceStep } from "./source-step";
@@ -71,6 +73,8 @@ export function CreatePage() {
   } | null>(null);
   // 换模板投影后的可见说明（role=status，渲染在确认页）
   const [templateNotice, setTemplateNotice] = useState<string | null>(null);
+  // 当前模板的来源前置约束（渲染在模板卡与「选择照片来源」步骤）
+  const sourcePolicy = selected ? editorPolicy(selected.revision) : null;
 
   // 有未保存内容才算脏：只选了模板（还没取照片）时离开不丢任何东西
   const dirty = !!source || !!editorState || staged !== null;
@@ -168,15 +172,23 @@ export function CreatePage() {
                   setStep("source");
                   return;
                 }
-                // 会话内换模板：保留照片与编辑状态，按新模板重新投影
+                const templateChanged =
+                  selected !== null && selected.revision.revisionId !== entry.revision.revisionId;
                 if (editorState !== null) {
-                  const { state, notes } = reprojectEditorState(
-                    editorState,
-                    { width: source.width, height: source.height },
-                    entry.revision,
-                  );
-                  setEditorState(state);
-                  setTemplateNotice(notes.map((n) => TEMPLATE_NOTE_TEXT[n]).join("；"));
+                  if (templateChanged && entry.revision.capabilities.crop === "forbidden") {
+                    // 新模板禁止调整构图：继承的 scale/translate 必须作废（P2 收口）
+                    setEditorState(null);
+                    setTemplateNotice("新模板禁止调整构图，裁剪已重置为默认构图。");
+                  } else {
+                    // 会话内换模板：保留照片与编辑状态，按新模板重新投影
+                    const { state, notes } = reprojectEditorState(
+                      editorState,
+                      { width: source.width, height: source.height },
+                      entry.revision,
+                    );
+                    setEditorState(state);
+                    setTemplateNotice(notes.map((n) => TEMPLATE_NOTE_TEXT[n]).join("；"));
+                  }
                 } else {
                   setTemplateNotice(null);
                 }
@@ -197,6 +209,13 @@ export function CreatePage() {
           <section aria-label="选择照片来源">
             <h2>选择照片来源</h2>
             <p className="muted">上传已有照片，或使用摄像头拍摄新照片。</p>
+            {sourcePolicy && sourcePolicy.sourceRequirements.length > 0 && (
+              <ul className="muted">
+                {sourcePolicy.sourceRequirements.map((r) => (
+                  <li key={r.id}>{r.text}</li>
+                ))}
+              </ul>
+            )}
             <div className="step-actions">
               <button
                 type="button"

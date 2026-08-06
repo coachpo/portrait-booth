@@ -56,6 +56,24 @@ function fakeTemplate(overrides: Partial<TemplateEntry["revision"]> = {}): Templ
   };
 }
 
+type Caps = TemplateEntry["revision"]["capabilities"];
+
+const BASE_CAPS: Caps = {
+  selfCapture: "allowed",
+  crop: "allowed",
+  rotate: "allowed",
+  mirror: "forbidden",
+  retouch: "forbidden",
+  backgroundReplace: "forbidden",
+  requiresOriginalCameraFile: false,
+  requiresProfessionalPhotographer: false,
+};
+
+/** capabilities 是整字段替换：按用例合并只改需要的策略 */
+function withCaps(partial: Partial<Caps>): Partial<TemplateEntry["revision"]> {
+  return { capabilities: { ...BASE_CAPS, ...partial } };
+}
+
 const source = {
   file: new File([new Uint8Array(4)], "photo.jpg", { type: "image/jpeg" }),
   format: "jpeg",
@@ -288,5 +306,50 @@ describe("EditorStep", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     expect(onDone).toHaveBeenCalledWith(state);
+  });
+});
+
+describe("capabilities 政策接入（P2）", () => {
+  it("locks the rotate inputs and guards their onChange when rotation is forbidden", () => {
+    // 回归：旋转禁令曾可被滑杆/数值框绕过——按钮灰了，输入框照样改
+    const { onDone } = renderEditor(withCaps({ rotate: "forbidden" }));
+    const number = screen.getByLabelText("旋转数值") as HTMLInputElement;
+    expect(number).toBeDisabled();
+    // jsdom 里 disabled 拦不住 fireEvent.change：回调内守卫才是真断言
+    fireEvent.change(number, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+    const state = onDone.mock.calls[0][0] as { transform: { rotationDeg: number } };
+    expect(state.transform.rotationDeg).toBe(0);
+  });
+
+  it("locks compose controls and ignores pointer drags when crop is forbidden", () => {
+    const { onDone } = renderEditor(withCaps({ crop: "forbidden" }));
+    expect(screen.getByLabelText("缩放数值")).toBeDisabled();
+    expect(screen.getByLabelText("水平位置数值")).toBeDisabled();
+    expect(screen.getByLabelText("垂直位置数值")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "右移" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下移" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "居中" })).toBeDisabled();
+    // 锁定原因（缩放控件外）与操作说明（预览下方）各有一条可见文案
+    expect(screen.getByText(/固定在默认覆盖构图/)).toBeInTheDocument();
+    expect(screen.getByText(/缩放、平移与方向键均已停用/)).toBeInTheDocument();
+
+    // 指针拖移被输入边界拦截：transform 保持初始默认构图
+    const canvas = screen.getByLabelText("照片预览（构图已锁定）");
+    fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 300, clientY: 300 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+    const state = onDone.mock.calls[0][0] as { transform: { translateX: number; scale: number } };
+    expect(state.transform.translateX).toBe(0);
+    expect(state.transform.scale).toBe(1);
+  });
+
+  it("renders distinguishable notices for retouch warn and backgroundReplace forbidden", () => {
+    renderEditor(withCaps({ retouch: "warn" }));
+    expect(screen.getByText("模板限制")).toBeInTheDocument();
+    expect(screen.getByText(/对修饰有警告/)).toBeInTheDocument();
+    expect(screen.getByText(/禁止背景替换/)).toBeInTheDocument();
+    expect(screen.getByText(/禁止镜像/)).toBeInTheDocument();
   });
 });

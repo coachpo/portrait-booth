@@ -70,6 +70,30 @@ const wideTemplate = {
   },
 } as unknown as TemplateEntry;
 
+// 前置约束模板：requires* 布尔为 true（来源步骤应显示提示）
+const restrictedTemplate = {
+  ...template,
+  revision: {
+    ...template.revision,
+    revisionId: "restricted@1",
+    capabilities: {
+      ...template.revision.capabilities,
+      requiresOriginalCameraFile: true,
+      requiresProfessionalPhotographer: true,
+    },
+  },
+} as unknown as TemplateEntry;
+
+// 构图锁定模板：crop forbidden（换模板时继承的构图必须作废）
+const lockedTemplate = {
+  ...template,
+  revision: {
+    ...template.revision,
+    revisionId: "locked@1",
+    capabilities: { ...template.revision.capabilities, crop: "forbidden" },
+  },
+} as unknown as TemplateEntry;
+
 const dispose = vi.fn();
 
 function fakeSource(): SourceImage {
@@ -95,6 +119,12 @@ vi.mock("./template-step", () => ({
       </button>
       <button type="button" onClick={() => onSelect(template)}>
         选择方形模板
+      </button>
+      <button type="button" onClick={() => onSelect(restrictedTemplate)}>
+        选择受限模板
+      </button>
+      <button type="button" onClick={() => onSelect(lockedTemplate)}>
+        选择锁定模板
       </button>
     </>
   ),
@@ -471,5 +501,22 @@ describe("会话内更换模板（P7）", () => {
     click("使用这张照片");
     expect(screen.getByText("编辑器：缩放 1.75")).toBeInTheDocument();
     expect(screen.getByText("撤销栈 1")).toBeInTheDocument();
+  });
+
+  it("shows source requirements on the source step (P2)", () => {
+    mount();
+    click("选择受限模板");
+    expect(screen.getByText(/认证摄影师拍摄/)).toBeInTheDocument();
+    expect(screen.getByText(/原始相机文件/)).toBeInTheDocument();
+  });
+
+  it("discards inherited compose when the new template forbids cropping (P2)", () => {
+    // 构图锁定不能被继承的构图绕过：换到 crop forbidden 模板必须重置
+    toReviewWithEdits("完成编辑");
+    click("更换模板");
+    click("选择锁定模板");
+    expect(screen.getByRole("status")).toHaveTextContent("新模板禁止调整构图");
+    click("使用这张照片");
+    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
   });
 });
