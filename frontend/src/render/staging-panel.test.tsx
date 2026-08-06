@@ -19,7 +19,7 @@ import { ApiError, createSaveSession, deletePhoto, savePhoto } from "../api/save
 import { fetchServicePolicy } from "../api/service-policy";
 import type { FinalArtifact } from "./final-artifact";
 import type { TemplateEntry } from "../lib/templates/types";
-import { StagingPanel } from "./staging-panel";
+import { StagingPanel, type StagingPanelProps } from "./staging-panel";
 
 const template = {
   revision: { id: "us", version: 1 },
@@ -64,8 +64,19 @@ beforeEach(() => {
   vi.mocked(createSaveSession).mockResolvedValue(undefined);
 });
 
-async function openConfirm(entry = artifact()) {
-  render(<StagingPanel artifact={entry} template={template} />);
+async function openConfirm(
+  entry = artifact(),
+  overrides: Partial<Pick<StagingPanelProps, "staged" | "stagedStale" | "onStaged">> = {},
+) {
+  render(
+    <StagingPanel
+      artifact={entry}
+      template={template}
+      staged={overrides.staged ?? null}
+      stagedStale={overrides.stagedStale ?? false}
+      onStaged={overrides.onStaged ?? vi.fn()}
+    />,
+  );
   fireEvent.click(screen.getByRole("button", { name: "暂存并生成取回码" }));
   // 政策文案来自服务端，等它落地再继续
   await screen.findByText(/30 天/);
@@ -114,6 +125,54 @@ describe("StagingPanel", () => {
     const firstKey = vi.mocked(savePhoto).mock.calls[0][3];
     const secondKey = vi.mocked(savePhoto).mock.calls[1][3];
     expect(secondKey).not.toBe(firstKey);
+  });
+
+  it("reports the staged receipt upward after a successful upload", async () => {
+    // 回执的所有权在 CreatePage：面板必须把取回码、删除密钥与幂等键回传
+    const onStaged = vi.fn();
+    vi.mocked(savePhoto).mockResolvedValue(saved);
+    await openConfirm(artifact(), { onStaged });
+
+    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    await screen.findByText("A7C 2F9");
+
+    expect(onStaged).toHaveBeenCalledTimes(1);
+    const receipt = onStaged.mock.calls[0][0];
+    expect(receipt.saved).toEqual(saved);
+    expect(receipt.idempotencyKey.length).toBeGreaterThan(0);
+  });
+
+  it("clears the staged receipt after a successful delete", async () => {
+    const onStaged = vi.fn();
+    vi.mocked(savePhoto).mockResolvedValue(saved);
+    vi.mocked(deletePhoto).mockResolvedValue(undefined);
+    await openConfirm(artifact(), { onStaged });
+
+    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    await screen.findByText("A7C 2F9");
+    fireEvent.click(screen.getByRole("button", { name: "删除照片" }));
+
+    await waitFor(() => expect(onStaged).toHaveBeenCalledTimes(2));
+    expect(onStaged.mock.calls[1][0]).toBeNull();
+  });
+
+  it("restores the done panel from a staged receipt and warns when stale", async () => {
+    // 受控化：从 props 恢复 done 态，不再发第二次上传
+    render(
+      <StagingPanel
+        artifact={artifact()}
+        template={template}
+        staged={{ saved, idempotencyKey: "restored-key" }}
+        stagedStale={true}
+        onStaged={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("A7C 2F9")).toBeInTheDocument();
+    expect(screen.getByText(/secret-value-1234567890/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /下载回执/ })).toBeInTheDocument();
+    // 回执对应的照片已改动：必须警告，且不再提供第二次暂存
+    expect(screen.getByRole("alert")).toHaveTextContent(/尚未暂存/);
+    expect(screen.queryByRole("button", { name: "暂存并生成取回码" })).toBeNull();
   });
 
   it("is not a dead end after a failed upload", async () => {

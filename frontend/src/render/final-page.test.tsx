@@ -107,6 +107,9 @@ function renderPage(onBack = vi.fn(), onRestart = vi.fn()) {
       transform={IDENTITY_TRANSFORM}
       onBack={onBack}
       onRestart={onRestart}
+      staged={null}
+      stagedStale={false}
+      onStaged={vi.fn()}
     />,
   );
 }
@@ -165,6 +168,9 @@ describe("FinalPage", () => {
         transform={IDENTITY_TRANSFORM}
         onBack={vi.fn()}
         onRestart={vi.fn()}
+        staged={null}
+        stagedStale={false}
+        onStaged={vi.fn()}
       />,
     );
     expect(await screen.findByText("35×45 毫米")).toBeInTheDocument();
@@ -204,6 +210,9 @@ describe("FinalPage", () => {
         transform={IDENTITY_TRANSFORM}
         onBack={vi.fn()}
         onRestart={vi.fn()}
+        staged={null}
+        stagedStale={false}
+        onStaged={vi.fn()}
       />,
     );
     expect(renderFinalArtifact).toHaveBeenCalledTimes(1);

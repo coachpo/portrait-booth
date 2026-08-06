@@ -5,7 +5,7 @@ import type { SourceImage } from "../image/source";
 import { entryLabel, jurisdictionName } from "../lib/templates/catalog";
 import type { TemplateEntry } from "../lib/templates/types";
 import { buildChecks, type CheckItem } from "./checks";
-import { StagingPanel } from "./staging-panel";
+import { StagingPanel, type StagedReceipt } from "./staging-panel";
 import { renderFinalArtifact, type FinalArtifact } from "./final-artifact";
 
 export interface FinalPageProps {
@@ -14,6 +14,9 @@ export interface FinalPageProps {
   transform: EditTransform;
   onBack: () => void;
   onRestart: () => void;
+  staged: StagedReceipt | null;
+  stagedStale: boolean;
+  onStaged: (receipt: StagedReceipt | null) => void;
 }
 
 function todayStamp(): string {
@@ -34,7 +37,16 @@ function physicalSizeLabel(template: TemplateEntry): string | null {
   return out.kind === "physical_raster" ? `${out.widthMm}×${out.heightMm} 毫米` : null;
 }
 
-export function FinalPage({ source, template, transform, onBack, onRestart }: FinalPageProps) {
+export function FinalPage({
+  source,
+  template,
+  transform,
+  onBack,
+  onRestart,
+  staged,
+  stagedStale,
+  onStaged,
+}: FinalPageProps) {
   const [artifact, setArtifact] = useState<FinalArtifact | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checks, setChecks] = useState<CheckItem[] | null>(null);
@@ -162,7 +174,13 @@ export function FinalPage({ source, template, transform, onBack, onRestart }: Fi
               重新开始
             </button>
           </div>
-          <StagingPanel artifact={artifact} template={template} />
+          <StagingPanel
+            artifact={artifact}
+            template={template}
+            staged={staged}
+            stagedStale={stagedStale}
+            onStaged={onStaged}
+          />
         </>
       )}
     </section>

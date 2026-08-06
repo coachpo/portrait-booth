@@ -9,10 +9,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { SaveResponse } from "../api/save";
 import type { TemplateEntry } from "../lib/templates/types";
 import type { SourceImage } from "../image/source";
 import { EditorStep } from "../editor/editor-step";
-import type { EditorState } from "../editor/edit-transform";
+import type { EditTransform, EditorState } from "../editor/edit-transform";
 import { FinalPage } from "../render/final-page";
 import { CaptureStep } from "./capture-step";
 import { ReviewStep } from "./review-step";
@@ -45,6 +46,14 @@ export function CreatePage() {
   const [sourceMode, setSourceMode] = useState<"upload" | "camera" | null>(null);
   const [source, setSource] = useState<SourceImage | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
+  // 已暂存回执（仅会话内存，不落盘）：从终态返回编辑再回来时原样恢复，
+  // 服务端不会因为这一趟多出第二张照片（§9.2 编辑状态只在会话内存）
+  const [staged, setStaged] = useState<{
+    saved: SaveResponse;
+    idempotencyKey: string;
+    source: SourceImage;
+    transform: EditTransform;
+  } | null>(null);
   const sourceRef = useRef<SourceImage | null>(null);
   const stepHeadingRef = useRef<HTMLDivElement>(null);
   const firstRender = useRef(true);
@@ -86,11 +95,20 @@ export function CreatePage() {
   }, []);
 
   const restart = useCallback(() => {
+    if (
+      staged !== null &&
+      !window.confirm(
+        "这张照片已暂存，重新开始会丢失取回码与删除密钥。请先「下载回执」；确定继续吗？",
+      )
+    ) {
+      return;
+    }
     replaceSource(null);
     setSourceMode(null);
     setSelected(null);
+    setStaged(null);
     setStep("template");
-  }, [replaceSource]);
+  }, [replaceSource, staged]);
 
   const currentGroup = groupIndexOf(step);
 
@@ -213,6 +231,21 @@ export function CreatePage() {
             transform={editorState.transform}
             onBack={() => setStep("edit")}
             onRestart={restart}
+            staged={staged}
+            stagedStale={
+              staged !== null &&
+              (staged.source !== source ||
+                staged.transform.translateX !== editorState.transform.translateX ||
+                staged.transform.translateY !== editorState.transform.translateY ||
+                staged.transform.scale !== editorState.transform.scale ||
+                staged.transform.rotationDeg !== editorState.transform.rotationDeg ||
+                staged.transform.flipX !== editorState.transform.flipX)
+            }
+            onStaged={(receipt) =>
+              receipt === null
+                ? setStaged(null)
+                : setStaged({ ...receipt, source, transform: editorState.transform })
+            }
           />
         )}
       </div>

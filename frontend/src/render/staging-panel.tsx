@@ -23,9 +23,19 @@ import {
 import type { FinalArtifact } from "./final-artifact";
 import type { TemplateEntry } from "../lib/templates/types";
 
+export interface StagedReceipt {
+  saved: SaveResponse;
+  idempotencyKey: string;
+}
+
 export interface StagingPanelProps {
   artifact: FinalArtifact;
   template: TemplateEntry;
+  /** 已暂存回执：非空时面板直接回到 done 态，不再发第二次上传 */
+  staged: StagedReceipt | null;
+  /** 回执对应的照片与当前屏幕上的成品是否已不一致 */
+  stagedStale: boolean;
+  onStaged: (receipt: StagedReceipt | null) => void;
 }
 
 type Stage =
@@ -56,14 +66,22 @@ function receiptText(saved: SaveResponse): string {
   ].join("\n");
 }
 
-export function StagingPanel({ artifact, template }: StagingPanelProps) {
-  const [stage, setStage] = useState<Stage>({ kind: "idle" });
+export function StagingPanel({
+  artifact,
+  template,
+  staged,
+  stagedStale,
+  onStaged,
+}: StagingPanelProps) {
+  const [stage, setStage] = useState<Stage>(
+    staged ? { kind: "done", saved: staged.saved } : { kind: "idle" },
+  );
   const [policy, setPolicy] = useState<ServicePolicy | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // SPEC §11 的「同一幂等键重试」：键必须跨重试保持不变，
   // 每次点击都新建一个键的话，服务端看到的永远是一次全新的保存。
-  const idempotencyKeyRef = useRef<string | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(staged?.idempotencyKey ?? null);
   // 会话 Cookie 由浏览器同源自动携带；建过就不再重建，重试才能落在同一命名空间
   const sessionReadyRef = useRef(false);
 
@@ -82,9 +100,14 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
     };
   }, []);
 
-  // 换了一张成品就是另一次保存，旧的幂等键不能再用
+  // 换了一张成品就是另一次保存，旧的幂等键不能再用；上次 id 守卫避免
+  // 每次挂载（从终态返回编辑再回来）把刚从 props 恢复的键清掉
+  const prevArtifactIdRef = useRef<string | null>(null);
   useEffect(() => {
-    idempotencyKeyRef.current = null;
+    if (prevArtifactIdRef.current !== null && prevArtifactIdRef.current !== artifact.artifactId) {
+      idempotencyKeyRef.current = null;
+    }
+    prevArtifactIdRef.current = artifact.artifactId;
   }, [artifact.artifactId]);
 
   const ensureSaveSession = async (): Promise<void> => {
@@ -108,6 +131,7 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
           idempotencyKeyRef.current,
         );
         setStage({ kind: "done", saved });
+        onStaged({ saved, idempotencyKey: idempotencyKeyRef.current });
         return;
       } catch (err) {
         const sessionExpired = err instanceof ApiError && err.code === "SESSION_REQUIRED";
@@ -133,6 +157,7 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
     try {
       await deletePhoto(saved.key, saved.deleteSecret);
       idempotencyKeyRef.current = null;
+      onStaged(null);
       setStage({ kind: "idle" });
     } catch (err) {
       // 删除失败必须留在 done 面板里报错，不能切到上传用的 error 状态：
@@ -232,6 +257,12 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
       {stage.kind === "uploading" && <p aria-live="polite">正在上传并生成取回码…</p>}
       {(stage.kind === "done" || stage.kind === "deleting") && (
         <div className="confirm-box">
+          {stagedStale && (
+            <p role="alert" className="warn-text">
+              这份取回码对应的是上一次暂存的那张照片；屏幕上的照片已改动、尚未暂存。
+              要暂存新的，请先「删除照片」。
+            </p>
+          )}
           <p>取回码（保留此页或记下取回码与删除密钥）：</p>
           <p className="key-display">
             {stage.saved.keyDisplay}
