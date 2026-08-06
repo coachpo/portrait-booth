@@ -54,6 +54,22 @@ const template = {
   },
 } as unknown as TemplateEntry;
 
+// P7 换模板夹具：宽模板 A（600×800、mirror 允许）走「选择这个模板」；
+// 原模板 B（600×600、mirror 禁止）走「选择方形模板」
+const wideTemplate = {
+  ...template,
+  revision: {
+    ...template.revision,
+    output: {
+      kind: "exact_pixels",
+      widthPx: 600,
+      heightPx: 800,
+      aspect: { width: 600, height: 800, enforcement: "mandatory", provenance: "derived" },
+    },
+    capabilities: { ...template.revision.capabilities, mirror: "allowed" },
+  },
+} as unknown as TemplateEntry;
+
 const dispose = vi.fn();
 
 function fakeSource(): SourceImage {
@@ -73,9 +89,14 @@ function fakeSource(): SourceImage {
 
 vi.mock("./template-step", () => ({
   TemplateStep: ({ onSelect }: { onSelect: (t: TemplateEntry) => void }) => (
-    <button type="button" onClick={() => onSelect(template)}>
-      选择这个模板
-    </button>
+    <>
+      <button type="button" onClick={() => onSelect(wideTemplate)}>
+        选择这个模板
+      </button>
+      <button type="button" onClick={() => onSelect(template)}>
+        选择方形模板
+      </button>
+    </>
   ),
 }));
 
@@ -100,8 +121,14 @@ vi.mock("./capture-step", () => ({
   ),
 }));
 
+const editorMockState = vi.hoisted(() => ({ lastDone: null as EditorState | null }));
+
 vi.mock("../editor/editor-step", async () => {
   const { INITIAL_EDITOR_STATE } = await import("../editor/edit-transform");
+  const finish = (s: EditorState, onDone: (s: EditorState) => void) => {
+    editorMockState.lastDone = s;
+    onDone(s);
+  };
   return {
     EditorStep: ({
       initialState,
@@ -115,18 +142,63 @@ vi.mock("../editor/editor-step", async () => {
       <>
         <p>编辑器：缩放 {initialState?.transform.scale ?? "初始"}</p>
         <p>撤销栈 {initialState?.history.undo.length ?? 0}</p>
+        <p data-testid="editor-translateX">{initialState?.transform.translateX ?? 0}</p>
+        <p data-testid="editor-flipX">{initialState?.transform.flipX ? "on" : "off"}</p>
         <button
           type="button"
           onClick={() =>
-            onDone({
-              transform: { ...INITIAL_EDITOR_STATE.transform, scale: 1.75 },
-              history: { undo: [INITIAL_EDITOR_STATE.transform], redo: [] },
-            })
+            finish(
+              {
+                transform: { ...INITIAL_EDITOR_STATE.transform, scale: 1.75 },
+                history: { undo: [INITIAL_EDITOR_STATE.transform], redo: [] },
+              },
+              onDone,
+            )
           }
         >
           完成编辑
         </button>
-        <button type="button" onClick={() => onBack(INITIAL_EDITOR_STATE)}>
+        <button
+          type="button"
+          onClick={() =>
+            finish(
+              {
+                transform: {
+                  translateX: 0.15,
+                  translateY: 0,
+                  scale: 1,
+                  rotationDeg: 0,
+                  flipX: false,
+                },
+                history: { undo: [], redo: [] },
+              },
+              onDone,
+            )
+          }
+        >
+          完成编辑带平移
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            finish(
+              {
+                transform: {
+                  ...INITIAL_EDITOR_STATE.transform,
+                  flipX: true,
+                },
+                history: { undo: [], redo: [] },
+              },
+              onDone,
+            )
+          }
+        >
+          完成编辑开镜像
+        </button>
+        <button
+          type="button"
+          onClick={() => onBack(editorMockState.lastDone ?? INITIAL_EDITOR_STATE)}
+        >
           编辑器返回
         </button>
       </>
@@ -191,6 +263,7 @@ function walkToEditor() {
 
 beforeEach(() => {
   dispose.mockClear();
+  editorMockState.lastDone = null;
 });
 
 describe("CreatePage 状态机", () => {
@@ -341,5 +414,62 @@ describe("离开创建流程的拦截（A11）", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(dispose).not.toHaveBeenCalled();
     expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+  });
+});
+
+describe("会话内更换模板（P7）", () => {
+  function toReviewWithEdits(editButton: string) {
+    walkToEditor();
+    click(editButton); // 提交一个编辑状态 → 终态
+    click("返回编辑"); // 回到编辑器，initialState 带上该状态
+    click("编辑器返回"); // 回确认页，状态经 onBack 写回
+  }
+
+  it("keeps the photo and editor state when switching templates", () => {
+    // 回归：状态机里没有换模板这条转移，想换模板只能走会 dispose 源照片的返回链
+    toReviewWithEdits("完成编辑");
+
+    click("更换模板");
+    click("选择这个模板");
+    expect(dispose).not.toHaveBeenCalled();
+
+    click("使用这张照片");
+    expect(screen.getByText("编辑器：缩放 1.75")).toBeInTheDocument();
+    expect(screen.getByText("撤销栈 1")).toBeInTheDocument();
+  });
+
+  it("reprojects the kept transform to the new output size", () => {
+    // 不投影就会把只在 600×800 下合法的平移原样带进 600×600，终态页撞越界
+    toReviewWithEdits("完成编辑带平移"); // translateX 0.15，宽模板下合法（上限约 0.1667）
+
+    click("更换模板");
+    click("选择方形模板"); // 600×600：平移必须归零
+
+    click("使用这张照片");
+    expect(screen.getByTestId("editor-translateX").textContent).toBe("0");
+  });
+
+  it("clears the mirror forbidden by the new template and shows a notice", () => {
+    // A（mirror allowed）下开镜像，切到 B（mirror forbidden）必须取消并说明
+    toReviewWithEdits("完成编辑开镜像");
+
+    click("更换模板");
+    click("选择方形模板");
+    expect(screen.getByRole("status")).toHaveTextContent("新模板禁止镜像，已取消水平镜像");
+
+    click("使用这张照片");
+    expect(screen.getByTestId("editor-flipX").textContent).toBe("off");
+  });
+
+  it("abandons the template switch without losing anything", () => {
+    toReviewWithEdits("完成编辑");
+
+    click("更换模板");
+    click("返回（保留当前模板）");
+    expect(dispose).not.toHaveBeenCalled();
+
+    click("使用这张照片");
+    expect(screen.getByText("编辑器：缩放 1.75")).toBeInTheDocument();
+    expect(screen.getByText("撤销栈 1")).toBeInTheDocument();
   });
 });

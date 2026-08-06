@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { applyTransform, type Transform2D } from "../image/exif";
+import type { TemplateRevision } from "../lib/templates/types";
 import {
+  EditorState,
+  reprojectEditorState,
   clampTranslation,
   coverScale,
   fitTransform,
@@ -255,5 +258,112 @@ describe("fitTransform", () => {
 
   it("keeps a valid transform unchanged", () => {
     expect(fitTransform(IDENTITY_TRANSFORM, TIGHT_SRC, TIGHT_OUT)).toEqual(IDENTITY_TRANSFORM);
+  });
+});
+
+describe("reprojectEditorState", () => {
+  const SRC_1200 = { width: 1200, height: 1200 };
+
+  function rev(
+    width: number,
+    height: number,
+    mirror: "allowed" | "forbidden",
+    rotate: "allowed" | "forbidden" = "allowed",
+  ): TemplateRevision {
+    return {
+      revisionId: "t@1",
+      id: "t",
+      version: 1,
+      schemaVersion: 1,
+      label: { zh: "测试" },
+      jurisdiction: "XX",
+      documentType: "id",
+      submissionChannel: "digital_upload",
+      applicantClass: "adult",
+      sources: [],
+      output: {
+        kind: "exact_pixels",
+        widthPx: width,
+        heightPx: height,
+        aspect: { width, height, enforcement: "mandatory", provenance: "derived" },
+      },
+      cropRules: [],
+      captureRules: [],
+      overlay: { kind: "none", ruleIds: [] },
+      capabilities: {
+        selfCapture: "allowed",
+        crop: "allowed",
+        rotate,
+        mirror,
+        retouch: "forbidden",
+        backgroundReplace: "forbidden",
+        requiresOriginalCameraFile: false,
+        requiresProfessionalPhotographer: false,
+      },
+      sourceNotes: {},
+    } as unknown as TemplateRevision;
+  }
+
+  it("refits translation to the new output size", () => {
+    const square = rev(600, 600, "forbidden");
+    const state: EditorState = {
+      transform: { translateX: 0.15, translateY: 0, scale: 1, rotationDeg: 0, flipX: false },
+      history: { undo: [], redo: [] },
+    };
+    // 对照组：原变换在宽模板下确实合法（translateX 上限约 0.1667）
+    expect(isValidTransform(state.transform, SRC_1200, { width: 600, height: 800 })).toBe(true);
+
+    const { state: next, notes } = reprojectEditorState(state, SRC_1200, square);
+    expect(next.transform.translateX).toBeCloseTo(0, 5);
+    expect(next.transform.translateY).toBeCloseTo(0, 5);
+    expect(isValidTransform(next.transform, SRC_1200, { width: 600, height: 600 })).toBe(true);
+    expect(notes).toContain("refit");
+    expect(notes).not.toContain("reset");
+  });
+
+  it("clears mirror and rotation forbidden by the new template", () => {
+    const forbidden = rev(600, 600, "forbidden", "forbidden");
+    const state: EditorState = {
+      transform: { translateX: 0, translateY: 0, scale: 1, rotationDeg: 90, flipX: true },
+      history: { undo: [], redo: [] },
+    };
+    const { state: next, notes } = reprojectEditorState(state, SRC_1200, forbidden);
+    expect(next.transform.flipX).toBe(false);
+    expect(next.transform.rotationDeg).toBe(0);
+    expect(notes).toContain("mirror-cleared");
+    expect(notes).toContain("rotation-cleared");
+  });
+
+  it("projects every history entry and keeps stack length", () => {
+    const square = rev(600, 600, "forbidden");
+    const undo = [
+      { translateX: 0.15, translateY: 0, scale: 1, rotationDeg: 0, flipX: true },
+      { translateX: 0, translateY: 0, scale: 1, rotationDeg: 0, flipX: false },
+    ];
+    const state: EditorState = {
+      transform: undo[0],
+      history: { undo, redo: [undo[1]] },
+    };
+    const { state: next } = reprojectEditorState(state, SRC_1200, square);
+    expect(next.history.undo).toHaveLength(2);
+    expect(next.history.redo).toHaveLength(1);
+    for (const t of [...next.history.undo, ...next.history.redo]) {
+      expect(isValidTransform(t, SRC_1200, { width: 600, height: 600 })).toBe(true);
+      expect(t.flipX).toBe(false); // 镜像一并归一化
+    }
+  });
+
+  it("leaves the transform untouched for portal templates", () => {
+    const portal = {
+      ...rev(600, 600, "allowed"),
+      output: { kind: "guidance_only" },
+    } as unknown as TemplateRevision;
+    const state: EditorState = {
+      transform: { translateX: 0.2, translateY: -0.1, scale: 2, rotationDeg: 30, flipX: true },
+      history: { undo: [], redo: [] },
+    };
+    const { state: next, notes } = reprojectEditorState(state, SRC_1200, portal);
+    expect(next.transform).toEqual(state.transform);
+    expect(notes).toEqual([]);
   });
 });

@@ -22,6 +22,10 @@ export interface ReviewStepProps {
   onConfirm: () => void;
   onRetake: () => void;
   onBack: () => void;
+  /** 会话内更换模板：保留照片与编辑状态 */
+  onChangeTemplate: () => void;
+  /** 换模板投影产生的可见说明（role=status） */
+  notice?: string | null;
 }
 
 export function ReviewStep({
@@ -31,6 +35,8 @@ export function ReviewStep({
   onConfirm,
   onRetake,
   onBack,
+  onChangeTemplate,
+  notice,
 }: ReviewStepProps) {
   // 源图自带 previewUrl 时直接用；否则临时造一个，并在源切换时释放
   const previewUrl = useMemo(() => source.previewUrl ?? URL.createObjectURL(source.file), [source]);
@@ -60,6 +66,12 @@ export function ReviewStep({
       <div className="source-preview">
         <img src={previewUrl} alt="待确认的照片" />
       </div>
+
+      {notice && (
+        <p role="status" className="muted">
+          {notice}
+        </p>
+      )}
 
       <dl className="final-details">
         <div>
@@ -108,6 +120,9 @@ export function ReviewStep({
         </button>
         <button type="button" onClick={onBack}>
           返回上一步
+        </button>
+        <button type="button" onClick={onChangeTemplate}>
+          更换模板
         </button>
       </div>
     </section>

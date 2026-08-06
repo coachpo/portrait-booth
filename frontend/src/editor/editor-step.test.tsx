@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TemplateEntry } from "../lib/templates/types";
 import type { SourceImage } from "../image/source";
+import { IDENTITY_TRANSFORM, type EditorState } from "./edit-transform";
 import { EditorStep } from "./editor-step";
 
 function fakeTemplate(overrides: Partial<TemplateEntry["revision"]> = {}): TemplateEntry {
@@ -265,5 +266,27 @@ describe("EditorStep", () => {
         transform: expect.objectContaining({ scale: 1, rotationDeg: 0 }),
       }),
     );
+  });
+
+  it("passes the restored initialState through for portal templates (P7)", () => {
+    // 会话内换模板后带着外来编辑状态回到 !out 分支：继续不能再硬写 INITIAL
+    const state: EditorState = {
+      transform: { ...IDENTITY_TRANSFORM, scale: 2, flipX: true },
+      history: { undo: [IDENTITY_TRANSFORM], redo: [] },
+    };
+    const onDone = vi.fn();
+    render(
+      <EditorStep
+        source={source}
+        template={fakeTemplate({
+          output: { kind: "portal_source", officialPortalPerformsCrop: true },
+        })}
+        initialState={state}
+        onDone={onDone}
+        onBack={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(onDone).toHaveBeenCalledWith(state);
   });
 });

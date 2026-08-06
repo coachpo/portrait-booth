@@ -225,6 +225,74 @@ export const INITIAL_EDITOR_STATE: EditorState = {
   history: { undo: [], redo: [] },
 };
 
+export type ReprojectNote = "refit" | "reset" | "mirror-cleared" | "rotation-cleared";
+
+function sameTransform(a: EditTransform, b: EditTransform): boolean {
+  return (
+    a.translateX === b.translateX &&
+    a.translateY === b.translateY &&
+    a.scale === b.scale &&
+    a.rotationDeg === b.rotationDeg &&
+    a.flipX === b.flipX
+  );
+}
+
+/**
+ * 换模板投影（SPEC:95「更换模板必须重新计算裁剪…不可静默沿用不兼容变换」）。
+ * 固定顺序：按新模板 capabilities 归一化 → fitTransform 重新适配输出尺寸 →
+ * 仍不合法则回落 IDENTITY_TRANSFORM；history 每一项走同一条流水线，栈长度不变。
+ */
+export function reprojectEditorState(
+  state: EditorState,
+  src: Rect,
+  rev: TemplateRevision,
+): { state: EditorState; notes: ReprojectNote[] } {
+  const notes: ReprojectNote[] = [];
+  const normalize = (t: EditTransform): EditTransform => {
+    const next = { ...t };
+    if (rev.capabilities.mirror === "forbidden") next.flipX = false;
+    if (rev.capabilities.rotate === "forbidden") next.rotationDeg = 0;
+    return next;
+  };
+  const out = outputSize(rev);
+  const project = (t: EditTransform): EditTransform => {
+    const next = normalize(t);
+    if (out === null) return next;
+    const fitted = fitTransform(next, src, out);
+    return isValidTransform(fitted, src, out) ? fitted : { ...IDENTITY_TRANSFORM };
+  };
+
+  let transform = normalize(state.transform);
+  if (state.transform.flipX && rev.capabilities.mirror === "forbidden") {
+    notes.push("mirror-cleared");
+  }
+  if (state.transform.rotationDeg !== 0 && rev.capabilities.rotate === "forbidden") {
+    notes.push("rotation-cleared");
+  }
+  if (out !== null) {
+    const fitted = fitTransform(transform, src, out);
+    if (!sameTransform(fitted, transform)) {
+      transform = fitted;
+      notes.push("refit");
+    }
+    if (!isValidTransform(transform, src, out)) {
+      transform = { ...IDENTITY_TRANSFORM };
+      notes.push("reset");
+    }
+  }
+
+  return {
+    state: {
+      transform,
+      history: {
+        undo: state.history.undo.map(project),
+        redo: state.history.redo.map(project),
+      },
+    },
+    notes,
+  };
+}
+
 /** 剪辑旋转到 ±360°，方便撤销栈比较。 */
 export function normalizeRotationDeg(deg: number): number {
   let d = deg % 360;

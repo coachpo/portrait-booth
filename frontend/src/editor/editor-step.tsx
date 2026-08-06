@@ -127,7 +127,13 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
   );
   const [history, setHistory] = useState<History>(initialState?.history ?? { undo: [], redo: [] });
   const [autoScaled, setAutoScaled] = useState(false);
-  const [outOfBounds, setOutOfBounds] = useState(false);
+  // 带外来 transform 挂载（会话内换模板后回到编辑）时，越界护栏也要在挂载时求值一次
+  const [outOfBounds, setOutOfBounds] = useState(() => {
+    if (out === null) return false;
+    const t = initialState?.transform;
+    if (!t) return false;
+    return !isValidTransform(t, { width: source.width, height: source.height }, out);
+  });
   const [showOverlay, setShowOverlay] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
@@ -264,7 +270,11 @@ export function EditorStep({ source, template, initialState, onDone, onBack }: E
           模板「{entryLabel(template, "zh")}」由官方门户处理裁剪，无需本地编辑。
         </p>
         <div className="step-actions">
-          <button type="button" className="primary" onClick={() => onDone(INITIAL_EDITOR_STATE)}>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => onDone(initialState ?? INITIAL_EDITOR_STATE)}
+          >
             继续
           </button>
           <button type="button" onClick={() => onBack(INITIAL_EDITOR_STATE)}>

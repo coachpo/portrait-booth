@@ -2,8 +2,9 @@
  * 创建流程的状态机。
  *
  * 两条不变式：
- * 1. 「返回」只改变当前步骤，不销毁下游状态——从终态返回编辑、从编辑返回确认
- *    都必须能看到原来的裁剪参数与撤销栈，否则每次核对都等于从头再来一遍；
+ * 1. 「返回」只改变当前步骤，不销毁下游状态——从终态返回编辑、从编辑返回确认、
+ *    会话内更换模板都必须能看到原来的裁剪参数与撤销栈，否则每次核对都等于
+ *    从头再来一遍；换模板时变换按新模板的输出尺寸重新投影；
  * 2. 只有源照片真正被替换时，编辑状态才作废。
  */
 
@@ -14,7 +15,12 @@ import type { SaveResponse } from "../api/save";
 import type { TemplateEntry } from "../lib/templates/types";
 import type { SourceImage } from "../image/source";
 import { EditorStep } from "../editor/editor-step";
-import type { EditTransform, EditorState } from "../editor/edit-transform";
+import {
+  reprojectEditorState,
+  type EditTransform,
+  type EditorState,
+  type ReprojectNote,
+} from "../editor/edit-transform";
 import { FinalPage } from "../render/final-page";
 import { downloadReceipt } from "../render/staging-panel";
 import { CaptureStep } from "./capture-step";
@@ -42,6 +48,13 @@ function groupIndexOf(step: Step): number {
   return STEP_GROUPS.findIndex((g) => g.steps.includes(step));
 }
 
+const TEMPLATE_NOTE_TEXT: Record<ReprojectNote, string> = {
+  refit: "模板输出尺寸变化，裁剪参数已重新适配",
+  "mirror-cleared": "新模板禁止镜像，已取消水平镜像",
+  "rotation-cleared": "新模板禁止旋转，已取消旋转",
+  reset: "无法在新尺寸下保留原裁剪，已重置",
+};
+
 export function CreatePage() {
   const [step, setStep] = useState<Step>("template");
   const [selected, setSelected] = useState<TemplateEntry | null>(null);
@@ -56,6 +69,8 @@ export function CreatePage() {
     source: SourceImage;
     transform: EditTransform;
   } | null>(null);
+  // 换模板投影后的可见说明（role=status，渲染在确认页）
+  const [templateNotice, setTemplateNotice] = useState<string | null>(null);
 
   // 有未保存内容才算脏：只选了模板（还没取照片）时离开不丢任何东西
   const dirty = !!source || !!editorState || staged !== null;
@@ -144,12 +159,38 @@ export function CreatePage() {
       {/* tabIndex=-1 容器只用于步骤切换后的焦点落点，不进 Tab 序列 */}
       <div ref={stepHeadingRef} tabIndex={-1}>
         {step === "template" && (
-          <TemplateStep
-            onSelect={(entry) => {
-              setSelected(entry);
-              setStep("source");
-            }}
-          />
+          <>
+            <TemplateStep
+              onSelect={(entry) => {
+                setSelected(entry);
+                if (source === null) {
+                  // 首次选模板：还没有照片，照旧进来源选择
+                  setStep("source");
+                  return;
+                }
+                // 会话内换模板：保留照片与编辑状态，按新模板重新投影
+                if (editorState !== null) {
+                  const { state, notes } = reprojectEditorState(
+                    editorState,
+                    { width: source.width, height: source.height },
+                    entry.revision,
+                  );
+                  setEditorState(state);
+                  setTemplateNotice(notes.map((n) => TEMPLATE_NOTE_TEXT[n]).join("；"));
+                } else {
+                  setTemplateNotice(null);
+                }
+                setStep("review");
+              }}
+            />
+            {source !== null && (
+              <div className="step-actions">
+                <button type="button" onClick={() => setStep("review")}>
+                  返回（保留当前模板）
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {step === "source" && selected && (
@@ -221,6 +262,8 @@ export function CreatePage() {
               replaceSource(null);
               setStep("source");
             }}
+            onChangeTemplate={() => setStep("template")}
+            notice={templateNotice}
           />
         )}
 
