@@ -35,7 +35,7 @@ Never commit credentials, private media, or local environment files. Provide san
 
 - [项目状态](STATUS.md)
 - [文档索引](docs/README.md)
-- [产品说明](docs/product.md)
+- [产品说明](docs/PRODUCT.md)
 - [架构说明](docs/架构说明.md)
 - [开发规范](docs/开发规范.md)
 - [源代码规模与职责规则](docs/源代码规模与职责规则.md)

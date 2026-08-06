@@ -2,7 +2,28 @@
 
 ## 当前开发状态
 
-仓库目前只有文档，没有应用依赖、开发服务器、测试框架或构建工具。引入首个工具链的变更必须同时提供稳定命令，并更新本文件、[README](README.md)和[架构说明](docs/架构说明.md)。
+仓库为 monorepo，包含 `frontend/`（Vite + React + TypeScript）、`backend/`（FastAPI + SQLite + 本地磁盘存储）与 `templates/`（版本化模板数据）。开发、测试、检查与构建命令均已建立并在 CI 中运行。
+
+## 稳定命令
+
+```sh
+# 前端（工作目录 frontend/）
+npm install                # 安装依赖
+npm run dev                # 开发服务器（端口 5173，/api 代理到 8000）
+npm run build              # 类型检查 + 生产构建到 dist/
+npm test                   # Vitest 单元测试
+npm run lint               # ESLint
+npm run format:check       # Prettier 检查
+
+# 后端（工作目录 backend/，使用 uv）
+uv sync --extra dev        # 安装依赖（含 dev）
+uv run uvicorn app.main:app --reload   # 开发服务器（端口 8000）
+uv run pytest              # pytest 测试
+uv run ruff check .        # 静态检查
+
+# 全栈（根目录）
+docker compose up --build  # 构建并启动前后端容器
+```
 
 ## 当前可用检查
 
@@ -11,14 +32,12 @@ git status --short
 git diff --check
 ```
 
-当前没有可验证的安装、开发启动、测试或构建命令。
-
 ## 开发工作流
 
-1. 阅读[产品说明](docs/product.md)、[项目状态](STATUS.md)、[架构说明](docs/架构说明.md)和[开发规范](docs/开发规范.md)。
+1. 阅读[产品说明](docs/PRODUCT.md)、[项目状态](STATUS.md)、[架构说明](docs/架构说明.md)和[开发规范](docs/开发规范.md)。
 2. 确认需求范围、模块职责、数据边界和验收条件后再修改。
 3. 采用满足当前需求的最小实现；新行为添加自动化测试，缺陷修复添加回归用例。
-4. 运行当前工具链提供的全部适用测试、静态检查、格式检查和构建；工具链尚未建立时至少运行上面的仓库检查。
+4. 运行当前工具链提供的全部适用测试、静态检查、格式检查和构建。
 5. 同步更新唯一权威文档，复核工作区只包含本次变更。
 
 项目特有技术规则见[开发规范](docs/开发规范.md)，组件职责与依赖方向见[架构说明](docs/架构说明.md)，长文件和职责拆分见[源代码规模与职责规则](docs/源代码规模与职责规则.md)。
