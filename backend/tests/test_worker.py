@@ -6,10 +6,13 @@ compose 也没有第二个服务，`if __name__ == "__main__"` 永远不会被�
 """
 
 import asyncio
+import time
 
 import pytest
 
 from app import worker
+from app.config import get_settings
+from app.db import connect, init_schema
 
 
 class TestInlineWorkerSwitch:
@@ -74,3 +77,139 @@ class TestLifecycleWorker:
 
         asyncio.run(scenario())
         assert finished == ["clean"]
+
+
+class TestRunOnceCleanup:
+    """第一次端到端执行 run_once()：三类记录随清理循环删除（O5）。"""
+
+    def test_run_once_purges_expired_idempotency_records(self):
+        init_schema(get_settings().db_path)
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        conn = connect(get_settings().db_path)
+        conn.execute(
+            "INSERT INTO save_idempotency_records("
+            "anonymous_save_session_digest, idempotency_key_digest, request_digest, "
+            "status, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (
+                "old-session",
+                "old-key",
+                None,
+                "completed",
+                "2020-01-01T00:00:00Z",
+                "2020-01-01T00:00:00Z",
+            ),
+        )
+        conn.execute(
+            "INSERT INTO save_idempotency_records("
+            "anonymous_save_session_digest, idempotency_key_digest, request_digest, "
+            "status, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            ("new-session", "new-key", None, "processing", now, now),
+        )
+        conn.commit()
+        conn.close()
+
+        worker.run_once()
+
+        conn = connect(get_settings().db_path)
+        try:
+            left = conn.execute(
+                "SELECT anonymous_save_session_digest FROM save_idempotency_records"
+            ).fetchall()
+        finally:
+            conn.close()
+        assert [r["anonymous_save_session_digest"] for r in left] == ["new-session"]
+
+    def test_run_once_purges_consumed_and_expired_grants(self):
+        init_schema(get_settings().db_path)
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        conn = connect(get_settings().db_path)
+        # A 已消费；B 未消费但已过期；C 未消费且未过期
+        for token, consumed, expires in (
+            ("token-a", now, now),
+            ("token-b", None, "2020-01-01T00:00:00Z"),
+            ("token-c", None, "2099-01-01T00:00:00Z"),
+        ):
+            conn.execute(
+                "INSERT INTO download_grants(token_digest, token_digest_version, photo_id, "
+                "purpose, revocation_epoch, expires_at, consumed_at) VALUES (?,?,?,?,?,?,?)",
+                (token, 1, "ph-1", "download", 0, expires, consumed),
+            )
+        conn.commit()
+        conn.close()
+
+        worker.run_once()
+
+        conn = connect(get_settings().db_path)
+        try:
+            left = conn.execute("SELECT token_digest FROM download_grants").fetchall()
+        finally:
+            conn.close()
+        assert [r["token_digest"] for r in left] == ["token-c"]
+
+    def test_run_once_purges_purged_photo_records_but_keeps_revoked(self):
+        init_schema(get_settings().db_path)
+        conn = connect(get_settings().db_path)
+        # purged 行：key_registry 已退役（photo_id=NULL），purged_at 非空
+        conn.execute(
+            "INSERT INTO key_registry(key_fingerprint, state, issued_at, photo_id) "
+            "VALUES (?,?,?,?)",
+            ("fp-purged", "retired", "2026-01-01T00:00:00Z", None),
+        )
+        # access-revoked 行：expires_at 在将来、purge_due_at 留空，
+        # 否则排在前面的 purge_expired/purge_due 会先把它推进成 purged
+        conn.execute(
+            "INSERT INTO key_registry(key_fingerprint, state, issued_at, photo_id) "
+            "VALUES (?,?,?,?)",
+            ("fp-revoked", "active", "2026-01-01T00:00:00Z", "ph-revoked"),
+        )
+        for photo_id, fp, status, expires, purged_at in (
+            ("ph-purged", "fp-purged", "purged", "2020-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+            ("ph-revoked", "fp-revoked", "access-revoked", "2099-01-01T00:00:00Z", None),
+        ):
+            conn.execute(
+                "INSERT INTO photo_records(id, key_fingerprint, retrieval_mode, "
+                "security_policy_version, delete_digest, delete_digest_version, object_key, "
+                "template_id, template_version, template_revision_id, template_content_hash, "
+                "mime, width_px, height_px, byte_length, object_integrity_mac, status, "
+                "revocation_epoch, created_at, expires_at, purge_due_at, purged_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    photo_id,
+                    fp,
+                    "key_only_ephemeral",
+                    1,
+                    "digest",
+                    1,
+                    f"obj-{photo_id}",
+                    "fi-police-digital",
+                    1,
+                    "fi@1",
+                    "hash",
+                    "image/jpeg",
+                    500,
+                    653,
+                    1000,
+                    "mac",
+                    status,
+                    0,
+                    "2026-01-01T00:00:00Z",
+                    expires,
+                    None,
+                    purged_at,
+                ),
+            )
+        conn.commit()
+        conn.close()
+
+        worker.run_once()
+
+        conn = connect(get_settings().db_path)
+        try:
+            left = conn.execute("SELECT id FROM photo_records").fetchall()
+            retired = conn.execute(
+                "SELECT COUNT(*) AS n FROM key_registry WHERE state='retired'"
+            ).fetchone()["n"]
+        finally:
+            conn.close()
+        assert [r["id"] for r in left] == ["ph-revoked"]
+        assert retired == 1

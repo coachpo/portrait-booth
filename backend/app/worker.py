@@ -15,6 +15,7 @@ import time
 
 from .config import get_settings
 from .db import connect, init_schema
+from .save_service import purge_expired_idempotency
 from .storage import Storage
 
 
@@ -99,6 +100,35 @@ def sweep_orphans(
     return storage.sweep_orphans(known, min_age_seconds=min_age_seconds)
 
 
+def purge_consumed_grants(conn: sqlite3.Connection, now: str | None = None) -> int:
+    """删除已消费或已过期的下载凭证（SPEC:740：最长 60 秒或首次原子消费后删除）。
+
+    retrievals.py 对「行不存在」与「已消费」返回完全相同的响应，物理删除对外
+    不可观察。
+    """
+    now = now or _now()
+    cur = conn.execute(
+        "DELETE FROM download_grants WHERE consumed_at IS NOT NULL OR expires_at <= ?",
+        (now,),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def purge_purged_photo_records(conn: sqlite3.Connection) -> int:
+    """删除已确认物理清除的照片元数据行（SPEC:738：清除确认后删除关联记录）。
+
+    只删 status='purged' 的行：purge_photo 先调 storage.delete，只有没抛异常
+    才会置 purged，所以行到达 purged 就意味着字节已不在盘上；sweep_orphans
+    把 photo_records.object_key 全集当作已知引用，删 'purging'/'access-revoked'
+    会把盘上尚存的对象变成孤儿。key_registry 的 retired 行是审计要求（SPEC:739），
+    不删。
+    """
+    cur = conn.execute("DELETE FROM photo_records WHERE status='purged' AND purged_at IS NOT NULL")
+    conn.commit()
+    return cur.rowcount
+
+
 def run_once() -> int:
     cfg = get_settings()
     init_schema(cfg.db_path)
@@ -108,6 +138,11 @@ def run_once() -> int:
         purged = purge_expired(conn, storage)
         purged += purge_due(conn, storage)
         swept = sweep_orphans(conn, storage)
+        # 三类记录清理必须排在照片清理之后：前面的 purge_photo 是多语句序列、
+        # 统一 commit，插在中间会把半个 purge 提前提交（坑 5）
+        purge_expired_idempotency(conn, time.time(), cfg.idempotency_window_seconds)
+        purge_consumed_grants(conn)
+        purge_purged_photo_records(conn)
         return purged + swept
     finally:
         conn.close()

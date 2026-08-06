@@ -182,6 +182,38 @@ class TestIdempotencyLease:
         finally:
             conn.close()
 
+    def test_lease_row_purged_mid_save_still_replays_once(self, client, monkeypatch):
+        """O5：租约行被后台清理删掉后，完成的保存仍留下可重放的 completed 记录。"""
+        import app.save_service as save_service
+
+        real = save_service.validate_and_reencode
+
+        def hook(data, **kwargs):
+            result = real(data, **kwargs)
+            # 模拟保存进行中（_acquire_lease 已提交）租约行被清理循环删除
+            conn = connect(get_settings().db_path)
+            conn.execute("DELETE FROM save_idempotency_records")
+            conn.commit()
+            conn.close()
+            return result
+
+        monkeypatch.setattr(save_service, "validate_and_reencode", hook)
+        cookie = new_session(client)
+        first = post_save(client, cookie, "o5-lease-key-0000000001")
+        assert first.status_code == 201, first.text
+        replay = post_save(client, cookie, "o5-lease-key-0000000001")
+        assert replay.status_code == 201, replay.text
+        conn = connect(get_settings().db_path)
+        try:
+            count = conn.execute("SELECT COUNT(*) AS n FROM photo_records").fetchone()["n"]
+            completed = conn.execute(
+                "SELECT COUNT(*) AS n FROM save_idempotency_records WHERE status='completed'"
+            ).fetchone()["n"]
+        finally:
+            conn.close()
+        assert count == 1, "同键重放不应再建第二张照片"
+        assert completed == 1
+
 
 class TestSameOrigin:
     def test_rejects_a_cross_origin_save_session(self, client):

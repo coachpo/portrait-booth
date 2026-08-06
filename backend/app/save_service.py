@@ -224,12 +224,20 @@ def _do_save(
             "UPDATE key_registry SET state='active', photo_id=? WHERE key_fingerprint=?",
             (photo_id, fingerprint),
         )
-        # 租约在 _acquire_lease 里已经写好了，这里只把它推进到 completed
+        # 租约在 _acquire_lease 里已经写好了，这里把它推进到 completed。
+        # upsert（O5）：后台清理可能已把租约行删掉（created_at 不刷新），普通
+        # UPDATE 会匹配 0 行——完成的保存必须留下可重放的 completed 记录，
+        # 否则同键重试会再建一张照片和一个 KEY。
         conn.execute(
-            "UPDATE save_idempotency_records SET status='completed', photo_id=?, "
-            "encrypted_response_envelope=?, request_digest=?, updated_at=? "
-            "WHERE anonymous_save_session_digest=? AND idempotency_key_digest=?",
-            (photo_id, encrypted, req_d, _iso(now_ts), session_d, idem_d),
+            "INSERT INTO save_idempotency_records("
+            "anonymous_save_session_digest, idempotency_key_digest, request_digest, "
+            "status, photo_id, encrypted_response_envelope, created_at, updated_at) "
+            "VALUES (?,?,?,'completed',?,?,?,?) "
+            "ON CONFLICT(anonymous_save_session_digest, idempotency_key_digest) "
+            "DO UPDATE SET status='completed', photo_id=excluded.photo_id, "
+            "encrypted_response_envelope=excluded.encrypted_response_envelope, "
+            "request_digest=excluded.request_digest, updated_at=excluded.updated_at",
+            (session_d, idem_d, req_d, photo_id, encrypted, _iso(now_ts), _iso(now_ts)),
         )
         conn.commit()
     except BaseException:
@@ -343,7 +351,10 @@ def purge_expired_idempotency(conn: sqlite3.Connection, now_ts: float, window: i
     envelope 里是明文 KEY 与删除密钥的密文，长期保留等于让它们无限期可重放。
     """
     cutoff = _iso(now_ts - window)
-    cursor = conn.execute("DELETE FROM save_idempotency_records WHERE created_at <= ?", (cutoff,))
+    cursor = conn.execute(
+        "DELETE FROM save_idempotency_records WHERE created_at <= ? AND updated_at <= ?",
+        (cutoff, cutoff),
+    )
     conn.commit()
     return cursor.rowcount
 

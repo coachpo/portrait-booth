@@ -101,5 +101,8 @@ def get_settings() -> Settings:
         orphan_min_age_seconds=_env_int(
             "PORTRAIT_ORPHAN_MIN_AGE_SECONDS", Settings.orphan_min_age_seconds
         ),
+        idempotency_window_seconds=_env_int(
+            "PORTRAIT_IDEMPOTENCY_WINDOW_SECONDS", Settings.idempotency_window_seconds
+        ),
         require_same_origin=_env_str("PORTRAIT_REQUIRE_SAME_ORIGIN", "1") != "0",
     )

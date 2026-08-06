@@ -30,6 +30,12 @@ class TestSettingsAreNotFrozenAtImport:
         monkeypatch.setenv("PORTRAIT_TTL_SECONDS", "600")
         assert get_settings().temporary_storage_ttl_seconds == 600
 
+    def test_idempotency_window_follows_environment(self, monkeypatch):
+        monkeypatch.setenv("PORTRAIT_IDEMPOTENCY_WINDOW_SECONDS", "60")
+        assert get_settings().idempotency_window_seconds == 60
+        monkeypatch.delenv("PORTRAIT_IDEMPOTENCY_WINDOW_SECONDS", raising=False)
+        assert get_settings().idempotency_window_seconds == 600
+
     def test_invalid_numeric_setting_is_rejected(self, monkeypatch):
         monkeypatch.setenv("PORTRAIT_TTL_SECONDS", "not-a-number")
         with pytest.raises(ConfigError):

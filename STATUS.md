@@ -49,7 +49,7 @@ SPEC §4.4 正文提到把推理放进 Worker，但 GDE-001~010 的验收表没�
 - 上传未流式处理：整份 multipart 先读进内存再校验大小；保存端点无限速。
 - 取回响应没有恒定处理时间（SAV-008 / §6.5 的差分计时验收）。
 - 图片验证接受带尾随数据的 polyglot，解码未沙箱化、无 CPU/时间预算。
-- 已消费的下载凭证与 purged 后的照片元数据仍无限保留（幂等记录的清理函数已就绪但未接入定时任务）。
+- 已消费/已过期的下载凭证、purged 后的照片元数据行与超过幂等窗口的幂等记录随进程内清理循环删除（延迟最多一个清理间隔；清理间隔默认 300 秒）。窗口期内的幂等重放仍返回同一 envelope；`PORTRAIT_IDEMPOTENCY_WINDOW_SECONDS` 可调窗口。
 - §5.3 模板治理自动化（reviewDueAt SLA 告警、validUntil 到期、链接检查）只有 CLI 工具链，未接入运行期告警；导出/暂存前重新确认 publication 也未实现。目录缓存已改为 `must-revalidate` 且内容改动会自动失效，紧急停用信号能生效。
 - 目录 API 的服务端筛选参数（jurisdiction/documentType/channel/applicantClass 与 `all` 回退）未实现，筛选仍在客户端完成。
 - 姿态模型没有「不加载模型」的手动路径与初始化前披露。
