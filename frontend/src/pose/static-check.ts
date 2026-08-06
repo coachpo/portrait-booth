@@ -4,7 +4,7 @@
  */
 
 import { analyzeQuality, type QualityResult, type StaticBitmapSource } from "./quality";
-import { createLandmarkerClient } from "./landmarker";
+import { acquireImageLandmarker } from "./landmarker";
 import { PoseTracker, type PoseState } from "./tracking";
 
 export interface StaticCheckResult {
@@ -20,14 +20,12 @@ export async function runStaticCheck(bitmap: StaticBitmapSource): Promise<Static
   let pose: PoseState | null = null;
   let poseAvailable = false;
   try {
-    const client = await createLandmarkerClient();
-    try {
-      const faces = await client.detectStatic(bitmap);
-      poseAvailable = true;
-      pose = new PoseTracker().update(faces, 0);
-    } finally {
-      client.close();
-    }
+    // 独立的 IMAGE 实例：VIDEO 模式带跨帧 ROI 回环，复用它会把最后一帧预览的
+    // ROI 先验带进复检，与 GDE-005「不使用最后一次预览推理的旧结果」冲突。
+    const landmarker = await acquireImageLandmarker();
+    const faces = landmarker.detectImage(bitmap);
+    poseAvailable = true;
+    pose = new PoseTracker().update(faces, 0);
   } catch {
     // GDE-006：模型失败只关闭自动指导
   }

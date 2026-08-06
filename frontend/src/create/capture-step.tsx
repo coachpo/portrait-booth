@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { entryLabel } from "../lib/templates/catalog";
 import type { TemplateEntry } from "../lib/templates/types";
 import { loadSourceImage, sourceErrorMessage, type SourceImage } from "../image/source";
 import {
+  attachStream,
   cameraErrorMessage,
   captureStill,
+  checkCameraSupport,
   isFrontCamera,
   listVideoDevices,
   openCamera,
@@ -18,11 +20,21 @@ export interface CaptureStepProps {
   template: TemplateEntry;
   onReady: (source: SourceImage) => void;
   onBack: () => void;
+  /** 页面隐藏多久后自动停流（CAM-005）；可注入以便测试无需假时钟 */
+  hiddenStopMs?: number;
 }
 
 type Status = "idle" | "requesting" | "live" | "capturing";
 
-export function CaptureStep({ template, onReady, onBack }: CaptureStepProps) {
+/** 页面隐藏多久后自动停流（CAM-005）。 */
+const HIDDEN_STOP_MS = 30_000;
+
+export function CaptureStep({
+  template,
+  onReady,
+  onBack,
+  hiddenStopMs = HIDDEN_STOP_MS,
+}: CaptureStepProps) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -34,6 +46,7 @@ export function CaptureStep({ template, onReady, onBack }: CaptureStepProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const genRef = useRef(0);
   const shootRef = useRef<() => void>(() => {});
+  const support = useMemo(() => checkCameraSupport(), []);
 
   // CAM-005：组件卸载/页面离开时停止全部 tracks；迟到的旧请求结果直接丢弃
   useEffect(
@@ -44,6 +57,29 @@ export function CaptureStep({ template, onReady, onBack }: CaptureStepProps) {
     },
     [],
   );
+
+  // CAM-005：页面持续隐藏超过门限就停流。
+  // 摄像头指示灯一直亮着而用户已经切走，是明确的隐私问题。
+  useEffect(() => {
+    if (status !== "live") return;
+    let timer = 0;
+    const onVisibilityChange = () => {
+      window.clearTimeout(timer);
+      if (document.visibilityState !== "hidden") return;
+      timer = window.setTimeout(() => {
+        genRef.current += 1;
+        stopStream(streamRef.current);
+        streamRef.current = null;
+        setStatus("idle");
+        setError("摄像头因页面长时间处于后台已自动关闭：需要时可重新开启。");
+      }, hiddenStopMs);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [status, hiddenStopMs]);
 
   const startCamera = useCallback(async (deviceId?: string) => {
     const gen = ++genRef.current;
@@ -69,8 +105,8 @@ export function CaptureStep({ template, onReady, onBack }: CaptureStepProps) {
       streamRef.current = stream;
       const video = videoRef.current;
       if (video) {
-        video.srcObject = stream;
-        await video.play().catch(() => {});
+        const played = await attachStream(video, stream);
+        if (!played.playing && played.reason) setError(played.reason);
       }
       setMirrored(isFrontCamera(stream));
       setActiveDeviceId(deviceId ?? stream.getVideoTracks()[0]?.getSettings().deviceId ?? "");
@@ -146,21 +182,36 @@ export function CaptureStep({ template, onReady, onBack }: CaptureStepProps) {
         已选模板：{entryLabel(template, "zh")}。仅在点击后才会请求摄像头权限。
       </p>
       {status === "idle" && (
-        <div className="step-actions">
-          <button type="button" className="primary" onClick={() => void startCamera()}>
-            开启摄像头
-          </button>
-          <button type="button" onClick={onBack}>
-            返回
-          </button>
-        </div>
+        <>
+          {!support.supported && (
+            <p role="alert" className="warn-text">
+              {support.reason}
+            </p>
+          )}
+          <div className="step-actions">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => void startCamera()}
+              disabled={!support.supported}
+            >
+              开启摄像头
+            </button>
+            <button type="button" onClick={onBack}>
+              返回
+            </button>
+          </div>
+        </>
       )}
       {(status === "requesting" || status === "live" || status === "capturing") && (
         <div className="camera-view">
+          {/* muted + autoPlay + playsInline 三者齐备，iOS Safari 才允许预览自动播放 */}
           <video
             ref={videoRef}
             className={mirrored ? "mirrored" : ""}
             playsInline
+            autoPlay
+            muted
             aria-label="摄像头预览"
           />
           {status === "live" && <PoseGuide videoRef={videoRef} mirrored={mirrored} />}

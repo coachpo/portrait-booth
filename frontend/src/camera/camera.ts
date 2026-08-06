@@ -9,6 +9,62 @@ export interface CameraRequest {
   relaxed?: boolean;
 }
 
+export interface CameraSupport {
+  supported: boolean;
+  /** 不支持时给出可操作的原因，而不是让用户点下去再看到一句通用报错 */
+  reason?: string;
+}
+
+/**
+ * §10.2 能力检测：先确认这个浏览器/上下文根本能不能开摄像头。
+ * 不做检测时，不支持 getUserMedia 的浏览器和非安全上下文都会走到
+ * 「打开摄像头失败：请重试」——重试多少次都没用。
+ */
+export function checkCameraSupport(): CameraSupport {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return {
+      supported: false,
+      reason: "此浏览器不支持摄像头拍摄（缺少 getUserMedia）：请改用上传照片。",
+    };
+  }
+  if (typeof window !== "undefined" && window.isSecureContext === false) {
+    return {
+      supported: false,
+      reason: "摄像头需要 HTTPS 或 localhost 安全上下文：请改用上传照片，或通过 HTTPS 访问。",
+    };
+  }
+  return { supported: true };
+}
+
+/**
+ * 让 <video> 开始播放。iOS Safari 只在 muted + playsInline + autoplay 齐备时
+ * 允许自动播放，缺一项 play() 就 reject；失败原因必须暴露出来，
+ * 否则用户看到的是一块永远黑着的预览，而界面显示「已就绪」。
+ */
+export async function attachStream(
+  video: HTMLVideoElement,
+  stream: MediaStream,
+): Promise<{ playing: boolean; reason?: string }> {
+  video.srcObject = stream;
+  video.muted = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  try {
+    await video.play();
+    return { playing: true };
+  } catch (err) {
+    // jsdom 的 DOMException 不继承 Error：两种都要认，否则 name 永远读不到
+    const name = err instanceof DOMException || err instanceof Error ? err.name : "";
+    return {
+      playing: false,
+      reason:
+        name === "NotAllowedError"
+          ? "浏览器阻止了预览自动播放：请点击预览区域后重试。"
+          : "预览无法播放：请重试，或改用上传照片。",
+    };
+  }
+}
+
 export function openCamera(req: CameraRequest = {}): Promise<MediaStream> {
   const video: MediaStreamConstraints["video"] = req.relaxed
     ? true

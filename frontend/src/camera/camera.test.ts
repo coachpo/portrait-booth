@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  attachStream,
   cameraErrorMessage,
   captureStill,
   captureWithImageCapture,
+  checkCameraSupport,
   isFrontCamera,
   listVideoDevices,
   openCamera,
@@ -141,5 +143,72 @@ describe("captureStill (CAM-006)", () => {
     const video = {} as HTMLVideoElement;
     expect(await captureStill(video)).toBeNull();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("checkCameraSupport (§10.2)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reports supported when getUserMedia exists in a secure context", () => {
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn() } });
+    vi.stubGlobal("window", { isSecureContext: true });
+    expect(checkCameraSupport().supported).toBe(true);
+  });
+
+  it("explains that the browser lacks getUserMedia", () => {
+    // 不做检测时这些浏览器会走到「打开摄像头失败：请重试」——重试多少次都没用
+    vi.stubGlobal("navigator", {});
+    const support = checkCameraSupport();
+    expect(support.supported).toBe(false);
+    expect(support.reason).toContain("getUserMedia");
+  });
+
+  it("explains the secure-context requirement", () => {
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn() } });
+    vi.stubGlobal("window", { isSecureContext: false });
+    const support = checkCameraSupport();
+    expect(support.supported).toBe(false);
+    expect(support.reason).toContain("HTTPS");
+  });
+});
+
+describe("attachStream (CAM-002)", () => {
+  function fakeVideo(play: () => Promise<void>) {
+    return {
+      srcObject: null,
+      muted: false,
+      autoplay: false,
+      playsInline: false,
+      play,
+    } as unknown as HTMLVideoElement;
+  }
+
+  it("sets the three attributes iOS requires for autoplay", async () => {
+    const video = fakeVideo(() => Promise.resolve());
+    const stream = {} as MediaStream;
+    const result = await attachStream(video, stream);
+    expect(result.playing).toBe(true);
+    expect(video.srcObject).toBe(stream);
+    expect(video.muted).toBe(true);
+    expect(video.autoplay).toBe(true);
+    expect(video.playsInline).toBe(true);
+  });
+
+  it("surfaces a blocked autoplay instead of swallowing it", async () => {
+    // 回归：play() 的失败曾被空 catch 吞掉，用户看到一块永远黑着的预览，
+    // 而界面显示「已就绪」
+    const video = fakeVideo(() => Promise.reject(new DOMException("blocked", "NotAllowedError")));
+    const result = await attachStream(video, {} as MediaStream);
+    expect(result.playing).toBe(false);
+    expect(result.reason).toContain("自动播放");
+  });
+
+  it("reports a generic playback failure with a usable next step", async () => {
+    const video = fakeVideo(() => Promise.reject(new Error("boom")));
+    const result = await attachStream(video, {} as MediaStream);
+    expect(result.playing).toBe(false);
+    expect(result.reason).toContain("上传照片");
   });
 });

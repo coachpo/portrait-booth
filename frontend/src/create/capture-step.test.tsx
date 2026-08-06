@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TemplateEntry } from "../lib/templates/types";
@@ -104,7 +104,11 @@ beforeEach(() => {
   vi.mocked(runStaticCheck).mockResolvedValue({
     pose: null,
     poseAvailable: false,
-    quality: { status: "warn", issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"], metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0 } },
+    quality: {
+      status: "warn",
+      issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+      metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0 },
+    },
   });
   vi.mocked(isFrontCamera).mockReturnValue(true);
   vi.mocked(listVideoDevices).mockResolvedValue([]);
@@ -113,6 +117,11 @@ beforeEach(() => {
   Object.defineProperty(HTMLMediaElement.prototype, "play", {
     configurable: true,
     value: vi.fn().mockResolvedValue(undefined),
+  });
+  // jsdom 没有 mediaDevices：能力检测跑的是真实实现，这里补上它期待的形状
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia: vi.fn(), enumerateDevices: vi.fn().mockResolvedValue([]) },
   });
 });
 
@@ -126,6 +135,33 @@ describe("CaptureStep", () => {
     renderStep();
     expect(screen.getByRole("button", { name: "开启摄像头" })).toBeInTheDocument();
     expect(openCamera).not.toHaveBeenCalled();
+  });
+
+  it("blocks the camera button when the browser cannot open one (§10.2)", () => {
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: undefined });
+    renderStep();
+    expect(screen.getByRole("button", { name: "开启摄像头" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("getUserMedia");
+  });
+
+  it("stops the stream after the page stays hidden (CAM-005)", async () => {
+    const stream = fakeStream();
+    vi.mocked(openCamera).mockResolvedValue(stream);
+    // 门限注入成极短值，测试不需要假时钟，也就不会和 RTL 的轮询打架
+    render(<CaptureStep template={template} onReady={vi.fn()} onBack={vi.fn()} hiddenStopMs={5} />);
+    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
+    await screen.findByRole("button", { name: "拍摄" });
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    await waitFor(() => expect(stream.getVideoTracks()[0].stop).toHaveBeenCalled());
+    expect(await screen.findByRole("alert")).toHaveTextContent("已自动关闭");
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   });
 
   it("starts the camera on click and shows the shutter (CAM-002/003)", async () => {

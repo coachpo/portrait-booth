@@ -3,7 +3,7 @@
  * 主脸关联、EMA 平滑、进入/退出滞回、稳定计时与中文指令（以用户身体方向表达）。
  */
 
-import { decomposeRotationMatrix, type PoseAngles } from "./angles";
+import { decomposeFaceMatrix, type PoseAngles } from "./angles";
 
 export interface PoseThresholds {
   yawDeg: number;
@@ -27,15 +27,20 @@ export const DEFAULT_POSE_THRESHOLDS: PoseThresholds = {
   faceOffsetMax: 0.25,
 };
 
-/** 滞回：进入阈值比退出阈值宽松，防止边界抖动（GDE-004） */
-export const HYSTERESIS_FACTOR = 0.7;
+/**
+ * 滞回：**已经就绪后放宽**阈值，边界上的小抖动才不会把状态踢出去。
+ *
+ * 这里曾经是 0.7——进入 ready 之后阈值反而收紧 30%，
+ * 于是刚好卡在 7° 的用户会在 ready 与 unstable 之间来回跳，
+ * 正是滞回本该消除的现象。
+ */
+export const HYSTERESIS_EXIT_FACTOR = 1.3;
 
 export interface FaceObservation {
   /** 帧内人脸序号（用于主脸关联） */
   faceIndex: number;
   landmarks: Array<{ x: number; y: number; z?: number }>;
   matrix: number[];
-  score?: number;
 }
 
 export type GuidanceStatus = "no-face" | "multi-face" | "out-of-position" | "unstable" | "ready";
@@ -55,7 +60,7 @@ export interface PoseState {
 
 export interface TrackingOptions {
   thresholds?: PoseThresholds;
-  /** 预览是否为镜像（GDE-002：指令按身体方向表达） */
+  /** 预览是否为镜像。只影响取景框绘制，不再影响指令措辞（见 guidance）。 */
   mirrored?: boolean;
   alpha?: number; // EMA 平滑系数
 }
@@ -66,11 +71,77 @@ interface SmoothedAngles {
   roll: number;
 }
 
-/** 主脸关联：取置信度最高的人脸；无置信度时取第一张（MVP 简化）。 */
-export function selectPrimaryFace(faces: FaceObservation[]): FaceObservation | null {
-  if (faces.length === 0) return null;
-  return [...faces].sort((a, b) => (b.score ?? 1) - (a.score ?? 1))[0];
+export interface FaceMetrics {
+  /** 脸宽 / 图像宽 */
+  width: number;
+  /** 脸中心的归一化坐标（0–1） */
+  center: { x: number; y: number };
 }
+
+/** 脸宽取 landmarks 33（左眼外眦）与 263（右眼外眦）的水平距离。 */
+export function faceMetrics(face: FaceObservation): FaceMetrics | null {
+  const left = face.landmarks[33];
+  const right = face.landmarks[263];
+  const chin = face.landmarks[152];
+  if (!left || !right || !chin) return null;
+  const top = face.landmarks[10] ?? face.landmarks[9];
+  return {
+    width: Math.abs(left.x - right.x),
+    center: {
+      x: (left.x + right.x) / 2,
+      y: top ? (top.y + chin.y) / 2 : (left.y + right.y) / 2,
+    },
+  };
+}
+
+/**
+ * 主脸关联：按「脸宽 × 居中度」打分，并以上一帧主脸位置作最近邻先验。
+ *
+ * 这里曾经按 score 降序取第一张。但 §4.4 把 outputFaceBlendshapes 固定为 false，
+ * 于是 score 恒为 undefined，排序全程等价、退化成「取第一张脸」——
+ * 而 MediaPipe 的返回顺序并不保证是主体优先。
+ */
+export function selectPrimaryFace(
+  faces: FaceObservation[],
+  previousCenter?: { x: number; y: number } | null,
+): FaceObservation | null {
+  if (faces.length === 0) return null;
+  if (faces.length === 1) return faces[0];
+
+  let best = faces[0];
+  let bestScore = -Infinity;
+  for (const face of faces) {
+    const metrics = faceMetrics(face);
+    if (!metrics) continue;
+    const offCenter = Math.hypot(metrics.center.x - 0.5, metrics.center.y - 0.5);
+    const centering = 1 - Math.min(1, offCenter * 2);
+    let score = metrics.width * (0.5 + 0.5 * centering);
+    if (previousCenter) {
+      // 两张脸大小接近时，靠上一帧的位置定住主体，避免逐帧来回跳
+      const drift = Math.hypot(
+        metrics.center.x - previousCenter.x,
+        metrics.center.y - previousCenter.y,
+      );
+      score /= 1 + drift * 4;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = face;
+    }
+  }
+  return best;
+}
+
+/**
+ * yaw/roll 的正负与身体方向的映射。
+ *
+ * canonical face model 的 +X 指向被摄者自己的左侧，因此 yaw > 0 读作「头转向自己的左侧」。
+ * 这条映射还没有用真人样本实测确认（GDE-003），文案会在实测后调整。
+ * 但无论最终是哪个方向，前置与后置摄像头必须给出同一句指令——
+ * 指令描述的是被摄者的身体，不是屏幕上的画面。
+ */
+const YAW_POSITIVE_IS_OWN_LEFT = true;
+const ROLL_POSITIVE_IS_OWN_LEFT = true;
 
 export class PoseTracker {
   private thresholds: PoseThresholds;
@@ -78,10 +149,13 @@ export class PoseTracker {
   private alpha: number;
   private smoothed: SmoothedAngles | null = null;
   private lastStatus: GuidanceStatus = "no-face";
+  /** 角度/位置判定得到的状态，不含 multi-face 这类提示态；迟滞只看它 */
+  private lastComputed: GuidanceStatus = "no-face";
   private stableSince: number | null = null;
   private lastAngles: PoseAngles = { yaw: 0, pitch: 0, roll: 0 };
   private lastFaceWidth = 0;
   private lastFaceOffset = { x: 0, y: 0 };
+  private lastCenter: { x: number; y: number } | null = null;
 
   constructor(options: TrackingOptions = {}) {
     this.thresholds = options.thresholds ?? DEFAULT_POSE_THRESHOLDS;
@@ -89,92 +163,90 @@ export class PoseTracker {
     this.alpha = options.alpha ?? 0.5;
   }
 
+  /** 切换前后摄像头时更新镜像标记，不需要重建 tracker 或 landmarker。 */
+  setMirrored(mirrored: boolean): void {
+    this.mirrored = mirrored;
+  }
+
+  get isMirrored(): boolean {
+    return this.mirrored;
+  }
+
   /** 输入一帧的人脸观察结果与时间戳；返回更新后的姿态状态。 */
   update(faces: FaceObservation[], nowMs: number): PoseState {
-    const primary = selectPrimaryFace(faces);
+    const primary = selectPrimaryFace(faces, this.lastCenter);
     if (!primary) {
       this.lastStatus = "no-face";
+      this.lastComputed = "no-face";
       this.stableSince = null;
+      this.smoothed = null;
+      this.lastCenter = null;
       return this.buildState("no-face", nowMs);
     }
-    if (faces.length > 1) {
-      this.lastStatus = "multi-face";
-      this.stableSince = null;
-      return this.buildState("multi-face", nowMs);
+
+    const angles = decomposeFaceMatrix(primary.matrix);
+    if (!angles) {
+      // 这一帧没有可用角度。保持上一状态——把 NaN 平滑进 EMA 会让之后每一帧都是 NaN。
+      return this.buildState(this.lastStatus, nowMs);
     }
 
-    const angles = decomposeRotationMatrix(primary.matrix);
     // EMA 平滑（防指令抖动）
-    if (this.smoothed) {
-      this.smoothed = {
-        yaw: this.smoothed.yaw * (1 - this.alpha) + angles.yaw * this.alpha,
-        pitch: this.smoothed.pitch * (1 - this.alpha) + angles.pitch * this.alpha,
-        roll: this.smoothed.roll * (1 - this.alpha) + angles.roll * this.alpha,
-      };
-    } else {
-      this.smoothed = { yaw: angles.yaw, pitch: angles.pitch, roll: angles.roll };
-    }
+    this.smoothed = this.smoothed
+      ? {
+          yaw: this.smoothed.yaw * (1 - this.alpha) + angles.yaw * this.alpha,
+          pitch: this.smoothed.pitch * (1 - this.alpha) + angles.pitch * this.alpha,
+          roll: this.smoothed.roll * (1 - this.alpha) + angles.roll * this.alpha,
+        }
+      : { yaw: angles.yaw, pitch: angles.pitch, roll: angles.roll };
     const smoothedAngles: PoseAngles = { ...this.smoothed };
     this.lastAngles = smoothedAngles;
 
-    const faceWidth = this.faceWidthRatio(primary);
-    this.lastFaceWidth = faceWidth;
-    this.lastFaceOffset = this.faceOffset(primary);
+    const metrics = faceMetrics(primary);
+    this.lastFaceWidth = metrics?.width ?? 0;
+    this.lastCenter = metrics?.center ?? null;
+    this.lastFaceOffset = metrics
+      ? { x: metrics.center.x - 0.5, y: metrics.center.y - 0.5 }
+      : { x: 0, y: 0 };
 
-    const inPosition = this.inPosition(faceWidth, this.lastFaceOffset);
-    // 滞回：进入阈值宽松、退出收紧，防止边界抖动（GDE-004）
-    const hysteresis =
-      this.lastStatus === "ready" || this.lastStatus === "unstable" ? HYSTERESIS_FACTOR : 1;
+    // 滞回：已经就绪时放宽阈值，未就绪时用原阈值
+    const settled = this.lastComputed === "ready";
+    const factor = settled ? HYSTERESIS_EXIT_FACTOR : 1;
+    const inPosition = this.inPosition(this.lastFaceWidth, this.lastFaceOffset, factor);
     const withinAngles =
-      Math.abs(smoothedAngles.yaw) <= this.thresholds.yawDeg * hysteresis &&
-      Math.abs(smoothedAngles.pitch) <= this.thresholds.pitchDeg * hysteresis &&
-      Math.abs(smoothedAngles.roll) <= this.thresholds.rollDeg * hysteresis;
+      Math.abs(smoothedAngles.yaw) <= this.thresholds.yawDeg * factor &&
+      Math.abs(smoothedAngles.pitch) <= this.thresholds.pitchDeg * factor &&
+      Math.abs(smoothedAngles.roll) <= this.thresholds.rollDeg * factor;
 
-    let status: GuidanceStatus;
+    let computed: GuidanceStatus;
     if (!inPosition) {
-      status = "out-of-position";
+      computed = "out-of-position";
       this.stableSince = null;
     } else if (!withinAngles) {
-      status = "unstable";
+      computed = "unstable";
       this.stableSince = null;
     } else {
-      status = "ready";
+      computed = "ready";
       this.stableSince ??= nowMs;
     }
+    this.lastComputed = computed;
+
+    // 多脸是提示性状态：关联与平滑照常进行，结果才不会被丢掉（§4.4）
+    const status: GuidanceStatus = faces.length > 1 ? "multi-face" : computed;
     this.lastStatus = status;
     return this.buildState(status, nowMs);
   }
 
-  private inPosition(faceWidth: number, offset: { x: number; y: number }): boolean {
+  private inPosition(faceWidth: number, offset: { x: number; y: number }, factor: number): boolean {
     return (
-      faceWidth >= this.thresholds.faceWidthMin &&
-      faceWidth <= this.thresholds.faceWidthMax &&
-      Math.abs(offset.x) <= this.thresholds.faceOffsetMax &&
-      Math.abs(offset.y) <= this.thresholds.faceOffsetMax
+      faceWidth >= this.thresholds.faceWidthMin / factor &&
+      faceWidth <= this.thresholds.faceWidthMax * factor &&
+      Math.abs(offset.x) <= this.thresholds.faceOffsetMax * factor &&
+      Math.abs(offset.y) <= this.thresholds.faceOffsetMax * factor
     );
   }
 
-  /** 脸宽：landmarks 33（左眼外）与 263（右眼外）的像素距离（归一化） */
-  private faceWidthRatio(face: FaceObservation): number {
-    const left = face.landmarks[33];
-    const right = face.landmarks[263];
-    if (!left || !right) return 0;
-    return Math.abs(left.x - right.x);
-  }
-
-  private faceOffset(face: FaceObservation): { x: number; y: number } {
-    const left = face.landmarks[33];
-    const right = face.landmarks[263];
-    const top = face.landmarks[10] ?? face.landmarks[9];
-    const chin = face.landmarks[152];
-    if (!left || !right || !chin) return { x: 0, y: 0 };
-    const cx = (left.x + right.x) / 2;
-    const cy = top ? (top.y + chin.y) / 2 : (left.y + right.y) / 2;
-    return { x: cx - 0.5, y: cy - 0.5 };
-  }
-
   private buildState(status: GuidanceStatus, nowMs: number): PoseState {
-    const stableMs = status === "ready" && this.stableSince !== null ? nowMs - this.stableSince : 0;
+    const stableMs = this.stableSince !== null ? Math.max(0, nowMs - this.stableSince) : 0;
     const shootable = status === "ready" && stableMs >= this.thresholds.stableMs;
     return {
       status,
@@ -187,7 +259,13 @@ export class PoseTracker {
     };
   }
 
-  /** GDE-002：指令以用户身体方向表达；镜像预览时左右与画面相反 */
+  /**
+   * GDE-002：指令以用户身体方向表达。
+   *
+   * 措辞不依赖 mirrored——身体方向是物理事实，不随预览是否镜像而改变。
+   * 旧实现用 mirrored 去翻转身体方向，等价于断言「换个摄像头，人就转了个身」，
+   * 两个分支里必然有一支是错的。
+   */
   private guidance(status: GuidanceStatus): string {
     if (status === "no-face") return "未检测到人脸：请进入画面。";
     if (status === "multi-face") return "检测到多张人脸：请确保画面中只有一个人。";
@@ -198,38 +276,32 @@ export class PoseTracker {
       if (w < this.thresholds.faceWidthMin) parts.push("请靠近一些");
       else if (w > this.thresholds.faceWidthMax) parts.push("请离远一些");
       if (Math.abs(x) > this.thresholds.faceOffsetMax) {
-        parts.push(
-          this.mirrored
-            ? x > 0
-              ? "请向你自己的右侧移动"
-              : "请向你自己的左侧移动"
-            : x > 0
-              ? "请向右移动"
-              : "请向左移动",
-        );
+        // 脸偏向画面右侧时，被摄者需要往自己的另一侧移动
+        parts.push(x > 0 ? "请向你自己的左侧移动" : "请向你自己的右侧移动");
       }
       if (Math.abs(y) > this.thresholds.faceOffsetMax) {
-        parts.push(y > 0 ? "请向下移动" : "请向上移动");
+        parts.push(y > 0 ? "请向上移动" : "请向下移动");
       }
+      if (parts.length === 0) parts.push("请调整站位");
       return `人脸位置需调整：${parts.join("，")}。`;
     }
     if (status === "unstable") {
       const { yaw, pitch, roll } = this.lastAngles;
       const parts: string[] = [];
       if (Math.abs(yaw) > this.thresholds.yawDeg) {
-        // yaw 符号约定：正值表示头转向画面右侧；镜像时身体方向相反
-        const turnLeft = this.mirrored ? yaw > 0 : yaw < 0;
-        parts.push(turnLeft ? "请向你自己的左侧转一点" : "请向你自己的右侧转一点");
+        const turnedToOwnLeft = YAW_POSITIVE_IS_OWN_LEFT ? yaw > 0 : yaw < 0;
+        parts.push(turnedToOwnLeft ? "请向你自己的右侧转一点" : "请向你自己的左侧转一点");
       }
       if (Math.abs(pitch) > this.thresholds.pitchDeg) {
-        parts.push(pitch > 0 ? "请抬头一点" : "请低头一点");
+        parts.push(pitch > 0 ? "请低头一点" : "请抬头一点");
       }
       if (Math.abs(roll) > this.thresholds.rollDeg) {
-        parts.push(roll > 0 ? "请向你的左侧倾斜一点" : "请向你的右侧倾斜一点");
+        const tiltedToOwnLeft = ROLL_POSITIVE_IS_OWN_LEFT ? roll > 0 : roll < 0;
+        parts.push(tiltedToOwnLeft ? "请把头向你自己的右侧摆正" : "请把头向你自己的左侧摆正");
       }
       if (parts.length === 0) parts.push("请保持当前姿势");
       return `姿势需调整：${parts.join("，")}。`;
     }
-    return "姿势稳定，可以拍摄。";
+    return "姿势稳定，可以拍摄（启发式判断，非官方容差）。";
   }
 }
