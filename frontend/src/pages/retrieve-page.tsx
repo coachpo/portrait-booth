@@ -51,6 +51,9 @@ export function RetrievePage() {
       setStage({ kind: "error", message: `取回码应为 ${KEY_LENGTH} 位字母或数字` });
       return;
     }
+    // 复位删除区：它到达 done 之后没有任何其它复位路径，同一会话里取回第二张
+    // 照片时删除表单会一直停在「已提交删除」，输入框与按钮都不再渲染。
+    setDeleteStage({ kind: "idle" });
     setStage({ kind: "resolving" });
     try {
       const resolved = await resolvePhoto(key);

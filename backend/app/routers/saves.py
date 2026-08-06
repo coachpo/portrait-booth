@@ -112,15 +112,31 @@ def delete_save(request: Request, body: dict) -> Response:
         if not hmac.compare_digest(row["delete_digest"], hmac_utils.secret_digest(delete_secret)):
             return _no_store(Response(status_code=204))
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        conn.execute(
-            "UPDATE photo_records SET status='access-revoked', access_revoked_at=?, "
-            "revocation_epoch=revocation_epoch+1, purge_due_at=? WHERE id=?",
-            (now, now, row["id"]),
-        )
-        # 用户主动删除要立刻落到磁盘上。只标记状态的话，UI 说「已删除」，
-        # 而照片原件继续留在卷里，最长滞留到 30 天 TTL 结束。
-        purge_photo(conn, _storage(), row["id"], row["object_key"], now)
-        conn.commit()
+        try:
+            # 第一步只做撤销，事务尽可能小：提交成功后照片立刻取不回，
+            # 这是「已删除」对用户唯一有意义的承诺。
+            conn.execute(
+                "UPDATE photo_records SET status='access-revoked', access_revoked_at=?, "
+                "revocation_epoch=revocation_epoch+1, purge_due_at=? WHERE id=?",
+                (now, now, row["id"]),
+            )
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            # 撤销没能落地时不能报成功。UI 说「已删除」而照片仍可取回是直接的隐私事故；
+            # 这里返回 503 确实让「该 key 存在」在数据库故障期间可被区分（不存在的 key
+            # 在上面就已经 204 返回），但那要求攻击者先制造出锁竞争，
+            # 代价远高于误报删除成功的后果。
+            return error_response("DELETE_UNAVAILABLE", "暂时无法处理删除，请稍后重试", 503)
+
+        # 第二步物理删除。只标记状态的话，UI 说「已删除」而照片原件继续留在卷里，
+        # 最长滞留到 30 天 TTL。这一步失败不改变已提交的撤销语义——
+        # worker 的 purge_due 会在下一轮补上字节清理。
+        try:
+            purge_photo(conn, _storage(), row["id"], row["object_key"], now)
+            conn.commit()
+        except (sqlite3.Error, OSError):
+            conn.rollback()
         return _no_store(Response(status_code=204))
     except Exception:  # 幂等 204；不披露对象先前是否存在
         return _no_store(Response(status_code=204))

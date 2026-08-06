@@ -103,10 +103,16 @@ function toObservations(result: DetectionResult): FaceObservation[] {
 
 /** 取得长驻的 VIDEO 实例。多次调用共享同一个底层 landmarker。 */
 export async function acquireVideoLandmarker(): Promise<VideoLandmarker> {
-  videoInstance ??= create("VIDEO").catch((error: unknown) => {
-    videoInstance = null; // 失败不缓存，否则一次网络抖动就永久关闭姿态指导
-    throw error;
-  });
+  if (videoInstance === null) {
+    // 失败不缓存，否则一次网络抖动就永久关闭姿态指导。
+    // 但只能清掉**自己**：一次慢速创建失败时，槽位里可能已经换成了后来那次
+    // 成功创建的实例，无条件置空会把它的句柄丢掉，那个实例永远不会被 close。
+    const pending: Promise<FaceLandmarker> = create("VIDEO").catch((error: unknown) => {
+      if (videoInstance === pending) videoInstance = null;
+      throw error;
+    });
+    videoInstance = pending;
+  }
   const landmarker = await videoInstance;
   return {
     detectVideo(frame, timestampMs) {
@@ -119,10 +125,13 @@ export async function acquireVideoLandmarker(): Promise<VideoLandmarker> {
 
 /** 取得独立的 IMAGE 实例，用于静态复检。 */
 export async function acquireImageLandmarker(): Promise<ImageLandmarker> {
-  imageInstance ??= create("IMAGE").catch((error: unknown) => {
-    imageInstance = null;
-    throw error;
-  });
+  if (imageInstance === null) {
+    const pending: Promise<FaceLandmarker> = create("IMAGE").catch((error: unknown) => {
+      if (imageInstance === pending) imageInstance = null;
+      throw error;
+    });
+    imageInstance = pending;
+  }
   const landmarker = await imageInstance;
   return {
     detectImage(bitmap) {

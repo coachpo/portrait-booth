@@ -301,6 +301,38 @@ describe("PoseTracker (GDE-001/004)", () => {
       expect(state.guidance).toContain("你自己的");
     });
 
+    it("sends a subject standing to their own left back to the right", () => {
+      // 回归：这一条曾写反，用户照做后脸继续往同一方向走，位置永远收敛不了。
+      // MediaPipe 读的是未镜像的原始帧：被摄者向自己的左侧移动时脸往画面右侧走，
+      // 所以 center.x > 0.5 表示人已经偏在自己的左侧。
+      const tracker = new PoseTracker();
+      const state = tracker.update([landmarksFace(0.3, { x: 0.3, y: 0 })], 0);
+      expect(state.status).toBe("out-of-position");
+      expect(state.guidance).toContain("请向你自己的右侧移动");
+    });
+
+    it("sends a subject standing to their own right back to the left", () => {
+      const tracker = new PoseTracker();
+      const state = tracker.update([landmarksFace(0.3, { x: -0.3, y: 0 })], 0);
+      expect(state.guidance).toContain("请向你自己的左侧移动");
+    });
+
+    it("tells a subject who is looking down to raise their head", () => {
+      // 回归：pitch 方向与本文件自述的坐标约定相反，正在低头的用户被要求继续低头。
+      // pitch = asin(-R12/s) 绕 +X 轴，+X 指向被摄者左侧、+Z 朝向相机，
+      // 绕 +X 正转把 +Z 转到 -Y，即脸朝下——所以 pitch > 0 是低头。
+      const tracker = new PoseTracker();
+      const state = tracker.update([anglesFace({ yaw: 0, pitch: 12, roll: 0 })], 0);
+      expect(state.status).toBe("unstable");
+      expect(state.guidance).toContain("请抬头一点");
+    });
+
+    it("tells a subject who is looking up to lower their head", () => {
+      const tracker = new PoseTracker();
+      const state = tracker.update([anglesFace({ yaw: 0, pitch: -12, roll: 0 })], 0);
+      expect(state.guidance).toContain("请低头一点");
+    });
+
     it("labels the ready state as an uncalibrated heuristic", () => {
       const tracker = new PoseTracker();
       expect(tracker.update([landmarksFace(0.3, { x: 0, y: 0 })], 0).guidance).toContain(

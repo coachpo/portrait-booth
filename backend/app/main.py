@@ -55,7 +55,14 @@ def resolve_static_target(dist: Path, path: str) -> Path | None:
     """
     if not path:
         return None
-    candidate = (dist / path).resolve()
+    # NUL 字节：uvicorn 会把 %00 解码进 path，而 os.path.realpath 对它抛 ValueError，
+    # 任何未认证 GET 都能把它变成 500。这里先挡掉，保持「越界一律 None」的契约。
+    if "\x00" in path:
+        return None
+    try:
+        candidate = (dist / path).resolve()
+    except (OSError, ValueError):
+        return None
     if not candidate.is_relative_to(dist) or not candidate.is_file():
         return None
     return candidate
@@ -145,7 +152,11 @@ class SecurityHeadersMiddleware:
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 message.setdefault("headers", [])
-                existing = {k.lower() for k, _ in message["headers"]}
+                # ASGI 的头名是 bytes。此前直接 k.lower() 收进集合再拿 str 去比对，
+                # 永远不相等——「不覆盖已有响应头」的守卫是死代码，中间件会无条件追加。
+                # 后果之一：/assets/ 下的 404 会同时带上 no-store 与 immutable 两个
+                # Cache-Control，语义互相打架。
+                existing = {k.decode("latin-1").lower() for k, _ in message["headers"]}
                 headers = dict(_SECURITY_HEADERS)
                 if is_https:
                     # HSTS 只在 HTTPS 上有意义；在明文连接上发它没有任何效果

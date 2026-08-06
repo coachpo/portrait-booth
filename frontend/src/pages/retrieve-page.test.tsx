@@ -113,3 +113,30 @@ describe("RetrievePage", () => {
     expect(screen.getByRole("button", { name: "删除这张照片" })).toBeDisabled();
   });
 });
+
+describe("同一会话内的第二次删除", () => {
+  it("resets the delete form when another key is resolved", async () => {
+    // 回归：deleteStage 到达 done 后没有任何复位路径，resolve() 也不重置它——
+    // 同一会话里取回第二张照片时，删除表单一直停在「已提交删除」，
+    // 密钥输入框与按钮都不再渲染，不刷新整页就删不掉第二张。
+    vi.mocked(deletePhoto).mockResolvedValue(undefined);
+    vi.mocked(resolvePhoto).mockResolvedValue(resolved());
+    render(<RetrievePage />);
+
+    typeKey("A7C2F9");
+    fireEvent.change(screen.getByLabelText("删除密钥"), {
+      target: { value: "secret-value-123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "删除这张照片" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await screen.findByRole("status");
+
+    // 取回另一张照片
+    typeKey("B8D3G1");
+    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    await screen.findByText("600×600");
+
+    expect(screen.getByLabelText("删除密钥")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除这张照片" })).toBeInTheDocument();
+  });
+});

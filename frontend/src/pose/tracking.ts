@@ -276,8 +276,10 @@ export class PoseTracker {
       if (w < this.thresholds.faceWidthMin) parts.push("请靠近一些");
       else if (w > this.thresholds.faceWidthMax) parts.push("请离远一些");
       if (Math.abs(x) > this.thresholds.faceOffsetMax) {
-        // 脸偏向画面右侧时，被摄者需要往自己的另一侧移动
-        parts.push(x > 0 ? "请向你自己的左侧移动" : "请向你自己的右侧移动");
+        // MediaPipe 读的是 <video> 的原始帧——预览镜像只是 CSS transform，
+        // 不改变送进推理的像素。未镜像画面里，被摄者向自己的左侧移动时脸往画面
+        // 右侧走（x 增大）。所以 x > 0 表示人已经偏在自己的左侧，要往右回中。
+        parts.push(x > 0 ? "请向你自己的右侧移动" : "请向你自己的左侧移动");
       }
       if (Math.abs(y) > this.thresholds.faceOffsetMax) {
         parts.push(y > 0 ? "请向上移动" : "请向下移动");
@@ -293,7 +295,10 @@ export class PoseTracker {
         parts.push(turnedToOwnLeft ? "请向你自己的右侧转一点" : "请向你自己的左侧转一点");
       }
       if (Math.abs(pitch) > this.thresholds.pitchDeg) {
-        parts.push(pitch > 0 ? "请低头一点" : "请抬头一点");
+        // pitch = asin(-R12/s) 是绕 +X 轴的转角，而本文件采用的约定是
+        // +X 指向被摄者自己的左侧、+Y 向上、+Z 朝向相机。绕 +X 正向旋转把前向 +Z
+        // 转到 -Y，也就是脸朝下。所以 pitch > 0 表示正在低头，该提示抬头。
+        parts.push(pitch > 0 ? "请抬头一点" : "请低头一点");
       }
       if (Math.abs(roll) > this.thresholds.rollDeg) {
         const tiltedToOwnLeft = ROLL_POSITIVE_IS_OWN_LEFT ? roll > 0 : roll < 0;

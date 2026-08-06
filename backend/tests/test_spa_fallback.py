@@ -82,3 +82,29 @@ class TestMountedApp:
 
     def test_health_still_answers(self, client):
         assert client.get("/api/v1/health").json() == {"status": "ok"}
+
+
+class TestMalformedPaths:
+    """越界一律 None——包括那些会让底层调用直接抛异常的路径。"""
+
+    def test_rejects_a_path_containing_a_nul_byte(self, dist):
+        # uvicorn 会把 %00 解码进 path，而 os.path.realpath 对它抛 ValueError，
+        # 任何未认证 GET 都能把它变成 500
+        assert resolve_static_target(dist, "\x00") is None
+        assert resolve_static_target(dist, "assets/\x00app.js") is None
+
+    def test_serving_a_nul_path_does_not_500(self, monkeypatch, dist):
+        import importlib
+
+        from fastapi.testclient import TestClient
+
+        monkeypatch.setenv("PORTRAIT_FRONTEND_DIST", str(dist))
+        reloaded = importlib.reload(main_module)
+        client = TestClient(reloaded.app, raise_server_exceptions=False)
+        try:
+            resp = client.get("/%00")
+            assert resp.status_code == 200
+            assert resp.text.startswith("<!doctype html>")
+        finally:
+            monkeypatch.delenv("PORTRAIT_FRONTEND_DIST", raising=False)
+            importlib.reload(main_module)

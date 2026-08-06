@@ -268,3 +268,77 @@ class TestObjectIntegrity:
         )
         assert resp.status_code == 404
         assert json.loads(resp.content)["error"]["code"] == "PHOTO_UNAVAILABLE"
+
+
+class TestDeleteReportsFailureHonestly:
+    """回归：整个 delete_save 被一个 except Exception 兜成 204。
+
+    撤销事务没提交时接口也报成功：UI 说「已删除」，照片却仍是 active、仍可取回。
+    """
+
+    @staticmethod
+    def _delete(client, body):
+        return client.request(
+            "DELETE",
+            "/api/v1/saves",
+            content=json.dumps({"key": body["key"], "deleteSecret": body["deleteSecret"]}),
+            headers={"Content-Type": "application/json"},
+        )
+
+    def test_a_failed_revocation_is_not_reported_as_success(self, client, monkeypatch):
+        import sqlite3
+
+        from app.routers import saves as saves_router
+
+        body = save_once(client, "contract-key-000000011")
+        real_db = saves_router._db
+
+        class LockedConn:
+            """模拟撤销那条 UPDATE 撞上写锁。"""
+
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if "access-revoked" in sql:
+                    raise sqlite3.OperationalError("database is locked")
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        # 用 context 而不是 undo()：conftest 的环境隔离用的是同一个 monkeypatch
+        # 实例，undo() 会把根密钥一起撤销掉
+        with monkeypatch.context() as m:
+            m.setattr(saves_router, "_db", lambda: LockedConn(real_db()))
+            resp = self._delete(client, body)
+        assert resp.status_code == 503
+        assert resp.json()["error"]["code"] == "DELETE_UNAVAILABLE"
+
+        # 照片确实还在——所以接口报失败是对的
+        assert (
+            client.post("/api/v1/retrievals/resolve", json={"key": body["key"]}).status_code == 200
+        )
+
+    def test_a_failed_byte_purge_still_counts_as_deleted(self, client, monkeypatch):
+        """撤销已经提交后，物理删除失败不该把「已删除」收回——
+        照片此时已经取不回，worker 的 purge_due 会补上字节清理。"""
+        from app.routers import saves as saves_router
+
+        body = save_once(client, "contract-key-000000012")
+
+        def boom(*_args, **_kwargs):
+            raise OSError("volume unavailable")
+
+        with monkeypatch.context() as m:
+            m.setattr(saves_router, "purge_photo", boom)
+            assert self._delete(client, body).status_code == 204
+
+        resolved = client.post("/api/v1/retrievals/resolve", json={"key": body["key"]})
+        assert resolved.status_code == 404
+        assert resolved.json()["error"]["code"] == "PHOTO_UNAVAILABLE"
+
+    def test_a_normal_delete_still_returns_204(self, client):
+        body = save_once(client, "contract-key-000000013")
+        assert self._delete(client, body).status_code == 204
+        assert self._delete(client, body).status_code == 204

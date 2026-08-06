@@ -59,6 +59,7 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
   const [policy, setPolicy] = useState<ServicePolicy | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // SPEC §11 的「同一幂等键重试」：键必须跨重试保持不变，
   // 每次点击都新建一个键的话，服务端看到的永远是一次全新的保存。
   const idempotencyKeyRef = useRef<string | null>(null);
@@ -103,16 +104,19 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
   const remove = async () => {
     if (stage.kind !== "done" && stage.kind !== "deleting") return;
     const saved = stage.saved;
+    setDeleteError(null);
     setStage({ kind: "deleting", saved });
     try {
       await deletePhoto(saved.key, saved.deleteSecret);
       idempotencyKeyRef.current = null;
       setStage({ kind: "idle" });
     } catch (err) {
-      setStage({
-        kind: "error",
-        message: err instanceof Error ? err.message : "删除失败，请重试",
-      });
+      // 删除失败必须留在 done 面板里报错，不能切到上传用的 error 状态：
+      // 那会连同取回码、删除密钥与回执下载一起消失，而 error 状态唯一的主按钮
+      // 是「用同一幂等键重试」——它执行的是 upload()，幂等键还在，服务端命中
+      // 已完成的记录并重放原 envelope，用户会拿到一个指向已删除照片的取回码。
+      setDeleteError(err instanceof Error ? err.message : "删除失败，请重试");
+      setStage({ kind: "done", saved });
     }
   };
 
@@ -228,10 +232,15 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
               </button>
             ) : (
               <button type="button" onClick={() => void remove()}>
-                删除照片
+                {deleteError ? "重试删除" : "删除照片"}
               </button>
             )}
           </div>
+          {deleteError && (
+            <p role="alert" className="warn-text">
+              {deleteError}（取回码与删除密钥仍然有效，可以直接重试）
+            </p>
+          )}
         </div>
       )}
       {stage.kind === "error" && (

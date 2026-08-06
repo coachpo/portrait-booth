@@ -15,7 +15,7 @@ vi.mock("../api/service-policy", async (importOriginal) => {
   return { ...actual, fetchServicePolicy: vi.fn() };
 });
 
-import { createSaveSession, savePhoto } from "../api/save";
+import { createSaveSession, deletePhoto, savePhoto } from "../api/save";
 import { fetchServicePolicy } from "../api/service-policy";
 import type { FinalArtifact } from "./final-artifact";
 import type { TemplateEntry } from "../lib/templates/types";
@@ -133,5 +133,45 @@ describe("StagingPanel", () => {
     await waitFor(() => expect(click).toHaveBeenCalled());
     click.mockRestore();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("删除失败", () => {
+  it("keeps the key and delete secret visible instead of falling into the upload error state", async () => {
+    // 回归：删除失败被并入上传用的 error 状态，done 面板连同取回码、删除密钥与
+    // 回执一起消失，而 error 状态唯一的主按钮「用同一幂等键重试」执行的是
+    // upload()——幂等键还在，服务端重放已完成的记录，用户拿到一个指向已删除
+    // 照片的取回码。
+    vi.mocked(savePhoto).mockResolvedValue(saved);
+    vi.mocked(deletePhoto).mockRejectedValue(new Error("网络中断"));
+    await openConfirm();
+    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    await screen.findByText("A7C 2F9");
+
+    fireEvent.click(screen.getByRole("button", { name: "删除照片" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("网络中断"));
+
+    // 取回码与删除密钥仍在，删除可以直接重试
+    expect(screen.getByText("A7C 2F9")).toBeInTheDocument();
+    expect(screen.getByText(/secret-value-1234567890/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试删除" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "用同一幂等键重试" })).toBeNull();
+  });
+
+  it("retries the delete rather than the upload", async () => {
+    vi.mocked(savePhoto).mockResolvedValue(saved);
+    vi.mocked(deletePhoto)
+      .mockRejectedValueOnce(new Error("网络中断"))
+      .mockResolvedValueOnce(undefined);
+    await openConfirm();
+    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    await screen.findByText("A7C 2F9");
+
+    fireEvent.click(screen.getByRole("button", { name: "删除照片" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "重试删除" }));
+
+    await waitFor(() => expect(deletePhoto).toHaveBeenCalledTimes(2));
+    expect(savePhoto).toHaveBeenCalledTimes(1);
   });
 });

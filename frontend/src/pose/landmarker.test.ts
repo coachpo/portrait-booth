@@ -5,6 +5,7 @@ import {
   acquireVideoLandmarker,
   NUM_FACES,
   releaseLandmarkers,
+  releaseVideoLandmarker,
   resetLandmarkersForTest,
   setLandmarkerDeps,
 } from "./landmarker";
@@ -122,5 +123,48 @@ describe("landmarker instances", () => {
 
     await acquireVideoLandmarker();
     expect(createLandmarker).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("failed creation cleanup", () => {
+  it("a slow failure does not orphan a newer instance", async () => {
+    // 回归：创建失败的 catch 无条件把 videoInstance 置空。第一次创建很慢并最终
+    // 失败时，槽位里可能已经换成了后来那次成功创建的实例——它的句柄被丢掉，
+    // 之后 releaseVideoLandmarker 再也关不掉它（wasm 堆与 GL 上下文一起泄漏）。
+    let failFirst: (reason: unknown) => void = () => {};
+    const closed: string[] = [];
+    const second = {
+      detectForVideo: () => ({ faceLandmarks: [], facialTransformationMatrixes: [] }),
+      close: () => closed.push("second"),
+    };
+    const createLandmarker = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce(second);
+    setLandmarkerDeps({
+      createFileset: vi.fn(async () => ({}) as never),
+      createLandmarker: createLandmarker as never,
+    });
+
+    const firstAttempt = acquireVideoLandmarker();
+    const firstSettled = firstAttempt.catch(() => "failed");
+
+    // 用户在模型加载完成前离开又回来：释放旧句柄，重新获取
+    releaseVideoLandmarker();
+    const client = await acquireVideoLandmarker();
+    expect(client).toBeDefined();
+
+    // 此时第一次创建才失败
+    failFirst(new Error("no wasm"));
+    await firstSettled;
+
+    // 新实例的句柄必须还在槽位里，否则这里关不掉它
+    releaseVideoLandmarker();
+    await vi.waitFor(() => expect(closed).toEqual(["second"]));
   });
 });

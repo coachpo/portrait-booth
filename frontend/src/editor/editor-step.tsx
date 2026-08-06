@@ -85,18 +85,34 @@ function drawTemplateOverlay(
         ctx.stroke();
       }
     } else if (guide.kind === "size-y") {
-      // 允许尺寸画成右侧标尺：它是长度约束，不是位置约束
+      // 允许尺寸是长度约束而不是位置约束，画成右侧标尺：从同一起点出发的两条
+      // 线段，长度分别是允许的最小值与最大值。
+      // 画成 (max − min) 的单根线是错的——那是容差宽度，对 25–35 mm 的头高
+      // 只有 10 mm 长，用户照着它把头调成允许尺寸的三分之一。
       const x = out.width - 10;
-      ctx.beginPath();
-      ctx.moveTo(x, 8);
-      ctx.lineTo(x, 8 + (guide.toPx - guide.fromPx));
-      ctx.stroke();
+      for (const length of [guide.fromPx, guide.toPx]) {
+        ctx.beginPath();
+        ctx.moveTo(x, 8);
+        ctx.lineTo(x, 8 + length);
+        ctx.stroke();
+        // 端点横杠，让两条线的终点可分辨
+        ctx.beginPath();
+        ctx.moveTo(x - 6, 8 + length);
+        ctx.lineTo(x + 4, 8 + length);
+        ctx.stroke();
+      }
     } else {
       const y = out.height - 10;
-      ctx.beginPath();
-      ctx.moveTo(8, y);
-      ctx.lineTo(8 + (guide.toPx - guide.fromPx), y);
-      ctx.stroke();
+      for (const length of [guide.fromPx, guide.toPx]) {
+        ctx.beginPath();
+        ctx.moveTo(8, y);
+        ctx.lineTo(8 + length, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(8 + length, y - 6);
+        ctx.lineTo(8 + length, y + 4);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }

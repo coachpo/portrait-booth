@@ -127,9 +127,16 @@ export function CaptureStep({
   const shoot = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
+    // 记下这次拍摄所属的代际。解码与静态复检要几百毫秒，期间用户可能已经点了
+    // 「返回」或重新连接摄像头；迟到的 onReady 会把状态机硬推到确认步，
+    // 甚至 dispose 掉当时正在使用的另一张源照片。
+    const gen = genRef.current;
+    const isStale = () => gen !== genRef.current;
+
     setError(null);
     setStatus("capturing");
     const blob = await captureStill(video);
+    if (isStale()) return;
     if (!blob) {
       setError("拍摄失败：请重试，或改用上传照片。");
       setStatus("live");
@@ -137,15 +144,28 @@ export function CaptureStep({
     }
     try {
       const source = await loadSourceImage(blob);
+      if (isStale()) {
+        source.dispose();
+        return;
+      }
       // GDE-005：拍摄固定 Blob 后静态复检，不使用预览推理的旧结果
       try {
         // GDE-005 复检结果随 source 传递，由终态页统一展示
         const checks = await runStaticCheck(source.bitmap);
+        if (isStale()) {
+          source.dispose();
+          return;
+        }
         onReady({ ...source, staticChecks: checks });
       } catch {
+        if (isStale()) {
+          source.dispose();
+          return;
+        }
         onReady(source);
       }
     } catch (err) {
+      if (isStale()) return;
       setError(sourceErrorMessage(err));
       setStatus("live");
     }

@@ -265,3 +265,41 @@ vi.mock("../pose/static-check", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../pose/static-check")>();
   return { ...actual, runStaticCheck: vi.fn() };
 });
+
+describe("迟到的拍摄结果", () => {
+  it("drops a capture that finishes after the user left the step", async () => {
+    // 回归：shoot() 的异步结果没有代际检查。解码与静态复检要几百毫秒，
+    // 期间用户点了「返回」；迟到的 onReady 会把状态机硬推到确认步，
+    // 并 dispose 掉当时正在使用的另一张源照片。
+    const blob = new Blob([new Uint8Array([0xff, 0xd8])], { type: "image/jpeg" });
+    vi.mocked(captureStill).mockResolvedValue(blob);
+    const source = fakeSource();
+    let finishDecode: (value: SourceImage) => void = () => {};
+    vi.mocked(loadSourceImage).mockReturnValue(
+      new Promise<SourceImage>((resolve) => {
+        finishDecode = resolve;
+      }),
+    );
+
+    const onReady = vi.fn();
+    const { unmount } = render(
+      <CaptureStep template={template} onReady={onReady} onBack={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
+    fireEvent.click(await screen.findByRole("button", { name: "拍摄" }));
+    // 等到解码真的开始，再让用户离开——否则第一道代际检查就把请求拦下了，
+    // 测不到「解码完成后才发现自己已经过时」这条路径
+    await waitFor(() => expect(loadSourceImage).toHaveBeenCalled());
+
+    // 用户离开这一步
+    unmount();
+    // 解码这才完成
+    await act(async () => {
+      finishDecode(source);
+    });
+
+    expect(onReady).not.toHaveBeenCalled();
+    // 迟到的位图必须被释放，否则这份 ImageBitmap 永远没人管
+    await waitFor(() => expect(source.dispose).toHaveBeenCalled());
+  });
+});

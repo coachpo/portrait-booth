@@ -1,5 +1,7 @@
 """安全响应头（B4/§9.4）。CI 跑 pytest，因此这就是「CSP 的 CI 验证」。"""
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -70,3 +72,53 @@ class TestCacheScoping:
 
     def test_api_responses_do_not_get_the_immutable_cache(self, client):
         assert "immutable" not in client.get("/api/v1/health").headers.get("Cache-Control", "")
+
+    def test_middleware_does_not_append_a_second_copy_of_an_existing_header(self, client):
+        """回归：existing 收的是 ASGI 的 bytes 头名，却拿 str 去比对，永远不相等——
+        「不覆盖已有响应头」的守卫是死代码，中间件会无条件追加第二个同名头。"""
+        resp = client.post("/api/v1/retrievals/resolve", json={"key": "ZZZZZZ"})
+        raw = [v for k, v in resp.headers.raw if k.lower() == b"cache-control"]
+        assert raw == [b"no-store, private"], f"Cache-Control 被追加成了 {raw}"
+
+
+class TestProxyHeaderTrust:
+    """回归：Dockerfile 曾用 --forwarded-allow-ips "*"。
+
+    那让 uvicorn 信任任意直连客户端的 X-Forwarded-For，request.client.host 变成
+    攻击者可控的字符串，§9.3 的单 IP 限速随之失效——每次换一个伪造 IP 就换一个
+    新的限速桶，30 次/小时的限额永远不触发，6 位取回码可以被无限速枚举。
+    """
+
+    DOCKERFILE = Path(__file__).resolve().parents[2] / "Dockerfile"
+
+    def test_dockerfile_does_not_trust_arbitrary_forwarded_headers(self):
+        text = self.DOCKERFILE.read_text(encoding="utf-8")
+        cmd = " ".join(
+            line
+            for line in text.splitlines()
+            if line.startswith("CMD") and not line.lstrip().startswith("#")
+        )
+        assert cmd, "Dockerfile 必须有 CMD"
+        assert "--forwarded-allow-ips" not in cmd, (
+            "不要在镜像里写死可信代理；用 FORWARDED_ALLOW_IPS 环境变量指定具体地址或 CIDR"
+        )
+
+    def test_ip_rate_limit_buckets_by_client(self, client):
+        """限速必须真的按客户端分桶——这是取回码枚举的唯一屏障。"""
+        from app.config import get_settings
+        from app.db import connect
+
+        for _ in range(3):
+            client.post("/api/v1/retrievals/resolve", json={"key": "ZZZZZZ"})
+
+        conn = connect(get_settings().db_path)
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS buckets, MAX(count) AS top FROM rate_limit_counts "
+                "WHERE scope='resolve-ip'"
+            ).fetchone()
+        finally:
+            conn.close()
+        # 同一个客户端的三次请求必须落进同一个桶并累加，而不是各开一个新桶
+        assert row["buckets"] == 1
+        assert row["top"] == 3

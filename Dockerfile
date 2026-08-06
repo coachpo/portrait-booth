@@ -31,4 +31,12 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).status == 200 else 1)"
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# 绝对不要加 --forwarded-allow-ips "*"。
+# 那会让 uvicorn 信任任意直连客户端的 X-Forwarded-For，request.client.host 变成
+# 攻击者可控的字符串，§9.3 的单 IP 限速随之失效：每次换一个伪造 IP 就换一个新的
+# 限速桶，30 次/小时的限额永远不触发，6 位取回码可以被无限速枚举——而取回码是
+# key_only_ephemeral 模式下取回照片的唯一凭证。
+# uvicorn 默认只信任 127.0.0.1。反代不在本机时，用 FORWARDED_ALLOW_IPS 环境变量
+# 写出那台反代的具体地址或 CIDR，不要用通配符；同时确保反代**覆写**而不是追加
+# X-Forwarded-For（nginx 的 $proxy_add_x_forwarded_for 是追加，最左值仍来自客户端）。
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

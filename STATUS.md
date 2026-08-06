@@ -16,6 +16,7 @@ Portrait Booth 处于首个 MVP 实现阶段。产品与技术规格（[产品�
 - 应用外壳：全局导航、404 兜底、ErrorBoundary、`/privacy` 隐私说明页（留存时长等数字全部来自 `/api/v1/service-policy`）。
 - 模板内容门：`python -m app.template_tools validate` 校验 schema、发布规则、引用完整性与 `contentHash` 绑定，已接入 CI。
 - 部署：单容器 Docker（非 root 运行、健康检查、只读根文件系统）。仅用于本地开发与验收，尚未上线。
+- **部署前提**：镜像不信任任何转发头。反代不在本机时，用 `FORWARDED_ALLOW_IPS` 环境变量写出那台反代的具体地址或 CIDR，**不要用通配符**——信任任意客户端的 `X-Forwarded-For` 会让 §9.3 的单 IP 限速完全失效，6 位取回码可被无限速枚举。同时确保反代**覆写**而不是追加该头（nginx 的 `$proxy_add_x_forwarded_for` 是追加，最左值仍来自客户端）。
 
 ## 本轮修复的安全与正确性缺陷
 
