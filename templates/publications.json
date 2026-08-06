@@ -10,7 +10,8 @@
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
-      "publicationRevision": 1
+      "publicationRevision": 1,
+      "contentHash": "a2ee74327160720fa855aa3757f816e2b4778f443d01a1f5b131457a95d17867"
     },
     {
       "revisionId": "us-passport-paper@1",
@@ -21,7 +22,8 @@
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
-      "publicationRevision": 1
+      "publicationRevision": 1,
+      "contentHash": "4af5ebda09bb427dd1426a5072177fe8ee493bd2b866aca0cd3cebdc660e8f38"
     },
     {
       "revisionId": "us-visa-digital@1",
@@ -32,7 +34,8 @@
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
-      "publicationRevision": 1
+      "publicationRevision": 1,
+      "contentHash": "9fce7a95fb0f4fb35361cc3642bf405d697ee8dca575df28ae0fa8e7e183b41b"
     },
     {
       "revisionId": "fi-police-digital@1",
@@ -43,7 +46,8 @@
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
-      "publicationRevision": 1
+      "publicationRevision": 1,
+      "contentHash": "a838af2e931753f1c21d291ae89cf5b5455be79d91bb5e1da3a1b925f8a844f6"
     },
     {
       "revisionId": "cn-visa-digital-ma-rabat@1",
@@ -54,7 +58,8 @@
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
-      "publicationRevision": 1
+      "publicationRevision": 1,
+      "contentHash": "cfde1889e554cb5594951961a4900aeed36cdc801156dd2836f247c6ab767bf9"
     },
     {
       "revisionId": "jp-passport-paper@1",
@@ -65,7 +70,8 @@
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
-      "publicationRevision": 1
+      "publicationRevision": 1,
+      "contentHash": "7e8c1d6b5cb92ff3f23201a24b52aa537c8f26087ae7d18e81a98cae216bd6bd"
     }
   ]
 }

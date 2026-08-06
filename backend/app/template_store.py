@@ -42,9 +42,42 @@ def _schema_for(schema_version: int) -> dict:
     return _load_json(schema_file)
 
 
+PUBLICATION_STATUSES = ("active", "reference_only", "deprecated", "unsupported")
+
+
+def _validate_references(revision: dict) -> None:
+    """引用完整性：坏引用在 EDT-008 蒙版上线后会表现为「静默不画」，极难排查。"""
+    revision_id = revision.get("revisionId")
+    source_ids = {s.get("id") for s in revision.get("sources", [])}
+
+    rule_ids: set[str] = set()
+    for rule in list(revision.get("cropRules", [])) + list(revision.get("captureRules", [])):
+        rule_id = rule.get("id")
+        if rule_id in rule_ids:
+            raise ValueError(f"{revision_id}: 规则 id 重复 {rule_id}")
+        rule_ids.add(rule_id)
+        for ref in rule.get("sourceRefs", []):
+            if ref not in source_ids:
+                raise ValueError(
+                    f"{revision_id}: 规则 {rule_id} 的 sourceRefs {ref} 不在 sources 中"
+                )
+
+    crop_by_id = {r.get("id"): r for r in revision.get("cropRules", [])}
+    for ref in revision.get("overlay", {}).get("ruleIds", []):
+        rule = crop_by_id.get(ref)
+        if rule is None:
+            raise ValueError(f"{revision_id}: overlay.ruleIds {ref} 不在 cropRules 中")
+        # 姿态角度规则没有输出像素坐标，画不出蒙版
+        if rule.get("coordinateSpace") == "pose_camera_degrees":
+            raise ValueError(f"{revision_id}: overlay 不能引用 pose_camera_degrees 规则 {ref}")
+
+
 def _validate_publication_rules(revision: dict, publication: dict) -> None:
     """SPEC §5.1 发布组合规则：active 模板必须可输出 MVP 支持的 JPEG。"""
     status = publication.get("status")
+    if status not in PUBLICATION_STATUSES:
+        # 早退等于放行：未知状态必须让加载失败，而不是被当成「不用检查」
+        raise ValueError(f"{revision.get('revisionId')}: 未知 publication status {status!r}")
     if status not in ("active", "reference_only"):
         return
     output_kind = revision.get("output", {}).get("kind")
@@ -68,6 +101,7 @@ def load_template_catalog(
 
     publications: dict[str, dict] = {}
     pubs = _load_json(publications_file)
+    jsonschema.validate(pubs, _load_json(_SCHEMA_PATH / "template-publication-v1.schema.json"))
     for pub in pubs.get("publications", []):
         publications[pub["revisionId"]] = pub
 
@@ -86,12 +120,21 @@ def load_template_catalog(
 
         schema = _schema_for(revision.get("schemaVersion", _UNSPECIFIED))
         jsonschema.validate(revision, schema)
+        _validate_references(revision)
         _validate_publication_rules(revision, publication)
+
+        content_hash = _content_hash(revision)
+        declared = publication.get("contentHash")
+        if declared is not None and declared != content_hash:
+            raise ValueError(
+                f"{path.name}: publication.contentHash 与 revision 内容不符——"
+                f"revision 被就地修改而没有升版本？期望 {content_hash}，声明 {declared}"
+            )
 
         entries.append(
             TemplateEntry(
                 revision=revision,
-                contentHash=_content_hash(revision),
+                contentHash=content_hash,
                 publication=publication,
             )
         )

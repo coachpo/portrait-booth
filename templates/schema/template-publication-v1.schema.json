@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://portrait-booth.local/schema/template-publication-v1.schema.json",
+  "title": "Template publication file (v1)",
+  "description": "publications.json 的结构。revision 是不可变内容，publication 是它的可变发布状态。",
+  "type": "object",
+  "required": ["schemaVersion", "publications"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "publications": {
+      "description": "空数组本身合法：具体哪个 revision 缺记录由加载期检查报出，错误信息更精确。",
+      "type": "array",
+      "items": { "$ref": "#/$defs/publication" }
+    }
+  },
+  "$defs": {
+    "publication": {
+      "type": "object",
+      "required": [
+        "revisionId",
+        "status",
+        "statusReason",
+        "owner",
+        "reviewer",
+        "verifiedAt",
+        "reviewDueAt",
+        "effectiveAt",
+        "publicationRevision"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "revisionId": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+@[0-9]+$"
+        },
+        "status": {
+          "description": "active 可用于产出成品；其余状态一律不可提交。",
+          "enum": ["active", "reference_only", "deprecated", "unsupported"]
+        },
+        "statusReason": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "reviewer": { "type": "string", "minLength": 1 },
+        "verifiedAt": { "type": "string", "format": "date" },
+        "reviewDueAt": { "type": "string", "format": "date" },
+        "effectiveAt": { "type": "string", "format": "date" },
+        "validUntil": { "type": "string", "format": "date" },
+        "publicationRevision": { "type": "integer", "minimum": 1 },
+        "contentHash": {
+          "description": "绑定的 revision 内容哈希。缺失时 revision 可以被就地改数字而不升版本，系统不会报错。",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}
