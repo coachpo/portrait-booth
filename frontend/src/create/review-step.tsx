@@ -10,6 +10,7 @@ import { useEffect, useMemo } from "react";
 
 import type { SourceImage } from "../image/source";
 import { entryLabel } from "../lib/templates/catalog";
+import { uiLocale } from "../lib/locale";
 import type { TemplateEntry } from "../lib/templates/types";
 import { staticCheckUnknowns, staticCheckWarnings } from "../pose/static-check";
 import {
@@ -87,7 +88,7 @@ export function ReviewStep({
     <section aria-label="确认照片">
       <h2>确认这张照片</h2>
       <p className="muted">
-        模板：{entryLabel(template, "zh")}
+        模板：{entryLabel(template, uiLocale())}
         {out && `（输出 ${out.width}×${out.height} 像素）`}。确认后进入裁剪与编辑。
       </p>
 

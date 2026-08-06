@@ -8,6 +8,8 @@
 import { resolveOutputSize, type OutputSizeOption } from "../editor/edit-transform";
 import type { TemplateEntry, TemplateRevision } from "../lib/templates/types";
 import type { StaticCheckResult } from "../pose/static-check";
+import { formatGuidance } from "../pose/guidance-text";
+import { uiLocale } from "../lib/locale";
 import { QUALITY_CONFIG } from "../pose/quality";
 import { hasExifSegment, readJpegDensity } from "./jpeg";
 import type { FinalArtifact } from "./final-artifact";
@@ -184,7 +186,7 @@ function poseCheck(staticChecks?: StaticCheckResult | null): CheckItem {
     id: "pose",
     label: "姿态检查",
     status: "warn",
-    detail: `${pose.guidance}（${HEURISTIC_NOTICE}）`,
+    detail: `${formatGuidance(pose.status, pose.guidanceHints, uiLocale())}（${HEURISTIC_NOTICE}）`,
   };
 }
 

@@ -24,6 +24,7 @@ import {
   provenanceLabel,
 } from "../lib/templates/describe";
 import { sourceNotesFor } from "../lib/templates/disclosure";
+import { uiLocale } from "../lib/locale";
 import type { TemplateCatalog, TemplateEntry } from "../lib/templates/types";
 import { metricLabel } from "../editor/overlay";
 
@@ -267,11 +268,11 @@ export function TemplateDetailPage() {
   const rev = entry.revision;
   const pub = entry.publication;
   const official = isOfficial(entry);
-  const notes = sourceNotesFor(rev, "zh");
+  const notes = sourceNotesFor(rev, uiLocale());
 
   return (
     <section aria-label="模板详情">
-      <h1>{entryLabel(entry, "zh")}</h1>
+      <h1>{entryLabel(entry, uiLocale())}</h1>
       <p className="muted">
         <span className={`badge badge-${pub.status}`}>
           {pub.status === "active" ? "可用" : "仅供参考"}

@@ -14,6 +14,7 @@ import {
 import { outputDescription } from "../lib/templates/describe";
 import { capabilityRestrictions, sourceNotesFor } from "../lib/templates/disclosure";
 import { editorPolicy } from "../lib/templates/policy";
+import { uiLocale } from "../lib/locale";
 import type {
   DocumentType,
   SubmissionChannel,
@@ -178,11 +179,11 @@ function TemplateCard({
   const status = entry.publication.status;
   const official = isOfficialDocument(entry);
   const restrictions = capabilityRestrictions(rev.capabilities);
-  const notes = sourceNotesFor(rev, "zh");
+  const notes = sourceNotesFor(rev, uiLocale());
   return (
     <li className="template-card">
       <div className="template-card-head">
-        <h3>{entryLabel(entry, "zh")}</h3>
+        <h3>{entryLabel(entry, uiLocale())}</h3>
         <span className={`badge badge-${status}`}>{status === "active" ? "可用" : "仅供参考"}</span>
         {!official && <span className="badge badge-portrait">非证件模板</span>}
       </div>

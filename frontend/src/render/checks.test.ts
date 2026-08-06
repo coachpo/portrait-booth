@@ -136,7 +136,7 @@ function poseState(overrides: Partial<StaticCheckResult["pose"] & object> = {}) 
     faceOffset: { x: 0, y: 0 },
     stableMs: 900,
     shootable: true,
-    guidance: "姿势稳定，可以拍摄。",
+    guidanceHints: [],
     ...overrides,
   };
 }
@@ -378,7 +378,7 @@ describe("buildChecks", () => {
         artifact(96),
         template(),
         staticCheckResult({
-          pose: poseState({ status: "unstable", guidance: "姿势需调整：请抬头一点。" }),
+          pose: poseState({ status: "unstable", guidanceHints: ["raise-head"] }),
         }),
       );
       const pose = checks.find((c) => c.id === "pose")!;

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 
 import { entryLabel } from "../lib/templates/catalog";
+import { uiLocale } from "../lib/locale";
 import type { TemplateEntry } from "../lib/templates/types";
 import { loadSourceImage, sourceErrorMessage, type SourceImage } from "../image/source";
 import { runStaticCheck } from "../pose/static-check";
@@ -41,7 +42,7 @@ export function SourceStep({ template, onReady, onBack }: SourceStepProps) {
     <section aria-label="选择照片来源">
       <h2>上传照片</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, "zh")}。支持 JPEG、PNG、WebP（单文件 ≤15
+        已选模板：{entryLabel(template, uiLocale())}。支持 JPEG、PNG、WebP（单文件 ≤15
         MB）；照片只在本地处理，不会自动上传。
       </p>
       <input

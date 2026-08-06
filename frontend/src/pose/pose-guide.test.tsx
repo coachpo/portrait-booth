@@ -146,6 +146,47 @@ describe("PoseGuide", () => {
     expect(detectVideo.mock.calls.length).toBe(callsBefore);
   });
 
+  it("updates the guidance text when hints change within the same status (O4)", async () => {
+    // 回归：sameGuidance 若只比 status、不比 hints，同 status（out-of-position）
+    // 下提示从「靠近」变成「靠近 + 向右」会被当成没变而卡住不更新
+    const outOfPositionFace = (width: number, offsetX: number) => {
+      const f = faceObservation();
+      const left = 0.5 - width / 2 + offsetX;
+      const right = 0.5 + width / 2 + offsetX;
+      f.landmarks = new Array<{ x: number; y: number; z?: number }>(478).fill({
+        x: 0.5,
+        y: 0.5,
+      });
+      f.landmarks[33] = { x: left, y: 0.4 };
+      f.landmarks[263] = { x: right, y: 0.4 };
+      f.landmarks[10] = { x: 0.5, y: 0.2 };
+      f.landmarks[152] = { x: 0.5, y: 0.65 };
+      return f;
+    };
+    let faces: FaceObservation[] = [outOfPositionFace(0.05, 0)];
+    const detectVideo = vi.fn().mockImplementation(() => faces);
+    vi.mocked(acquireVideoLandmarker).mockResolvedValue({ detectVideo } as never);
+    const { video, tick } = makeVideo(true);
+    const videoRef = createRef<HTMLVideoElement>();
+    videoRef.current = video;
+    const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+    render(<PoseGuide videoRef={videoRef} mirrored={false} />);
+    await vi.waitFor(() => expect(acquireVideoLandmarker).toHaveBeenCalled());
+
+    await act(async () => tick());
+    const status = await screen.findByRole("status");
+    const before = status.textContent;
+
+    // 同一 status 下 hints 从 [move-closer] 变成 [move-closer, move-own-right]
+    faces = [outOfPositionFace(0.05, 0.3)];
+    nowSpy.mockReturnValue(200);
+    await act(async () => tick());
+    expect(status.textContent).not.toBe(before);
+    expect(status.textContent).toContain("请靠近一些");
+    expect(status.textContent).toContain("请向你自己的右侧移动");
+    nowSpy.mockRestore();
+  });
+
   it("throttles inference instead of running at display frame rate", async () => {
     // 回归：旧实现靠 landmarker 内的 busy 标志丢帧，但推理是同步的，
     // 函数返回时 busy 必然已复位——那个分支永远不成立。

@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { acquireVideoLandmarker, releaseVideoLandmarker, type VideoLandmarker } from "./landmarker";
 import { measureInference } from "./perf";
+import { formatGuidance } from "./guidance-text";
+import { uiLocale } from "../lib/locale";
 import { DEFAULT_POSE_THRESHOLDS, PoseTracker, type PoseState } from "./tracking";
 
 export interface PoseGuideProps {
@@ -44,10 +46,19 @@ function sameGuidance(a: PoseState | null, b: PoseState): boolean {
   return (
     a !== null &&
     a.status === b.status &&
-    a.guidance === b.guidance &&
+    sameHints(a.guidanceHints, b.guidanceHints) &&
     a.shootable === b.shootable &&
     Math.floor(a.stableMs / 250) === Math.floor(b.stableMs / 250)
   );
+}
+
+/** hints 按值比较：先比长度，再逐项比较，顺序敏感（O4）。 */
+function sameHints(a: PoseState["guidanceHints"], b: PoseState["guidanceHints"]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 export function PoseGuide({ videoRef, mirrored }: PoseGuideProps) {
@@ -154,7 +165,7 @@ export function PoseGuide({ videoRef, mirrored }: PoseGuideProps) {
       </span>
       {/* 只有指令进 aria-live：倒计时每帧都变，播报它会把读屏用户淹没 */}
       <span role="status" aria-live="polite">
-        {state.guidance}
+        {formatGuidance(state.status, state.guidanceHints, uiLocale())}
       </span>
       {countdown !== null && <span aria-hidden="true">（保持 {countdown} 秒）</span>}
       {state.shootable && <span aria-hidden="true"> 可以拍摄。</span>}

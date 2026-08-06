@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resetLandmarkersForTest, setLandmarkerDeps } from "./landmarker";
-import { runStaticCheck } from "./static-check";
+import { runStaticCheck, staticCheckWarnings } from "./static-check";
 import type { QualityDeps, StaticBitmapSource } from "./quality";
 
 /** 478 长度 canonical face mesh，睁眼闭嘴样本（square 图） */
@@ -107,6 +107,33 @@ describe("runStaticCheck (O2)", () => {
     expect(result.poseAvailable).toBe(true);
     expect(result.faceGeometry).toBeNull();
     expect(result.quality.metrics.background).toBeNull();
+  });
+
+  it("formats the recheck warning as a complete Chinese sentence (O4)", () => {
+    const warnings = staticCheckWarnings({
+      poseAvailable: true,
+      pose: {
+        status: "unstable",
+        guidanceHints: ["raise-head"],
+        angles: { yaw: 0, pitch: 12, roll: 0 },
+        faceWidthRatio: 0.3,
+        faceOffset: { x: 0, y: 0 },
+        stableMs: 0,
+        shootable: false,
+      },
+      faceGeometry: null,
+      quality: {
+        status: "warn",
+        issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+        metrics: {
+          darkClipRatio: 0,
+          brightClipRatio: 0,
+          sharpness: 120,
+          background: null,
+        },
+      },
+    });
+    expect(warnings).toEqual(["姿态复检未通过：姿势需调整：请抬头一点。"]);
   });
 
   it("keeps poseAvailable false and geometry null when the model throws (O2)", async () => {

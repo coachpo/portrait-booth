@@ -45,6 +45,26 @@ export interface FaceObservation {
 
 export type GuidanceStatus = "no-face" | "multi-face" | "out-of-position" | "unstable" | "ready";
 
+/**
+ * 结构化姿态提示 key（O4）：tracking 只产出 key，中文措辞在
+ * pose/guidance-text.ts 统一格式化。
+ */
+export type GuidanceHint =
+  | "move-closer"
+  | "move-farther"
+  | "move-own-left"
+  | "move-own-right"
+  | "move-up"
+  | "move-down"
+  | "adjust-position"
+  | "turn-own-left"
+  | "turn-own-right"
+  | "raise-head"
+  | "lower-head"
+  | "level-own-left"
+  | "level-own-right"
+  | "hold-still";
+
 export interface PoseState {
   status: GuidanceStatus;
   angles: PoseAngles;
@@ -55,7 +75,8 @@ export interface PoseState {
   stableMs: number;
   /** 自动拍摄就绪：稳定且位置合规 */
   shootable: boolean;
-  guidance: string;
+  /** 姿态提示 key（顺序即语义：先远近、再左右、后上下；yaw、pitch、roll） */
+  guidanceHints: GuidanceHint[];
 }
 
 export interface TrackingOptions {
@@ -255,7 +276,7 @@ export class PoseTracker {
       faceOffset: this.lastFaceOffset,
       stableMs,
       shootable,
-      guidance: this.guidance(status),
+      guidanceHints: this.guidance(status),
     };
   }
 
@@ -265,48 +286,47 @@ export class PoseTracker {
    * 措辞不依赖 mirrored——身体方向是物理事实，不随预览是否镜像而改变。
    * 旧实现用 mirrored 去翻转身体方向，等价于断言「换个摄像头，人就转了个身」，
    * 两个分支里必然有一支是错的。
+   * 只产出 key，不产中文；真人样本校准后要翻的是下面两个方向常量，文案表不动。
    */
-  private guidance(status: GuidanceStatus): string {
-    if (status === "no-face") return "未检测到人脸：请进入画面。";
-    if (status === "multi-face") return "检测到多张人脸：请确保画面中只有一个人。";
+  private guidance(status: GuidanceStatus): GuidanceHint[] {
+    if (status === "no-face" || status === "multi-face" || status === "ready") return [];
     if (status === "out-of-position") {
       const { x, y } = this.lastFaceOffset;
       const w = this.lastFaceWidth;
-      const parts: string[] = [];
-      if (w < this.thresholds.faceWidthMin) parts.push("请靠近一些");
-      else if (w > this.thresholds.faceWidthMax) parts.push("请离远一些");
+      const parts: GuidanceHint[] = [];
+      if (w < this.thresholds.faceWidthMin) parts.push("move-closer");
+      else if (w > this.thresholds.faceWidthMax) parts.push("move-farther");
       if (Math.abs(x) > this.thresholds.faceOffsetMax) {
         // MediaPipe 读的是 <video> 的原始帧——预览镜像只是 CSS transform，
         // 不改变送进推理的像素。未镜像画面里，被摄者向自己的左侧移动时脸往画面
         // 右侧走（x 增大）。所以 x > 0 表示人已经偏在自己的左侧，要往右回中。
-        parts.push(x > 0 ? "请向你自己的右侧移动" : "请向你自己的左侧移动");
+        parts.push(x > 0 ? "move-own-right" : "move-own-left");
       }
       if (Math.abs(y) > this.thresholds.faceOffsetMax) {
-        parts.push(y > 0 ? "请向上移动" : "请向下移动");
+        parts.push(y > 0 ? "move-up" : "move-down");
       }
-      if (parts.length === 0) parts.push("请调整站位");
-      return `人脸位置需调整：${parts.join("，")}。`;
+      if (parts.length === 0) parts.push("adjust-position");
+      return parts;
     }
-    if (status === "unstable") {
+    {
       const { yaw, pitch, roll } = this.lastAngles;
-      const parts: string[] = [];
+      const parts: GuidanceHint[] = [];
       if (Math.abs(yaw) > this.thresholds.yawDeg) {
         const turnedToOwnLeft = YAW_POSITIVE_IS_OWN_LEFT ? yaw > 0 : yaw < 0;
-        parts.push(turnedToOwnLeft ? "请向你自己的右侧转一点" : "请向你自己的左侧转一点");
+        parts.push(turnedToOwnLeft ? "turn-own-right" : "turn-own-left");
       }
       if (Math.abs(pitch) > this.thresholds.pitchDeg) {
         // pitch = asin(-R12/s) 是绕 +X 轴的转角，而本文件采用的约定是
         // +X 指向被摄者自己的左侧、+Y 向上、+Z 朝向相机。绕 +X 正向旋转把前向 +Z
         // 转到 -Y，也就是脸朝下。所以 pitch > 0 表示正在低头，该提示抬头。
-        parts.push(pitch > 0 ? "请抬头一点" : "请低头一点");
+        parts.push(pitch > 0 ? "raise-head" : "lower-head");
       }
       if (Math.abs(roll) > this.thresholds.rollDeg) {
         const tiltedToOwnLeft = ROLL_POSITIVE_IS_OWN_LEFT ? roll > 0 : roll < 0;
-        parts.push(tiltedToOwnLeft ? "请把头向你自己的右侧摆正" : "请把头向你自己的左侧摆正");
+        parts.push(tiltedToOwnLeft ? "level-own-right" : "level-own-left");
       }
-      if (parts.length === 0) parts.push("请保持当前姿势");
-      return `姿势需调整：${parts.join("，")}。`;
+      if (parts.length === 0) parts.push("hold-still");
+      return parts;
     }
-    return "姿势稳定，可以拍摄（启发式判断，非官方容差）。";
   }
 }

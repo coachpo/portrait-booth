@@ -4,6 +4,7 @@ import type { SourceImage } from "../image/source";
 import { buildOverlayGuides, headEllipse, type OverlayGuide } from "./overlay";
 import { entryLabel } from "../lib/templates/catalog";
 import { editorPolicy } from "../lib/templates/policy";
+import { uiLocale } from "../lib/locale";
 import type { TemplateEntry } from "../lib/templates/types";
 import { PolicyNotices } from "./policy-notice";
 import {
@@ -292,7 +293,7 @@ export function EditorStep({
       <section aria-label="编辑">
         <h2>编辑照片</h2>
         <p className="muted">
-          模板「{entryLabel(template, "zh")}」由官方门户处理裁剪，无需本地编辑。
+          模板「{entryLabel(template, uiLocale())}」由官方门户处理裁剪，无需本地编辑。
         </p>
         <div className="step-actions">
           <button
@@ -432,7 +433,7 @@ export function EditorStep({
     <section aria-label="编辑">
       <h2>编辑照片</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, "zh")}（{out.width}×{out.height} 像素）。
+        已选模板：{entryLabel(template, uiLocale())}（{out.width}×{out.height} 像素）。
         旋转用于纠正扫描或相机画布方向，不代表姿态合规（EDT-006）。
       </p>
       <div className="editor-layout">

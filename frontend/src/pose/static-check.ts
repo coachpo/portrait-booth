@@ -12,6 +12,8 @@ import {
   type QualityResult,
   type StaticBitmapSource,
 } from "./quality";
+import { formatGuidance } from "./guidance-text";
+import { uiLocale } from "../lib/locale";
 import { acquireImageLandmarker } from "./landmarker";
 import {
   EAR_CLOSED_MAX,
@@ -83,7 +85,9 @@ export async function runStaticCheck(
 export function staticCheckWarnings(result: StaticCheckResult): string[] {
   const warnings: string[] = [];
   if (result.pose && result.pose.status !== "ready") {
-    warnings.push(`姿态复检未通过：${result.pose.guidance}`);
+    warnings.push(
+      `姿态复检未通过：${formatGuidance(result.pose.status, result.pose.guidanceHints, uiLocale())}`,
+    );
   }
   if (result.faceGeometry?.eyesClosed) {
     warnings.push("疑似闭眼：眼睛张开的程度低于启发式阈值");

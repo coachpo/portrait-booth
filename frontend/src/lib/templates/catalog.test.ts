@@ -10,6 +10,7 @@ import {
   jurisdictionName,
   uniqueJurisdictions,
 } from "./catalog";
+import { uiLocale } from "../locale";
 import type { TemplateCatalog, TemplateEntry } from "./types";
 
 function entry(
@@ -138,6 +139,8 @@ describe("template catalog", () => {
 
   it("falls back across label locales", () => {
     expect(entryLabel(catalog.templates[0], "fr")).toBe("测试模板");
+    // O4：UI 语言键单一来源
+    expect(uiLocale()).toBe("zh");
   });
 
   it("marks portrait templates as non-official", () => {

@@ -6,6 +6,7 @@ import {
   decomposeRotationMatrix,
   matrixScale,
 } from "./angles";
+import { formatGuidance } from "./guidance-text";
 import {
   DEFAULT_POSE_THRESHOLDS,
   PoseTracker,
@@ -253,7 +254,7 @@ describe("PoseTracker (GDE-001/004)", () => {
     const tracker = new PoseTracker();
     const state = tracker.update([landmarksFace(0.05, { x: 0, y: 0 })], 0);
     expect(state.status).toBe("out-of-position");
-    expect(state.guidance).toContain("靠近");
+    expect(state.guidanceHints).toEqual(["move-closer"]);
   });
 
   describe("hysteresis (GDE-004)", () => {
@@ -292,13 +293,15 @@ describe("PoseTracker (GDE-001/004)", () => {
       const plain = new PoseTracker({ mirrored: false });
       const mirrored = new PoseTracker({ mirrored: true });
       const observation = [anglesFace({ yaw: 16, pitch: 0, roll: 0 })];
-      expect(plain.update(observation, 0).guidance).toBe(mirrored.update(observation, 0).guidance);
+      expect(plain.update(observation, 0).guidanceHints).toEqual(
+        mirrored.update(observation, 0).guidanceHints,
+      );
     });
 
     it("phrases turn instructions in terms of the subject's own body", () => {
       const tracker = new PoseTracker();
       const state = tracker.update([anglesFace({ yaw: 16, pitch: 0, roll: 0 })], 0);
-      expect(state.guidance).toContain("你自己的");
+      expect(state.guidanceHints).toEqual(["turn-own-right"]);
     });
 
     it("sends a subject standing to their own left back to the right", () => {
@@ -308,13 +311,13 @@ describe("PoseTracker (GDE-001/004)", () => {
       const tracker = new PoseTracker();
       const state = tracker.update([landmarksFace(0.3, { x: 0.3, y: 0 })], 0);
       expect(state.status).toBe("out-of-position");
-      expect(state.guidance).toContain("请向你自己的右侧移动");
+      expect(state.guidanceHints).toEqual(["move-own-right"]);
     });
 
     it("sends a subject standing to their own right back to the left", () => {
       const tracker = new PoseTracker();
       const state = tracker.update([landmarksFace(0.3, { x: -0.3, y: 0 })], 0);
-      expect(state.guidance).toContain("请向你自己的左侧移动");
+      expect(state.guidanceHints).toEqual(["move-own-left"]);
     });
 
     it("tells a subject who is looking down to raise their head", () => {
@@ -324,20 +327,19 @@ describe("PoseTracker (GDE-001/004)", () => {
       const tracker = new PoseTracker();
       const state = tracker.update([anglesFace({ yaw: 0, pitch: 12, roll: 0 })], 0);
       expect(state.status).toBe("unstable");
-      expect(state.guidance).toContain("请抬头一点");
+      expect(state.guidanceHints).toEqual(["raise-head"]);
     });
 
     it("tells a subject who is looking up to lower their head", () => {
       const tracker = new PoseTracker();
       const state = tracker.update([anglesFace({ yaw: 0, pitch: -12, roll: 0 })], 0);
-      expect(state.guidance).toContain("请低头一点");
+      expect(state.guidanceHints).toEqual(["lower-head"]);
     });
 
     it("labels the ready state as an uncalibrated heuristic", () => {
       const tracker = new PoseTracker();
-      expect(tracker.update([landmarksFace(0.3, { x: 0, y: 0 })], 0).guidance).toContain(
-        "非官方容差",
-      );
+      expect(tracker.update([landmarksFace(0.3, { x: 0, y: 0 })], 0).guidanceHints).toEqual([]);
+      expect(formatGuidance("ready", [], "zh")).toContain("非官方容差");
     });
   });
 

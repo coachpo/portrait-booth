@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { entryLabel } from "../lib/templates/catalog";
+import { uiLocale } from "../lib/locale";
 import type { TemplateEntry } from "../lib/templates/types";
 import { loadSourceImage, sourceErrorMessage, type SourceImage } from "../image/source";
 import {
@@ -199,7 +200,7 @@ export function CaptureStep({
     <section aria-label="摄像头拍摄">
       <h2>拍摄照片</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, "zh")}。仅在点击后才会请求摄像头权限。
+        已选模板：{entryLabel(template, uiLocale())}。仅在点击后才会请求摄像头权限。
       </p>
       {status === "idle" && (
         <>

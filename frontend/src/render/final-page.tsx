@@ -9,6 +9,7 @@ import { buildChecks, isPrintReady, type CheckItem } from "./checks";
 import { StagingPanel, type StagedReceipt } from "./staging-panel";
 import { renderFinalArtifact, RenderError, type FinalArtifact } from "./final-artifact";
 import { capabilityRestrictions, sourceNotesFor } from "../lib/templates/disclosure";
+import { uiLocale } from "../lib/locale";
 
 export interface FinalPageProps {
   source: SourceImage;
@@ -57,7 +58,7 @@ export function physicalSizeInfo(template: TemplateEntry): PhysicalSizeInfo | nu
 function TemplateDisclosure({ entry }: { entry: TemplateEntry }) {
   const rev = entry.revision;
   const restrictions = capabilityRestrictions(rev.capabilities);
-  const notes = sourceNotesFor(rev, "zh");
+  const notes = sourceNotesFor(rev, uiLocale());
   if (rev.sources.length === 0 && restrictions.length === 0 && notes.length === 0) return null;
   return (
     <section className="template-disclosure" aria-label="模板披露">
@@ -186,7 +187,7 @@ export function FinalPage({
     <section aria-label="终态照片">
       <h2>终态照片</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, "zh")}（{jurisdictionName(rev.jurisdiction)}）
+        已选模板：{entryLabel(template, uiLocale())}（{jurisdictionName(rev.jurisdiction)}）
       </p>
       {error && (
         <div role="alert" className="template-error">
