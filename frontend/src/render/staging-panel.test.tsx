@@ -15,7 +15,7 @@ vi.mock("../api/service-policy", async (importOriginal) => {
   return { ...actual, fetchServicePolicy: vi.fn() };
 });
 
-import { createSaveSession, deletePhoto, savePhoto } from "../api/save";
+import { ApiError, createSaveSession, deletePhoto, savePhoto } from "../api/save";
 import { fetchServicePolicy } from "../api/service-policy";
 import type { FinalArtifact } from "./final-artifact";
 import type { TemplateEntry } from "../lib/templates/types";
@@ -94,6 +94,26 @@ describe("StagingPanel", () => {
     const firstKey = vi.mocked(savePhoto).mock.calls[0][3];
     const secondKey = vi.mocked(savePhoto).mock.calls[1][3];
     expect(secondKey).toBe(firstKey);
+    // 同一会话复用：重试不能再建会话，否则幂等命名空间被换掉，服务端无从重放
+    expect(createSaveSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers from an expired session with a new session and a fresh idempotency key", async () => {
+    // 回归：会话过期（SESSION_REQUIRED）时沿用旧幂等键重发，命中的是已随旧会话
+    // 消失的命名空间，服务端只会当作一次全新保存、多出一张无法删除的照片
+    vi.mocked(savePhoto)
+      .mockRejectedValueOnce(new ApiError("SESSION_REQUIRED", "需要先建立保存会话", 403))
+      .mockResolvedValueOnce(saved);
+    await openConfirm();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    await screen.findByText("A7C 2F9");
+
+    expect(createSaveSession).toHaveBeenCalledTimes(2);
+    expect(savePhoto).toHaveBeenCalledTimes(2);
+    const firstKey = vi.mocked(savePhoto).mock.calls[0][3];
+    const secondKey = vi.mocked(savePhoto).mock.calls[1][3];
+    expect(secondKey).not.toBe(firstKey);
   });
 
   it("is not a dead end after a failed upload", async () => {

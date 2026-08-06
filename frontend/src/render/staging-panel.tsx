@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+  ApiError,
   createSaveSession,
   deletePhoto,
   newIdempotencyKey,
@@ -63,6 +64,8 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
   // SPEC §11 的「同一幂等键重试」：键必须跨重试保持不变，
   // 每次点击都新建一个键的话，服务端看到的永远是一次全新的保存。
   const idempotencyKeyRef = useRef<string | null>(null);
+  // 会话 Cookie 由浏览器同源自动携带；建过就不再重建，重试才能落在同一命名空间
+  const sessionReadyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,20 +87,41 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
     idempotencyKeyRef.current = null;
   }, [artifact.artifactId]);
 
+  const ensureSaveSession = async (): Promise<void> => {
+    if (sessionReadyRef.current) return;
+    await createSaveSession();
+    sessionReadyRef.current = true;
+  };
+
   const upload = async () => {
     setStage({ kind: "uploading" });
     idempotencyKeyRef.current ??= newIdempotencyKey();
-    try {
-      await createSaveSession();
-      const saved = await savePhoto(
-        artifact.blob,
-        template.revision.id,
-        template.revision.version,
-        idempotencyKeyRef.current,
-      );
-      setStage({ kind: "done", saved });
-    } catch (err) {
-      setStage({ kind: "error", message: err instanceof Error ? err.message : "暂存失败，请重试" });
+    // 至多重发一次：仅当会话过期（SESSION_REQUIRED）时换新会话新键重试，
+    // 其余错误直接交回 error 态由用户决定。
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await ensureSaveSession();
+        const saved = await savePhoto(
+          artifact.blob,
+          template.revision.id,
+          template.revision.version,
+          idempotencyKeyRef.current,
+        );
+        setStage({ kind: "done", saved });
+        return;
+      } catch (err) {
+        const sessionExpired = err instanceof ApiError && err.code === "SESSION_REQUIRED";
+        if (!sessionExpired || attempt === 1) {
+          setStage({
+            kind: "error",
+            message: err instanceof Error ? err.message : "暂存失败，请重试",
+          });
+          return;
+        }
+        // 旧会话连同它的幂等命名空间一起消失：沿用旧键既命不中重放，又会误导排查
+        sessionReadyRef.current = false;
+        idempotencyKeyRef.current = newIdempotencyKey();
+      }
     }
   };
 
@@ -113,7 +137,7 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
     } catch (err) {
       // 删除失败必须留在 done 面板里报错，不能切到上传用的 error 状态：
       // 那会连同取回码、删除密钥与回执下载一起消失，而 error 状态唯一的主按钮
-      // 是「用同一幂等键重试」——它执行的是 upload()，幂等键还在，服务端命中
+      // 是「用同一幂等键重试」——它执行的是 upload()：会话未过期时服务端命中
       // 已完成的记录并重放原 envelope，用户会拿到一个指向已删除照片的取回码。
       setDeleteError(err instanceof Error ? err.message : "删除失败，请重试");
       setStage({ kind: "done", saved });
@@ -249,7 +273,8 @@ export function StagingPanel({ artifact, template }: StagingPanelProps) {
             {stage.message}
           </p>
           <div className="step-actions">
-            {/* 复用同一个幂等键重试：服务端据此识别这是同一次保存，不会产生第二张照片 */}
+            {/* 复用同一会话与幂等键重试：会话未过期时服务端命中已完成记录并重放原响应，
+                不产生新照片；会话已过期则 upload() 内换新会话新键重发一次 */}
             <button type="button" className="primary" onClick={() => void upload()}>
               用同一幂等键重试
             </button>

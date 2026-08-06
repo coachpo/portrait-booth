@@ -143,6 +143,32 @@ class TestSaveFlow:
         assert resp.status_code == 409
         assert resp.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
 
+    def test_new_session_same_idempotency_key_is_a_new_save(self, client):
+        """不变量：会话摘要参与幂等主键，换会话即换命名空间，同幂等键也是全新保存。"""
+        session_a = client.post("/api/v1/save-sessions")
+        cookie_a = session_a.cookies["pb_save_session"]
+        first = client.post(
+            "/api/v1/saves",
+            files={"photo": ("p.jpg", make_jpeg(), "image/jpeg")},
+            data={"templateId": "fi-police-digital", "templateVersion": 1},
+            headers={"Idempotency-Key": "test-idem-key-0008"},
+            cookies={"pb_save_session": cookie_a},
+        )
+        assert first.status_code == 201
+        key1 = first.json()["key"]
+
+        session_b = client.post("/api/v1/save-sessions")
+        cookie_b = session_b.cookies["pb_save_session"]
+        second = client.post(
+            "/api/v1/saves",
+            files={"photo": ("p.jpg", make_jpeg(), "image/jpeg")},
+            data={"templateId": "fi-police-digital", "templateVersion": 1},
+            headers={"Idempotency-Key": "test-idem-key-0008"},
+            cookies={"pb_save_session": cookie_b},
+        )
+        assert second.status_code == 201
+        assert second.json()["key"] != key1
+
 
 class TestRetrieveFlow:
     def test_resolve_and_download(self, client):
