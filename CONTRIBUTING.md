@@ -2,7 +2,9 @@
 
 ## 当前开发状态
 
-仓库为 monorepo，包含 `frontend/`（Vite + React + TypeScript）、`backend/`（FastAPI + SQLite + 本地磁盘存储）与 `templates/`（版本化模板数据）。开发、测试、检查与构建命令均已建立并在 CI 中运行。
+仓库为 monorepo，包含 `frontend/`（Vite + React + TypeScript）、`backend/`（FastAPI + SQLite + 本地磁盘存储）与 `templates/`（版本化模板数据）。
+
+下面「稳定命令」里除 `npm run dev`、`uv run uvicorn`、`docker compose` 与 Playwright 端到端之外，其余命令都在 CI 中运行（见 `.github/workflows/ci.yml`）。端到端测试目前需要手工执行，尚未接入 CI。
 
 ## 稳定命令
 
@@ -20,6 +22,10 @@ uv sync --extra dev        # 安装依赖（含 dev）
 uv run uvicorn app.main:app --reload   # 开发服务器（端口 8000）
 uv run pytest              # pytest 测试
 uv run ruff check .        # 静态检查
+uv run ruff format --check .           # 格式检查
+uv run python -m app.template_tools validate   # 模板内容门（schema + 引用完整性 + contentHash）
+uv run python -m app.template_tools report     # 模板复核状态与 SLA 剩余天数
+uv run python -m app.template_tools rehash     # 模板内容改动后写回 contentHash
 
 # 全栈（根目录）
 docker compose up --build  # 构建并启动前后端容器

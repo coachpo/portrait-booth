@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  clearTemplateCatalogCache,
   documentTypeName,
   entryLabel,
+  fetchTemplateCatalog,
   filterTemplates,
   isOfficialDocument,
   jurisdictionName,
@@ -148,5 +150,51 @@ describe("template catalog", () => {
     expect(jurisdictionName("US")).toBe("美国");
     expect(jurisdictionName("XY")).toBe("XY");
     expect(documentTypeName("visa")).toBe("签证");
+  });
+});
+
+describe("fetchTemplateCatalog caching", () => {
+  afterEach(() => {
+    clearTemplateCatalogCache();
+    vi.unstubAllGlobals();
+  });
+
+  it("reuses one in-flight request for concurrent callers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(catalog),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [first, second] = await Promise.all([fetchTemplateCatalog(), fetchTemplateCatalog()]);
+    expect(first).toBe(second);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache a failure, so retry actually retries", async () => {
+    // 回归：失败的 Promise 曾被模块级永久缓存，
+    // 网络抖动一次后「重试」按钮永远返回同一个已拒绝的 Promise。
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(catalog) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchTemplateCatalog()).rejects.toThrow("network down");
+    await expect(fetchTemplateCatalog()).resolves.toEqual(catalog);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a non-ok response either", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: () => Promise.resolve({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(catalog) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchTemplateCatalog()).rejects.toThrow("HTTP 503");
+    await expect(fetchTemplateCatalog()).resolves.toEqual(catalog);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

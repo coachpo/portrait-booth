@@ -85,18 +85,28 @@ const source = {
   dispose: vi.fn(),
 } as unknown as SourceImage;
 
-/** 构造 toBlob：字节长度 = base + quality 驱动的大小关系 */
+/**
+ * 构造 toBlob：字节长度 = base + quality 驱动的大小关系。
+ *
+ * 这里刻意复现真实 UA 的行为——canvas.toBlob 的 quality 必须落在 0.0–1.0，
+ * 越界值被忽略并回落到默认 0.92。旧实现传 40–95，于是每次迭代都编码出同一份字节。
+ */
 function makeDeps(
   opts: {
     sizeAt?: (quality: number) => number;
     failToBlob?: boolean;
+    transparentPixels?: number;
+    unreadablePixels?: boolean;
   } = {},
 ) {
   const ctx = { setTransform: vi.fn(), drawImage: vi.fn() };
   const canvas = { width: 0, height: 0 };
+  const qualities: number[] = [];
   const toBlob = vi.fn(async (_c: HTMLCanvasElement, _type: string, q: number) => {
     if (opts.failToBlob) return null;
-    const size = opts.sizeAt ? opts.sizeAt(q) : 60;
+    qualities.push(q);
+    const effective = q >= 0 && q <= 1 ? q : 0.92;
+    const size = opts.sizeAt ? opts.sizeAt(effective) : 60;
     const base = jpegBytes();
     const out = new Uint8Array(Math.max(size, base.length));
     out.set(base);
@@ -111,8 +121,16 @@ function makeDeps(
     canvasContext: () => ctx as unknown as CanvasRenderingContext2D,
     toBlob,
     randomId: () => "artifact-1",
+    readPixels: (_c, width, height) => {
+      if (opts.unreadablePixels) return null;
+      const data = new Uint8ClampedArray(width * height * 4).fill(255);
+      for (let i = 0; i < (opts.transparentPixels ?? 0); i++) {
+        data[i * 4 + 3] = 0;
+      }
+      return data;
+    },
   };
-  return { deps, ctx, canvas, toBlob };
+  return { deps, ctx, canvas, toBlob, qualities };
 }
 
 describe("renderFinalArtifact (OUT-001/002/005)", () => {
@@ -180,36 +198,98 @@ describe("renderFinalArtifact (OUT-001/002/005)", () => {
 });
 
 describe("renderFinalArtifact quality search (OUT-003)", () => {
-  it("searches quality until the blob fits maxBytes", async () => {
-    const { deps, toBlob } = makeDeps({ sizeAt: (q) => 1000 + q * 10 });
-    const t = template({
+  function sizeLimited(maxBytes: number) {
+    return template({
       outputFile: {
         mime: ["image/jpeg"],
-        sizeLimit: {
-          maxBytes: 1500,
-          sourceLiteral: "250 KB",
-          normalization: "source_exact",
-        },
+        sizeLimit: { maxBytes, sourceLiteral: "250 KB", normalization: "source_exact" },
       },
     });
-    const artifact = await renderFinalArtifact(source, t, IDENTITY_TRANSFORM, deps);
+  }
+
+  it("searches quality until the blob fits maxBytes", async () => {
+    const { deps, toBlob } = makeDeps({ sizeAt: (q) => 1000 + q * 1000 });
+    const artifact = await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
     expect(artifact.blob.size).toBeLessThanOrEqual(1500);
     expect(toBlob.mock.calls.length).toBeLessThanOrEqual(11);
-    // 最后成功那次质量应高于失败边界
-    expect(toBlob).toHaveBeenCalledWith(expect.anything(), "image/jpeg", expect.any(Number));
+  });
+
+  it("only ever passes quality values inside the 0.0–1.0 range", async () => {
+    // 回归：旧实现把 40–95 直接交给 toBlob，HTML 规范要求 0.0–1.0
+    const { deps, qualities } = makeDeps({ sizeAt: (q) => 1000 + q * 1000 });
+    await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
+    expect(qualities.length).toBeGreaterThan(1);
+    for (const q of qualities) {
+      expect(q).toBeGreaterThanOrEqual(0);
+      expect(q).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("finds a fitting quality where the UA default alone would not fit", async () => {
+    // 越界 quality 会被 UA 回落到 0.92 → 1920 字节，十次迭代都超限；
+    // 真正生效的搜索能一路降到 0.4 附近，拿到 1400 字节的成品。
+    const { deps, qualities } = makeDeps({ sizeAt: (q) => 1000 + q * 1000 });
+    const artifact = await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
+    expect(artifact.blob.size).toBeLessThanOrEqual(1500);
+    expect(Math.min(...qualities)).toBeLessThan(0.92);
+  });
+
+  it("produces different byte sizes across iterations", async () => {
+    // 旧实现下每次迭代 UA 都用同一个默认质量，二分退化成十次重复编码
+    const sizes = new Set<number>();
+    const { deps } = makeDeps({
+      sizeAt: (q) => {
+        const size = 1000 + Math.round(q * 1000);
+        sizes.add(size);
+        return size;
+      },
+    });
+    await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
+    expect(sizes.size).toBeGreaterThan(1);
   });
 
   it("rejects when no quality fits the limit", async () => {
     const { deps } = makeDeps({ sizeAt: () => 2000 });
-    const t = template({
-      outputFile: {
-        mime: ["image/jpeg"],
-        sizeLimit: { maxBytes: 1500, sourceLiteral: "1.5 KB", normalization: "source_exact" },
-      },
+    await expect(
+      renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps),
+    ).rejects.toMatchObject({ kind: "size-limit" });
+  });
+
+  it("still accepts an artifact that only fits at the lowest quality", async () => {
+    // 二分从中点起步，下界本身从未被试过：这里 1400 只在 q=0.4 时达成
+    const { deps } = makeDeps({ sizeAt: (q) => (q <= 0.4 ? 1400 : 1600) });
+    const artifact = await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
+    expect(artifact.blob.size).toBe(1400);
+  });
+});
+
+describe("renderFinalArtifact crop coverage (EDT-003/EDT-009)", () => {
+  it("refuses to render a transform whose crop leaves the source image", async () => {
+    const { deps } = makeDeps();
+    // 源图 cover 后刚好贴合输出，任意旋转都会把裁剪框的角甩出源图
+    const tilted = { ...IDENTITY_TRANSFORM, rotationDeg: 5 };
+    await expect(renderFinalArtifact(source, template(), tilted, deps)).rejects.toMatchObject({
+      kind: "crop-out-of-bounds",
     });
-    await expect(renderFinalArtifact(source, t, IDENTITY_TRANSFORM, deps)).rejects.toMatchObject({
-      kind: "size-limit",
-    });
+  });
+
+  it("reports a fully covered crop", async () => {
+    const { deps } = makeDeps();
+    const artifact = await renderFinalArtifact(source, template(), IDENTITY_TRANSFORM, deps);
+    expect(artifact.coverage.scannedPixels).toBe(500 * 653);
+    expect(artifact.coverage.transparentPixels).toBe(0);
+  });
+
+  it("counts transparent pixels instead of assuming full coverage", async () => {
+    const { deps } = makeDeps({ transparentPixels: 42 });
+    const artifact = await renderFinalArtifact(source, template(), IDENTITY_TRANSFORM, deps);
+    expect(artifact.coverage.transparentPixels).toBe(42);
+  });
+
+  it("marks coverage unknown when canvas pixels cannot be read", async () => {
+    const { deps } = makeDeps({ unreadablePixels: true });
+    const artifact = await renderFinalArtifact(source, template(), IDENTITY_TRANSFORM, deps);
+    expect(artifact.coverage).toEqual({ scannedPixels: 0, transparentPixels: 0 });
   });
 });
 

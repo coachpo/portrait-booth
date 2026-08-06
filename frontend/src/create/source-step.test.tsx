@@ -86,7 +86,11 @@ beforeEach(() => {
   vi.mocked(runStaticCheck).mockResolvedValue({
     pose: null,
     poseAvailable: false,
-    quality: { status: "warn", issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"], metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0 } },
+    quality: {
+      status: "warn",
+      issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+      metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0 },
+    },
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TemplateEntry } from "../lib/templates/types";
+import type { StaticCheckResult } from "../pose/static-check";
 import type { FinalArtifact } from "./final-artifact";
 import { buildChecks } from "./checks";
 
@@ -90,13 +91,20 @@ function template(
   };
 }
 
-function artifact(density: number, exif = false, size = 60): FinalArtifact {
+function artifact(
+  density: number,
+  exif = false,
+  size = 60,
+  coverage: FinalArtifact["coverage"] = { scannedPixels: 500 * 653, transparentPixels: 0 },
+  matrix: FinalArtifact["manifest"]["matrix"] = [1, 0, 0, 1, 0, 0],
+): FinalArtifact {
   const bytes = jpegBytes(density, exif);
   const out = new Uint8Array(Math.max(size, bytes.length));
   out.set(bytes);
   return {
     artifactId: "a1",
     blob: new Blob([out], { type: "image/jpeg" }),
+    coverage,
     manifest: {
       schemaVersion: 1,
       templateId: "fi",
@@ -105,7 +113,7 @@ function artifact(density: number, exif = false, size = 60): FinalArtifact {
       heightPx: 653,
       mime: "image/jpeg",
       orientationNormalized: true,
-      matrix: [1, 0, 0, 1, 0, 0],
+      matrix,
       flipX: false,
     },
   };
@@ -114,9 +122,36 @@ function artifact(density: number, exif = false, size = 60): FinalArtifact {
 async function statuses(
   entry: TemplateEntry,
   a: FinalArtifact = artifact(96),
+  staticChecks?: StaticCheckResult | null,
 ): Promise<Record<string, string>> {
-  const checks = await buildChecks(a, entry);
+  const checks = await buildChecks(a, entry, staticChecks);
   return Object.fromEntries(checks.map((c) => [c.id, c.status]));
+}
+
+function poseState(overrides: Partial<StaticCheckResult["pose"] & object> = {}) {
+  return {
+    status: "ready" as const,
+    angles: { yaw: 0, pitch: 0, roll: 0 },
+    faceWidthRatio: 0.3,
+    faceOffset: { x: 0, y: 0 },
+    stableMs: 900,
+    shootable: true,
+    guidance: "姿势稳定，可以拍摄。",
+    ...overrides,
+  };
+}
+
+function staticCheckResult(overrides: Partial<StaticCheckResult> = {}): StaticCheckResult {
+  return {
+    poseAvailable: true,
+    pose: poseState(),
+    quality: {
+      status: "warn",
+      issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+      metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 120 },
+    },
+    ...overrides,
+  };
 }
 
 describe("buildChecks", () => {
@@ -126,6 +161,8 @@ describe("buildChecks", () => {
     expect(s["format"]).toBe("pass");
     expect(s["metadata"]).toBe("pass");
     expect(s["no-alpha"]).toBe("pass");
+    expect(s["source-resolution"]).toBe("pass");
+    // 没有跑过复检时才是 unknown
     expect(s["pose"]).toBe("unknown");
     expect(s["exposure"]).toBe("unknown");
   });
@@ -180,5 +217,118 @@ describe("buildChecks", () => {
   it("fails when EXIF survives (OUT-004)", async () => {
     const s = await statuses(template(), artifact(96, true));
     expect(s["metadata"]).toBe("fail");
+  });
+
+  describe("crop integrity (EDT-009)", () => {
+    it("fails when transparent pixels remain in the crop", async () => {
+      // 回归：这一项曾是字面量 pass，带黑角的成品也会显示为全绿
+      const s = await statuses(
+        template(),
+        artifact(96, false, 60, { scannedPixels: 1000, transparentPixels: 7 }),
+      );
+      expect(s["no-alpha"]).toBe("fail");
+    });
+
+    it("explains how much of the crop is uncovered", async () => {
+      const checks = await buildChecks(
+        artifact(96, false, 60, { scannedPixels: 1000, transparentPixels: 7 }),
+        template(),
+      );
+      const item = checks.find((c) => c.id === "no-alpha")!;
+      expect(item.detail).toContain("0.70%");
+    });
+
+    it("is unknown when canvas pixels could not be read", async () => {
+      const s = await statuses(
+        template(),
+        artifact(96, false, 60, { scannedPixels: 0, transparentPixels: 0 }),
+      );
+      expect(s["no-alpha"]).toBe("unknown");
+    });
+  });
+
+  describe("static recheck wiring (GDE-008)", () => {
+    it("passes the pose check when the recheck says ready", async () => {
+      // 回归：复检结果曾被丢弃，这一项无条件写「后续版本提供」
+      const s = await statuses(template(), artifact(96), staticCheckResult());
+      expect(s["pose"]).toBe("pass");
+    });
+
+    it("warns with the recheck guidance when the pose is off", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template(),
+        staticCheckResult({
+          pose: poseState({ status: "unstable", guidance: "姿势需调整：请抬头一点。" }),
+        }),
+      );
+      const pose = checks.find((c) => c.id === "pose")!;
+      expect(pose.status).toBe("warn");
+      expect(pose.detail).toContain("请抬头一点");
+      expect(pose.detail).toContain("未经官方容差校准");
+    });
+
+    it("stays unknown when the pose model was unavailable", async () => {
+      const s = await statuses(
+        template(),
+        artifact(96),
+        staticCheckResult({ poseAvailable: false, pose: null }),
+      );
+      expect(s["pose"]).toBe("unknown");
+    });
+
+    it("passes the exposure check when the heuristic found nothing", async () => {
+      const s = await statuses(template(), artifact(96), staticCheckResult());
+      expect(s["exposure"]).toBe("pass");
+    });
+
+    it("warns with the concrete exposure issue", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template(),
+        staticCheckResult({
+          quality: {
+            status: "warn",
+            issues: ["曝光不足：暗部剪切像素占 8.3%"],
+            metrics: { darkClipRatio: 0.083, brightClipRatio: 0, sharpness: 120 },
+          },
+        }),
+      );
+      const exposure = checks.find((c) => c.id === "exposure")!;
+      expect(exposure.status).toBe("warn");
+      expect(exposure.detail).toContain("8.3%");
+    });
+  });
+
+  describe("source resolution (EDT-004)", () => {
+    it("warns when the render had to upscale the source", async () => {
+      const checks = await buildChecks(
+        artifact(96, false, 60, undefined, [2, 0, 0, 2, 0, 0]),
+        template(),
+      );
+      const item = checks.find((c) => c.id === "source-resolution")!;
+      expect(item.status).toBe("warn");
+      expect(item.detail).toContain("2.00 倍");
+    });
+
+    it("accounts for rotation when measuring the upscale factor", async () => {
+      // 45° 旋转 + 2 倍缩放：线性部分的行列式仍是 4，放大倍率 2
+      const c = Math.SQRT1_2 * 2;
+      const checks = await buildChecks(
+        artifact(96, false, 60, undefined, [c, -c, c, c, 0, 0]),
+        template(),
+      );
+      const item = checks.find((c) => c.id === "source-resolution")!;
+      expect(item.status).toBe("warn");
+      expect(item.detail).toContain("2.00 倍");
+    });
+
+    it("passes when the source is at least as large as the output", async () => {
+      const checks = await buildChecks(
+        artifact(96, false, 60, undefined, [0.5, 0, 0, 0.5, 0, 0]),
+        template(),
+      );
+      expect(checks.find((c) => c.id === "source-resolution")!.status).toBe("pass");
+    });
   });
 });

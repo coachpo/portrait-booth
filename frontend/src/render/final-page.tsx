@@ -5,7 +5,6 @@ import type { SourceImage } from "../image/source";
 import { entryLabel, jurisdictionName } from "../lib/templates/catalog";
 import type { TemplateEntry } from "../lib/templates/types";
 import { buildChecks, type CheckItem } from "./checks";
-import { staticCheckWarnings } from "../pose/static-check";
 import { StagingPanel } from "./staging-panel";
 import { renderFinalArtifact, type FinalArtifact } from "./final-artifact";
 
@@ -55,7 +54,8 @@ export function FinalPage({ source, template, transform, onBack, onRestart }: Fi
       .then(async (a) => {
         if (cancelled) return;
         setArtifact(a);
-        setChecks(await buildChecks(a, template));
+        // 静态复检已经跑出真实结果，检查摘要必须用它，而不是写「后续版本提供」
+        setChecks(await buildChecks(a, template, source.staticChecks ?? null));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -144,7 +144,10 @@ export function FinalPage({ source, template, transform, onBack, onRestart }: Fi
               ))}
             </ul>
           )}
-          {source.staticChecks && <StaticCheckWarnings source={source} />}
+          <p className="muted">
+            姿态、曝光与清晰度为启发式判断，未经官方容差校准，不代表签发机关一定受理。
+            若因医疗或身体原因无法保持标准姿态，仍可继续导出；部分签发机关提供医疗或残障例外。
+          </p>
           {template.publication.status !== "active" && (
             <p className="warn-text">{template.publication.statusReason}</p>
           )}
@@ -177,19 +180,4 @@ function statusText(status: CheckItem["status"]): string {
     case "unknown":
       return "未检查";
   }
-}
-
-function StaticCheckWarnings({ source }: { source: SourceImage }) {
-  const warnings = source.staticChecks ? staticCheckWarnings(source.staticChecks) : [];
-  if (warnings.length === 0) return null;
-  return (
-    <div className="warn-text">
-      <p>静态复检提示（启发式，仅供参考）：</p>
-      <ul>
-        {warnings.map((w) => (
-          <li key={w}>{w}</li>
-        ))}
-      </ul>
-    </div>
-  );
 }

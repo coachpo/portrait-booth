@@ -150,6 +150,51 @@ export function clampTranslation(transform: EditTransform, src: Rect, out: Rect)
   return { ...base, translateX: tx * lo, translateY: ty * lo };
 }
 
+/**
+ * 让当前旋转角合法所需的最小 scale（EDT-003）。
+ *
+ * 旋转是绕画布中心做的，即使源图原本刚好 cover，任意非零角度都会把裁剪框的角
+ * 甩出源图边界——差几度就足以在成品四角留下透明像素，JPEG 编码后表现为黑角。
+ * isValidTransform 对 scale 单调，直接二分即可。返回 null 表示 MAX_SCALE 也救不回来。
+ */
+export function minScaleForRotation(
+  transform: EditTransform,
+  src: Rect,
+  out: Rect,
+  maxScale: number = MAX_SCALE,
+): number | null {
+  const at = (scale: number): boolean =>
+    isValidTransform({ ...transform, translateX: 0, translateY: 0, scale }, src, out);
+  if (at(transform.scale)) return transform.scale;
+  if (!at(maxScale)) return null;
+  let lo = Math.max(MIN_SCALE, transform.scale);
+  let hi = maxScale;
+  for (let i = 0; i < 30 && hi - lo > 1e-4; i++) {
+    const mid = (lo + hi) / 2;
+    if (at(mid)) hi = mid;
+    else lo = mid;
+  }
+  return hi;
+}
+
+/**
+ * 把任意变换投影成合法变换：先补足旋转所需的 scale，再把平移拉回合法区域。
+ * 编辑器每次改动后都应该经过这里，终态渲染只做最后一道断言。
+ *
+ * maxScale 允许收紧上限——EDT-004 要求分辨率不足时不得无限放大。
+ * 上限不足以覆盖当前角度时保持 scale 不动，由调用方给出可见的警告。
+ */
+export function fitTransform(
+  transform: EditTransform,
+  src: Rect,
+  out: Rect,
+  maxScale: number = MAX_SCALE,
+): EditTransform {
+  const scale = minScaleForRotation(transform, src, out, maxScale);
+  if (scale === null) return clampTranslation(transform, src, out);
+  return clampTranslation({ ...transform, scale }, src, out);
+}
+
 /** 模板渲染尺寸；portal_source/guidance_only 模板不需要本地编辑 */
 export function outputSize(rev: TemplateRevision): { width: number; height: number } | null {
   switch (rev.output.kind) {
@@ -163,6 +208,22 @@ export function outputSize(rev: TemplateRevision): { width: number; height: numb
       return null;
   }
 }
+
+export interface EditorHistory {
+  undo: EditTransform[];
+  redo: EditTransform[];
+}
+
+/** 编辑器的完整可恢复状态：从终态页返回时原样带回来，裁剪参数与撤销栈都不丢。 */
+export interface EditorState {
+  transform: EditTransform;
+  history: EditorHistory;
+}
+
+export const INITIAL_EDITOR_STATE: EditorState = {
+  transform: IDENTITY_TRANSFORM,
+  history: { undo: [], redo: [] },
+};
 
 /** 剪辑旋转到 ±360°，方便撤销栈比较。 */
 export function normalizeRotationDeg(deg: number): number {

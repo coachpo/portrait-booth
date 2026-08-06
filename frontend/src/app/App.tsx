@@ -1,25 +1,23 @@
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 
 import { CreatePage } from "../create/create-page";
+import { HomePage } from "../pages/home-page";
+import { NotFoundPage } from "../pages/not-found-page";
+import { PrivacyPage } from "../pages/privacy-page";
 import { RetrievePage } from "../pages/retrieve-page";
+import { Layout } from "./layout";
 
 export function App() {
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={
-          <main className="container">
-            <h1>Portrait Booth</h1>
-            <nav>
-              <Link to="/create">创建照片</Link>
-              <Link to="/retrieve">取回照片</Link>
-            </nav>
-          </main>
-        }
-      />
-      <Route path="/create" element={<CreatePage />} />
-      <Route path="/retrieve" element={<RetrievePage />} />
-    </Routes>
+    <Layout>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/create" element={<CreatePage />} />
+        <Route path="/retrieve" element={<RetrievePage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        {/* 兜底路由：没有它时未匹配地址渲染成一块空白页 */}
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </Layout>
   );
 }

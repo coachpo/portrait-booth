@@ -14,7 +14,14 @@ export interface SaveResponse {
 }
 
 export interface ResolveResponse {
-  photo: { width: number | null; height: number | null; mime: string; expiresAt: string };
+  photo: {
+    width: number | null;
+    height: number | null;
+    mime: string;
+    byteLength?: number | null;
+    expiresAt: string;
+  };
+  template?: { id: string; version: number };
   downloadToken: string;
   tokenExpiresAt: string;
 }

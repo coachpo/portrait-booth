@@ -81,6 +81,7 @@ const source = {
 const fakeArtifact = {
   artifactId: "a1",
   blob: new Blob([new Uint8Array(5000)], { type: "image/jpeg" }),
+  coverage: { scannedPixels: 500 * 653, transparentPixels: 0 },
   manifest: {
     schemaVersion: 1 as const,
     templateId: "fi",

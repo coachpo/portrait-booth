@@ -125,7 +125,11 @@ describe("EditorStep", () => {
     expect(screen.getByRole("button", { name: "重做" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "重做" }));
     fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
-    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ rotationDeg: 90, scale: 1 }));
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transform: expect.objectContaining({ rotationDeg: 90, scale: 1 }),
+      }),
+    );
   });
 
   it("resets after edits", () => {
@@ -141,7 +145,9 @@ describe("EditorStep", () => {
     const slider = screen.getByRole("slider", { name: /缩放/ });
     fireEvent.change(slider, { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
-    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ scale: 2 }));
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({ transform: expect.objectContaining({ scale: 2 }) }),
+    );
   });
 
   it("rotates 90 and raises scale to keep coverage", () => {
@@ -150,8 +156,102 @@ describe("EditorStep", () => {
     fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
     // 源 800×600 → 旋转后 cover 比例 653/800 > 500/800，scale 需抬升
     expect(onDone).toHaveBeenCalledWith(
-      expect.objectContaining({ rotationDeg: 90, scale: expect.any(Number) }),
+      expect.objectContaining({
+        transform: expect.objectContaining({ rotationDeg: 90, scale: expect.any(Number) }),
+      }),
     );
+  });
+
+  describe("pointer interaction (EDT-007)", () => {
+    function canvasWithSize(width: number, height: number) {
+      const canvas = screen.getByLabelText(/照片预览/) as HTMLCanvasElement;
+      canvas.setPointerCapture = vi.fn();
+      canvas.releasePointerCapture = vi.fn();
+      vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+        x: 0,
+        y: 0,
+        width,
+        height,
+        top: 0,
+        left: 0,
+        right: width,
+        bottom: height,
+        toJSON: () => ({}),
+      } as DOMRect);
+      return canvas;
+    }
+
+    it("normalizes drag by the canvas display size, not the output pixels", () => {
+      // 回归：分母曾是输出像素。画布被 CSS 压到 250px 宽时，
+      // 图像只跟着手指走一半的距离。
+      const { onDone } = renderEditor();
+      const canvas = canvasWithSize(250, 326);
+      fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 25, clientY: 0 });
+      fireEvent.pointerUp(canvas, { pointerId: 1 });
+      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+
+      const state = onDone.mock.calls[0][0] as { transform: { translateX: number } };
+      // 25 / 250 = 0.1；按输出宽度 500 归一化只会得到 0.05
+      expect(state.transform.translateX).toBeCloseTo(0.1, 5);
+    });
+
+    it("offers button and numeric alternatives to dragging (WCAG 2.5.7)", () => {
+      const { onDone } = renderEditor();
+      fireEvent.click(screen.getByRole("button", { name: "右移" }));
+      fireEvent.click(screen.getByRole("button", { name: "右移" }));
+      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+
+      const state = onDone.mock.calls[0][0] as {
+        transform: { translateX: number; translateY: number };
+      };
+      expect(state.transform.translateX).toBeCloseTo(0.04, 5);
+      // 源 800×600 在 500×653 上 cover 后高度恰好贴合，纵向没有可平移的余量
+      expect(state.transform.translateY).toBe(0);
+    });
+
+    it("refuses a nudge that would expose an edge", () => {
+      const { onDone } = renderEditor();
+      fireEvent.click(screen.getByRole("button", { name: "下移" }));
+      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+
+      const state = onDone.mock.calls[0][0] as { transform: { translateY: number } };
+      expect(state.transform.translateY).toBe(0);
+    });
+
+    it("recenters the photo", () => {
+      const { onDone } = renderEditor();
+      fireEvent.click(screen.getByRole("button", { name: "右移" }));
+      fireEvent.click(screen.getByRole("button", { name: "居中" }));
+      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+
+      const state = onDone.mock.calls[0][0] as { transform: { translateX: number } };
+      expect(state.transform.translateX).toBe(0);
+    });
+
+    it("accepts a typed translation value", () => {
+      const { onDone } = renderEditor();
+      fireEvent.change(screen.getByLabelText("水平位置数值"), { target: { value: "0.1" } });
+      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+
+      const state = onDone.mock.calls[0][0] as { transform: { translateX: number } };
+      expect(state.transform.translateX).toBeCloseTo(0.1, 5);
+    });
+
+    it("scales with a two-finger pinch", () => {
+      const { onDone } = renderEditor();
+      const canvas = canvasWithSize(250, 326);
+      fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(canvas, { pointerId: 2, clientX: 300, clientY: 100 });
+      fireEvent.pointerUp(canvas, { pointerId: 2 });
+      fireEvent.pointerUp(canvas, { pointerId: 1 });
+      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+
+      const state = onDone.mock.calls[0][0] as { transform: { scale: number } };
+      // 两指间距从 100 拉到 200：缩放翻倍
+      expect(state.transform.scale).toBeCloseTo(2, 5);
+    });
   });
 
   it("notifies when a portal-source template needs no editing", () => {
@@ -160,6 +260,10 @@ describe("EditorStep", () => {
     });
     expect(screen.getByText(/由官方门户处理裁剪/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
-    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ scale: 1, rotationDeg: 0 }));
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transform: expect.objectContaining({ scale: 1, rotationDeg: 0 }),
+      }),
+    );
   });
 });

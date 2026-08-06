@@ -4,9 +4,12 @@ import { applyTransform, type Transform2D } from "../image/exif";
 import {
   clampTranslation,
   coverScale,
+  fitTransform,
   IDENTITY_TRANSFORM,
   invert,
   isValidTransform,
+  MAX_SCALE,
+  minScaleForRotation,
   normalizeRotationDeg,
   renderMatrix,
   type EditTransform,
@@ -178,5 +181,79 @@ describe("normalizeRotationDeg", () => {
     expect(normalizeRotationDeg(-190)).toBe(170);
     expect(normalizeRotationDeg(90)).toBe(90);
     expect(normalizeRotationDeg(-90)).toBe(-90);
+  });
+});
+
+describe("minScaleForRotation (EDT-003)", () => {
+  // 源图 cover 后在高度上刚好贴合输出，任何非零角度都会把裁剪框的角甩出源图
+  const TIGHT_SRC = { width: 800, height: 600 };
+  const TIGHT_OUT = { width: 500, height: 653 };
+
+  it("leaves an already valid transform alone", () => {
+    expect(minScaleForRotation(IDENTITY_TRANSFORM, TIGHT_SRC, TIGHT_OUT)).toBe(1);
+  });
+
+  it("returns a scale that makes a tilted crop valid again", () => {
+    const tilted: EditTransform = { ...IDENTITY_TRANSFORM, rotationDeg: 5 };
+    expect(isValidTransform(tilted, TIGHT_SRC, TIGHT_OUT)).toBe(false);
+
+    const scale = minScaleForRotation(tilted, TIGHT_SRC, TIGHT_OUT)!;
+    expect(scale).toBeGreaterThan(1);
+    expect(scale).toBeLessThanOrEqual(MAX_SCALE);
+    expect(isValidTransform({ ...tilted, scale }, TIGHT_SRC, TIGHT_OUT)).toBe(true);
+  });
+
+  it("needs a larger scale for a larger angle", () => {
+    const small = minScaleForRotation(
+      { ...IDENTITY_TRANSFORM, rotationDeg: 2 },
+      TIGHT_SRC,
+      TIGHT_OUT,
+    )!;
+    const large = minScaleForRotation(
+      { ...IDENTITY_TRANSFORM, rotationDeg: 10 },
+      TIGHT_SRC,
+      TIGHT_OUT,
+    )!;
+    expect(large).toBeGreaterThan(small);
+  });
+
+  it("returns null when the allowed scale ceiling cannot cover the rotation", () => {
+    // EDT-004 会因源图分辨率不足而收紧上限；上限不够时必须说“救不回来”，
+    // 而不是返回一个仍然越界的 scale
+    expect(
+      minScaleForRotation({ ...IDENTITY_TRANSFORM, rotationDeg: 10 }, TIGHT_SRC, TIGHT_OUT, 1.05),
+    ).toBeNull();
+  });
+
+  it("still solves a large angle when the ceiling allows it", () => {
+    const scale = minScaleForRotation(
+      { ...IDENTITY_TRANSFORM, rotationDeg: 45 },
+      TIGHT_SRC,
+      TIGHT_OUT,
+    )!;
+    expect(
+      isValidTransform({ ...IDENTITY_TRANSFORM, rotationDeg: 45, scale }, TIGHT_SRC, TIGHT_OUT),
+    ).toBe(true);
+  });
+});
+
+describe("fitTransform", () => {
+  const TIGHT_SRC = { width: 800, height: 600 };
+  const TIGHT_OUT = { width: 500, height: 653 };
+
+  it("turns a tilted, shifted transform into a valid one", () => {
+    const messy: EditTransform = {
+      ...IDENTITY_TRANSFORM,
+      rotationDeg: 4,
+      translateX: 0.3,
+      translateY: -0.2,
+    };
+    const fitted = fitTransform(messy, TIGHT_SRC, TIGHT_OUT);
+    expect(isValidTransform(fitted, TIGHT_SRC, TIGHT_OUT)).toBe(true);
+    expect(fitted.rotationDeg).toBe(4);
+  });
+
+  it("keeps a valid transform unchanged", () => {
+    expect(fitTransform(IDENTITY_TRANSFORM, TIGHT_SRC, TIGHT_OUT)).toEqual(IDENTITY_TRANSFORM);
   });
 });

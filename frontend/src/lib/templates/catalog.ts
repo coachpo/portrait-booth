@@ -26,15 +26,25 @@ const CHANNEL_NAMES: Record<SubmissionChannel, string> = {
 let cached: Promise<TemplateCatalog> | null = null;
 
 export function fetchTemplateCatalog(): Promise<TemplateCatalog> {
-  cached ??= fetch("/api/v1/templates", { headers: { Accept: "application/json" } }).then(
-    (resp) => {
+  cached ??= fetch("/api/v1/templates", { headers: { Accept: "application/json" } })
+    .then((resp) => {
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
       return resp.json() as Promise<TemplateCatalog>;
-    },
-  );
+    })
+    .catch((error: unknown) => {
+      // 被拒绝的 Promise 不能留在缓存里：否则一次网络抖动后，
+      // 「重试」按钮会永远拿到同一个已拒绝的 Promise，只能刷新整页才能恢复。
+      cached = null;
+      throw error;
+    });
   return cached;
+}
+
+/** 清空目录缓存。紧急停用或 ETag 变化后需要重新拉取时使用。 */
+export function clearTemplateCatalogCache(): void {
+  cached = null;
 }
 
 export function jurisdictionName(code: string): string {
