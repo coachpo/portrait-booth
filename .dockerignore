@@ -1,0 +1,12 @@
+# O3：Dockerfile 第 5 行 npm ci 先装依赖，第 6 行 COPY frontend/ 不得用开发机
+# 的 node_modules/dist 覆盖构建产物——「构建期从 node_modules 同步资产」在镜像里才有意义
+.git
+frontend/node_modules
+frontend/dist
+backend/.venv
+backend/data
+__pycache__
+.pytest_cache
+.ruff_cache
+*.db
+*.sqlite3
