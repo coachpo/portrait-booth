@@ -79,6 +79,8 @@ export const browserRenderDeps: RenderDeps = {
 
 // canvas.toBlob 的 quality 由 HTML 规范定义在 0.0–1.0；越界值 UA 一律忽略并回落到
 // 默认 0.92，于是整个二分会反复编码出同一份字节，OUT-003 的体积搜索完全失效。
+// A2：与服务端 backend/app/image_validate.py 的 MIN/MAX_REENCODE_QUALITY
+// （PIL 整数 40–92，换算成 0.4–0.95）共享同一质量区间，两端改动必须同步。
 const MIN_QUALITY = 0.4;
 const MAX_QUALITY = 0.95;
 const QUALITY_STEPS = 10;

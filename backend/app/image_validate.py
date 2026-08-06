@@ -10,6 +10,19 @@ from .config import Settings, get_settings
 
 SRGB_PROFILE = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB"))
 
+# A2：与前端 frontend/src/render/final-artifact.ts:82-85 的 MIN_QUALITY/MAX_QUALITY
+# （0.4–0.95，PIL 换算成整数 40–95）共享同一质量区间。带体积上限模板的
+# 成品由两端各按实际字节搜一次，区间两端改动必须同步。
+MAX_REENCODE_QUALITY = 92
+MIN_REENCODE_QUALITY = 40
+
+
+def _encode_at(img: Image.Image, quality: int) -> bytes:
+    """按给定质量重编码为 sRGB JPEG；ICC profile 固定开销必须计入候选长度。"""
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, icc_profile=SRGB_PROFILE.tobytes())
+    return out.getvalue()
+
 
 class ImageValidationError(Exception):
     def __init__(self, code: str, message: str):
@@ -54,8 +67,6 @@ def validate_and_reencode(
         raise ImageValidationError("PHOTO_TOO_LARGE", "边长超过上限")
 
     # 方向写入实际像素（OUT-004 服务端镜像要求）：剥离 EXIF 后应用方向
-    exif = img.getexif()
-    orientation = exif.get(274)  # 0x0112
     img = ImageOps.exif_transpose(img)
 
     if img.size != (target_width, target_height):
@@ -70,20 +81,37 @@ def validate_and_reencode(
     if img.mode != "RGB":
         img = img.convert("RGB")
 
-    out = io.BytesIO()
-    img.save(out, format="JPEG", quality=92, icc_profile=SRGB_PROFILE.tobytes())
-    encoded = out.getvalue()
+    return _encode_within(img, effective_max, target_ppi)
+
+
+def _encode_within(
+    img: Image.Image,
+    effective_max: int | None,
+    target_ppi: int | None,
+) -> bytes:
+    """重编码；必要时向下搜索质量档以满足体积上限（A2）。
+
+    与前端 searchQuality 同一契约：判据一律是实际编码出来的字节长度，
+    不用体积模型估算；从 92 起每次 -4（逼近下界改 -1）下行，直到不超限
+    或降到下界 40。max_bytes 为 None（无体积上限模板）时保持固定 92 的
+    既有行为不变。
+    """
+    if effective_max is None:
+        encoded = _encode_at(img, MAX_REENCODE_QUALITY)
+    else:
+        quality = MAX_REENCODE_QUALITY
+        encoded = _encode_at(img, quality)
+        while len(encoded) > effective_max and quality > MIN_REENCODE_QUALITY:
+            quality = max(
+                MIN_REENCODE_QUALITY,
+                quality - (4 if quality - 4 >= MIN_REENCODE_QUALITY else 1),
+            )
+            encoded = _encode_at(img, quality)
+        if len(encoded) > effective_max:
+            raise ImageValidationError("PHOTO_TOO_LARGE", "重编码后仍超过文件上限")
 
     if target_ppi is not None:
         encoded = _write_jfif_density(encoded, target_ppi)
-
-    if len(encoded) > effective_max:
-        raise ImageValidationError("PHOTO_TOO_LARGE", "重编码后仍超过文件上限")
-
-    if orientation and orientation != 1:
-        # exif_transpose 已应用方向；显式剔除残留 EXIF（ImageOps 保留 exif 元数据时剔除）
-        pass  # save 时未传 exif → Pillow 默认不写 EXIF
-
     return encoded
 
 

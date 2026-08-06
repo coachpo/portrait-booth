@@ -61,20 +61,23 @@ class TestEffectiveByteLimit:
         assert excinfo.value.code == "PHOTO_TOO_LARGE"
 
     def test_reencoded_size_is_checked_unconditionally(self):
-        """复检门：入站放行、重编码产物超限也必须拒，且用 message 区分两个门。"""
-        photo = make_jpeg(1200, 1200, quality=20, noise=True)
-        # 先拿产物长度：输入与 q92 产物相差近 50 万字节，上限取「产物长度 - 1」
-        encoded = encode(
-            photo,
-            width=1200,
-            height=1200,
-            max_bytes=None,
-            settings=Settings(max_upload_bytes=16 * 1024 * 1024),
+        """复检门：入站放行、降到下界 40 仍超限也必须拒（A2 后语义），且用 message 区分两个门。"""
+        rng = random.Random(42)
+        img = Image.new("RGB", (1200, 1200))
+        img.putdata(
+            [
+                (rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255))
+                for _ in range(1200 * 1200)
+            ]
         )
-        assert len(encoded) > len(photo), "噪声图应让重编码产物明显大于输入"
-
-        tight = len(encoded) - 1
-        assert tight > len(photo), "上限必须落在入站门放行、只有复检门能拦的窗口内"
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=20)
+        photo = buf.getvalue()
+        # 复检门语义（A2 后）：入站刚放行、降到下界 40 仍超限就必须拒。
+        # 服务端会先做 sRGB profileToProfile，直编尺寸与搜索产物不一致，
+        # 所以上限不按直编推算，直接用「入参长度 + 1」——q40 产物（约 45 万字节）
+        # 必然超限，只有复检门能拦。
+        tight = len(photo) + 1
         with pytest.raises(ImageValidationError) as excinfo:
             encode(
                 photo,

@@ -2,12 +2,16 @@
 
 import io
 import json
+import random
 import time
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app.config import get_settings
+from app.db import connect
+from app.image_validate import ImageValidationError, validate_and_reencode
 from app.worker import purge_expired, sweep_orphans
 
 # DB、对象目录与根密钥由 conftest.py 的 isolated_runtime fixture 逐用例隔离
@@ -25,6 +29,47 @@ def make_jpeg(width=500, height=653, quality=92) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
+
+
+def noise_image(width=600, height=600) -> Image.Image:
+    """每像素独立均匀随机 RGB 噪声（固定种子，保证可重复）。"""
+    rng = random.Random(20260805)
+    img = Image.new("RGB", (width, height))
+    img.putdata(
+        [
+            (rng.randrange(256), rng.randrange(256), rng.randrange(256))
+            for _ in range(width * height)
+        ]
+    )
+    return img
+
+
+def search_quality_bytes(img: Image.Image, max_bytes: int) -> bytes:
+    """镜像前端 searchQuality（final-artifact.ts:208-241）：二分取最大可行 q。
+
+    lo=0.40 / hi=0.95 / 10 步 / eps=0.005；浏览器 toBlob 不写 ICC，故不带
+    icc_profile；全不可行时补试一次 q=40。
+    """
+    lo, hi = 0.40, 0.95
+    best, best_q = None, -1.0
+    for _ in range(10):
+        q = (lo + hi) / 2
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=round(q * 100))
+        data = buf.getvalue()
+        if len(data) <= max_bytes:
+            if q > best_q:
+                best, best_q = data, q
+            lo = q
+        else:
+            hi = q
+        if hi - lo <= 0.005:
+            break
+    if best is None:
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=40)
+        best = buf.getvalue()
+    return best
 
 
 def save_flow(client) -> dict:
@@ -51,6 +96,54 @@ class TestSaveFlow:
         assert len(body["deleteSecret"]) >= 22
         assert body["template"] == {"id": "fi-police-digital", "version": 1}
         assert body["photo"]["mime"] == "image/jpeg"
+
+    def test_save_accepts_client_searched_photo_within_limit(self, client):
+        """A2 正向：客户端已按体积搜索压到上限内的成品，服务端不得以固定 q92 拒收。"""
+        img = noise_image()
+        client_blob = search_quality_bytes(img, 240000)
+        assert len(client_blob) <= 240000
+
+        session = client.post("/api/v1/save-sessions")
+        assert session.status_code == 204
+        cookie = session.cookies["pb_save_session"]
+        resp = client.post(
+            "/api/v1/saves",
+            files={"photo": ("p.jpg", client_blob, "image/jpeg")},
+            data={"templateId": "us-visa-digital", "templateVersion": 1},
+            headers={"Idempotency-Key": "test-idem-key-a2-0001"},
+            cookies={"pb_save_session": cookie},
+        )
+        assert resp.status_code == 201, resp.text
+
+        # 落库字节仍在上限内（走 test_contract.py 的 DB 直读模式）
+        conn = connect(get_settings().db_path)
+        try:
+            row = conn.execute("SELECT byte_length FROM photo_records").fetchone()
+        finally:
+            conn.close()
+        assert row is not None and row["byte_length"] <= 240000
+
+    def test_reencode_rejects_when_below_floor_still_over_limit(self, client):
+        """A2 反向：直调 validate_and_reencode，降到下界 40 仍超限必须拒绝。"""
+        img = noise_image()
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=20)  # 高熵但远低于下界的入参
+        data = buf.getvalue()
+        settings = get_settings()
+        assert len(data) <= 90000  # 入参长度门（image_validate.py:33-34）不被触发
+
+        with pytest.raises(ImageValidationError) as exc:
+            validate_and_reencode(
+                data,
+                max_bytes=90000,
+                max_pixels=settings.max_pixels,
+                max_edge_px=settings.max_edge_px,
+                target_width=600,
+                target_height=600,
+                target_ppi=None,
+                settings=settings,
+            )
+        assert exc.value.code == "PHOTO_TOO_LARGE"
 
     def test_save_requires_session(self, client):
         resp = client.post(
