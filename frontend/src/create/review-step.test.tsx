@@ -101,10 +101,11 @@ function renderStep(
   template: TemplateEntry,
   selectedSize: OutputSizeOption | null = null,
   onSizeChange = vi.fn(),
+  withSource: SourceImage = source,
 ) {
   return render(
     <ReviewStep
-      source={source}
+      source={withSource}
       template={template}
       origin="upload"
       onConfirm={vi.fn()}
@@ -116,6 +117,61 @@ function renderStep(
     />,
   );
 }
+
+describe("ReviewStep recheck states (O2)", () => {
+  it("lists unchecked items instead of the all-clear message when nothing was checked (O2)", () => {
+    // 旧实现：只有有警告/无警告两个分支，模型不可用 + 曝光正常时对
+    // 从未检查过的项目宣称「复检未发现明显问题」
+    const unchecked = {
+      ...source,
+      staticChecks: {
+        poseAvailable: false,
+        pose: null,
+        faceGeometry: null,
+        quality: {
+          status: "warn",
+          issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+          metrics: {
+            darkClipRatio: 0,
+            brightClipRatio: 0,
+            sharpness: 120,
+            background: null,
+          },
+        },
+      },
+    } as unknown as SourceImage;
+    renderStep(ranged, null, vi.fn(), unchecked);
+    expect(screen.getByText(/以下项目未检查，需人工确认/)).toBeInTheDocument();
+    expect(screen.getByText(/姿态复检/)).toBeInTheDocument();
+    expect(screen.getByText(/人脸几何（眼\/嘴）/)).toBeInTheDocument();
+    expect(screen.getByText(/背景均匀度/)).toBeInTheDocument();
+    expect(screen.queryByText(/复检未发现明显问题/)).toBeNull();
+  });
+
+  it("keeps the all-clear message when every project was checked (O2)", () => {
+    const checked = {
+      ...source,
+      staticChecks: {
+        poseAvailable: true,
+        pose: { status: "ready" as const, guidance: "" },
+        faceGeometry: { eyesClosed: false, mouthOpen: false },
+        quality: {
+          status: "warn",
+          issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+          metrics: {
+            darkClipRatio: 0,
+            brightClipRatio: 0,
+            sharpness: 120,
+            background: { lumaStd: 5, blockRange: 8, leftRightDiff: 3, topBottomDiff: 4 },
+          },
+        },
+      },
+    } as unknown as SourceImage;
+    renderStep(ranged, null, vi.fn(), checked);
+    expect(screen.getByText(/复检未发现明显问题/)).toBeInTheDocument();
+    expect(screen.queryByText(/未检查/)).toBeNull();
+  });
+});
 
 describe("ReviewStep output size (P6)", () => {
   it("renders the size control for ranged templates with 600 selected by default (P6)", () => {

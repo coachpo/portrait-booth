@@ -8,6 +8,7 @@
 import { resolveOutputSize, type OutputSizeOption } from "../editor/edit-transform";
 import type { TemplateEntry, TemplateRevision } from "../lib/templates/types";
 import type { StaticCheckResult } from "../pose/static-check";
+import { QUALITY_CONFIG } from "../pose/quality";
 import { hasExifSegment, readJpegDensity } from "./jpeg";
 import type { FinalArtifact } from "./final-artifact";
 
@@ -140,6 +141,8 @@ export async function buildChecks(
   // GDE-008：姿态复检结果直接进摘要
   checks.push(poseCheck(staticChecks));
   checks.push(exposureCheck(staticChecks));
+  // GDE-008：背景均匀度自动信号——永不 pass，未测量必须明说未检查
+  checks.push(backgroundCheck(staticChecks));
 
   // TMP-003：reference_only 模板不可提交
   if (template.publication.status !== "active") {
@@ -224,6 +227,50 @@ function exposureCheck(staticChecks?: StaticCheckResult | null): CheckItem {
     label: "曝光与清晰度",
     status: "warn",
     detail: `${problems.join(";")}（${HEURISTIC_NOTICE}）`,
+  };
+}
+
+/**
+ * 背景均匀度（GDE-008）。与模板的 background captureRules（evaluation:
+ * manual）无关：这是叠加的自动信号，永不返回 pass——有指标且未超阈时
+ * 仍是 unknown，detail 写明仍需人工确认，不得让用户以为「背景已被检查过」。
+ */
+function backgroundCheck(staticChecks?: StaticCheckResult | null): CheckItem {
+  const bg = staticChecks?.quality.metrics.background;
+  if (!bg) {
+    return {
+      id: "background",
+      label: "背景检查",
+      status: "unknown",
+      detail: "未检查：背景均匀度需人工确认",
+    };
+  }
+  const problems: string[] = [];
+  if (bg.lumaStd > QUALITY_CONFIG.backgroundLumaStdMax) {
+    problems.push(`背景亮度不均（标准差 ${bg.lumaStd.toFixed(1)}）`);
+  }
+  if (bg.blockRange > QUALITY_CONFIG.backgroundBlockRangeMax) {
+    problems.push(`背景明暗分布不均（分块极差 ${bg.blockRange.toFixed(1)}）`);
+  }
+  if (bg.leftRightDiff > QUALITY_CONFIG.shadowLeftRightDiffMax) {
+    problems.push(`背景左右阴影不平衡（差 ${bg.leftRightDiff.toFixed(1)}）`);
+  }
+  if (bg.topBottomDiff > QUALITY_CONFIG.shadowTopBottomDiffMax) {
+    problems.push(`背景上下阴影不平衡（差 ${bg.topBottomDiff.toFixed(1)}）`);
+  }
+  if (problems.length === 0) {
+    return {
+      id: "background",
+      label: "背景检查",
+      status: "unknown",
+      detail: `自动信号未发现异常，背景仍需人工确认（${HEURISTIC_NOTICE}）`,
+    };
+  }
+  return {
+    id: "background",
+    label: "背景检查",
+    status: "warn",
+    detail: `${problems.join(";")}（需人工确认；${HEURISTIC_NOTICE}）`,
   };
 }
 

@@ -89,8 +89,14 @@ beforeEach(() => {
     quality: {
       status: "warn",
       issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
-      metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0 },
+      metrics: {
+        darkClipRatio: 0,
+        brightClipRatio: 0,
+        sharpness: 0,
+        background: null,
+      },
     },
+    faceGeometry: null,
   });
 });
 

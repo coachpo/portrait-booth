@@ -445,4 +445,31 @@ describe("analyzeQuality (GDE-010)", () => {
     expect(result.status).toBe("unknown");
     expect(result.metrics).toBeDefined();
   });
+
+  it("measures the background outside the ROI and flags uneven halves (O2)", () => {
+    // 左半 luma 40 带条纹、右半 200 带条纹：仅均值不同，避免触发拉普拉斯模糊
+    const { deps } = makeDeps((x) => {
+      const stripe = ((x / 8) % 2 < 1 ? 0 : 30) as number;
+      return x < 256
+        ? [40 + stripe, 40 + stripe, 40 + stripe]
+        : [200 + stripe, 200 + stripe, 200 + stripe];
+    });
+    // ROI 只覆盖中央 1/3：左右两半都在背景里
+    const roi = { x: 1 / 3, y: 1 / 3, width: 1 / 3, height: 1 / 3 };
+    const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps, roi);
+    expect(result.metrics.background).not.toBeNull();
+    expect(result.metrics.background!.leftRightDiff).toBeGreaterThan(100);
+    // 整图回退（不传 ROI）：不计算背景
+    const fallback = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
+    expect(fallback.metrics.background).toBeNull();
+  });
+
+  it("keeps the whole-image fallback silent about the background (O2)", () => {
+    // 条纹图铺满整张画布且不传 ROI：不得产出任何背景 issue（回归：整图
+    // 背景统计会给它打出「不均」，正向文案不再入列）
+    const { deps } = makeDeps((x, y) => ((x / 8 + y / 8) % 2 < 1 ? [60, 60, 60] : [200, 200, 200]));
+    const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
+    expect(result.issues.some((i) => i.includes("明显问题"))).toBe(true);
+    expect(result.metrics.background).toBeNull();
+  });
 });

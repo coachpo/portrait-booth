@@ -21,13 +21,25 @@ export interface QualityConfig {
   sharpnessOperator: "laplacian-variance";
   /** 拉普拉斯方差下限（512px 归一化），低于则警告可能模糊 */
   sharpnessMin: number;
+  /** 脸部 ROI / 整图回退策略（SPEC:167；行为由是否传入 ROI 驱动） */
+  faceRoiStrategy: "landmark-bbox-expand" | "whole-image";
+  /** ROI 外扩比例（与 face-geometry 的 ROI_EXPAND_RATIO 一致） */
+  roiExpandRatio: number;
+  /** 背景 luma 标准差上限，超过则警告背景亮度不均 */
+  backgroundLumaStdMax: number;
+  /** 背景 3×3 分块均值极差上限，超过则警告明暗分布不均 */
+  backgroundBlockRangeMax: number;
+  /** 背景左右两半均值差上限，超过则警告左右阴影不平衡 */
+  shadowLeftRightDiffMax: number;
+  /** 背景上下两半均值差上限，超过则警告上下阴影不平衡 */
+  shadowTopBottomDiffMax: number;
   testSetVersion: string;
   warnOnly: true;
 }
 
 /** 首版数值待 §12.3 固定样本校准；未校准前仅作启发式警告 */
 export const QUALITY_CONFIG: QualityConfig = {
-  version: "v1",
+  version: "v2",
   luminance: "luma-sRGB",
   normalizeLongEdge: 512,
   darkClipLevel: 10,
@@ -36,15 +48,34 @@ export const QUALITY_CONFIG: QualityConfig = {
   brightClipRatioLimit: 0.02,
   sharpnessOperator: "laplacian-variance",
   sharpnessMin: 60,
+  faceRoiStrategy: "landmark-bbox-expand",
+  roiExpandRatio: 0.15,
+  backgroundLumaStdMax: 30,
+  backgroundBlockRangeMax: 60,
+  shadowLeftRightDiffMax: 40,
+  shadowTopBottomDiffMax: 40,
   testSetVersion: "uncalibrated-v1",
   warnOnly: true,
 };
+
+export interface BackgroundMetrics {
+  /** 背景像素 luma 标准差 */
+  lumaStd: number;
+  /** 背景 3×3 分块均值的极差 */
+  blockRange: number;
+  /** 背景左右两半均值差 */
+  leftRightDiff: number;
+  /** 背景上下两半均值差 */
+  topBottomDiff: number;
+}
 
 export interface QualityMetrics {
   darkClipRatio: number;
   brightClipRatio: number;
   /** 拉普拉斯方差（归一化后） */
   sharpness: number;
+  /** 背景统计；未传 ROI（整图回退）或背景像素不足时为 null */
+  background: BackgroundMetrics | null;
 }
 
 export interface QualityResult {
@@ -68,6 +99,8 @@ export const browserQualityDeps: QualityDeps = {
   canvasContext: (canvas) => canvas.getContext("2d"),
 };
 
+import type { FaceRoi } from "./face-geometry";
+
 /** 静态位图来源（均有像素尺寸） */
 export type StaticBitmapSource = ImageBitmap | HTMLCanvasElement;
 
@@ -75,6 +108,8 @@ export function analyzeQuality(
   bitmap: StaticBitmapSource,
   config: QualityConfig = QUALITY_CONFIG,
   deps: QualityDeps = browserQualityDeps,
+  /** 归一化 [0,1] 人脸 ROI（O2）；缺省为整图回退，不计算背景 */
+  roi?: FaceRoi | null,
 ): QualityResult {
   const longEdge = Math.max(bitmap.width, bitmap.height);
   if (!longEdge) return { status: "unknown", issues: ["无法读取图像"], metrics: emptyMetrics() };
@@ -102,6 +137,7 @@ export function analyzeQuality(
   const brightRatio = bright / luma.length;
 
   const sharpness = laplacianVariance(luma, width, height);
+  const background = roi ? backgroundMetrics(luma, width, height, roi) : null;
 
   const issues: string[] = [];
   if (darkRatio > config.darkClipRatioLimit)
@@ -114,8 +150,88 @@ export function analyzeQuality(
   return {
     status: "warn",
     issues,
-    metrics: { darkClipRatio: darkRatio, brightClipRatio: brightRatio, sharpness },
+    metrics: {
+      darkClipRatio: darkRatio,
+      brightClipRatio: brightRatio,
+      sharpness,
+      background,
+    },
   };
+}
+
+/**
+ * 背景统计（O2）：只用已有 luma 数组，把 ROI 之外的像素当背景。
+ * 未传 ROI（整图回退）或背景像素少于总像素 10% 时返回 null。
+ */
+function backgroundMetrics(
+  luma: Float32Array,
+  width: number,
+  height: number,
+  roi: FaceRoi,
+): BackgroundMetrics | null {
+  const px0 = Math.max(0, Math.floor(roi.x * width));
+  const py0 = Math.max(0, Math.floor(roi.y * height));
+  const px1 = Math.min(width, Math.ceil((roi.x + roi.width) * width));
+  const py1 = Math.min(height, Math.ceil((roi.y + roi.height) * height));
+  const inRoi = (x: number, y: number) => x >= px0 && x < px1 && y >= py0 && y < py1;
+
+  const bg: number[] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (inRoi(x, y)) continue;
+      bg.push(luma[y * width + x]);
+    }
+  }
+  const total = width * height;
+  if (bg.length / total < 0.1) return null;
+
+  const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const lumaMean = mean(bg);
+  const lumaStd = Math.sqrt(bg.reduce((s, v) => s + (v - lumaMean) ** 2, 0) / bg.length);
+
+  // 3×3 分块均值的极差
+  const blockMeans: number[] = [];
+  for (let by = 0; by < 3; by++) {
+    for (let bx = 0; bx < 3; bx++) {
+      const bsx = Math.floor((bx * width) / 3);
+      const bex = Math.max(bsx + 1, Math.floor(((bx + 1) * width) / 3));
+      const bsy = Math.floor((by * height) / 3);
+      const bey = Math.max(bsy + 1, Math.floor(((by + 1) * height) / 3));
+      let sum = 0;
+      let n = 0;
+      for (let y = bsy; y < bey; y++) {
+        for (let x = bsx; x < bex; x++) {
+          if (inRoi(x, y)) continue;
+          sum += luma[y * width + x];
+          n++;
+        }
+      }
+      if (n > 0) blockMeans.push(sum / n);
+    }
+  }
+  const blockRange = blockMeans.length > 0 ? Math.max(...blockMeans) - Math.min(...blockMeans) : 0;
+
+  // 左右两半 / 上下两半均值差
+  const half = (predicate: (x: number, y: number) => boolean): number | null => {
+    let sum = 0;
+    let n = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (inRoi(x, y) || !predicate(x, y)) continue;
+        sum += luma[y * width + x];
+        n++;
+      }
+    }
+    return n > 0 ? sum / n : null;
+  };
+  const left = half((x) => x < width / 2);
+  const right = half((x) => x >= width / 2);
+  const top = half((_x, y) => y < height / 2);
+  const bottom = half((_x, y) => y >= height / 2);
+  const leftRightDiff = left !== null && right !== null ? Math.abs(left - right) : 0;
+  const topBottomDiff = top !== null && bottom !== null ? Math.abs(top - bottom) : 0;
+
+  return { lumaStd, blockRange, leftRightDiff, topBottomDiff };
 }
 
 function laplacianVariance(luma: Float32Array, width: number, height: number): number {
@@ -137,5 +253,5 @@ function laplacianVariance(luma: Float32Array, width: number, height: number): n
 }
 
 function emptyMetrics(): QualityMetrics {
-  return { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0 };
+  return { darkClipRatio: 0, brightClipRatio: 0, sharpness: 0, background: null };
 }

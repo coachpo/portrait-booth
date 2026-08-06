@@ -11,7 +11,7 @@ import { useEffect, useMemo } from "react";
 import type { SourceImage } from "../image/source";
 import { entryLabel } from "../lib/templates/catalog";
 import type { TemplateEntry } from "../lib/templates/types";
-import { staticCheckWarnings } from "../pose/static-check";
+import { staticCheckUnknowns, staticCheckWarnings } from "../pose/static-check";
 import {
   allowedOutputSizes,
   resolveOutputSize,
@@ -56,6 +56,10 @@ export function ReviewStep({
 
   const warnings = useMemo(
     () => (source.staticChecks ? staticCheckWarnings(source.staticChecks) : []),
+    [source.staticChecks],
+  );
+  const unknowns = useMemo(
+    () => (source.staticChecks ? staticCheckUnknowns(source.staticChecks) : []),
     [source.staticChecks],
   );
 
@@ -156,7 +160,12 @@ export function ReviewStep({
           </p>
         </div>
       )}
-      {source.staticChecks && warnings.length === 0 && (
+      {source.staticChecks && warnings.length === 0 && unknowns.length > 0 && (
+        <p className="muted">
+          已检查项未发现明显问题；以下项目未检查，需人工确认：{unknowns.join("、")}。
+        </p>
+      )}
+      {source.staticChecks && warnings.length === 0 && unknowns.length === 0 && (
         <p className="muted">复检未发现明显问题（启发式判断，未经官方容差校准）。</p>
       )}
       {!source.staticChecks && <p className="muted">本次未运行姿态与曝光复检。</p>}

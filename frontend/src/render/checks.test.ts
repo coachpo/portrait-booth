@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { TemplateEntry } from "../lib/templates/types";
 import type { StaticCheckResult } from "../pose/static-check";
 import type { FinalArtifact } from "./final-artifact";
-import { buildChecks } from "./checks";
+import { HEURISTIC_NOTICE, buildChecks } from "./checks";
 
 function jpegBytes(density: number, exif = false): Uint8Array {
   const app0 = [
@@ -148,8 +148,14 @@ function staticCheckResult(overrides: Partial<StaticCheckResult> = {}): StaticCh
     quality: {
       status: "warn",
       issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
-      metrics: { darkClipRatio: 0, brightClipRatio: 0, sharpness: 120 },
+      metrics: {
+        darkClipRatio: 0,
+        brightClipRatio: 0,
+        sharpness: 120,
+        background: { lumaStd: 5, blockRange: 8, leftRightDiff: 3, topBottomDiff: 4 },
+      },
     },
+    faceGeometry: { eyesClosed: false, mouthOpen: false },
     ...overrides,
   };
 }
@@ -294,6 +300,73 @@ describe("buildChecks", () => {
   });
 
   describe("static recheck wiring (GDE-008)", () => {
+    it("reports background as unchecked when no metric was measured (O2)", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template(),
+        staticCheckResult({
+          quality: {
+            status: "warn",
+            issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+            metrics: {
+              darkClipRatio: 0,
+              brightClipRatio: 0,
+              sharpness: 120,
+              background: null,
+            },
+          },
+        }),
+      );
+      const item = checks.find((c) => c.id === "background")!;
+      expect(item.status).toBe("unknown");
+      expect(item.detail).toContain("未检查");
+    });
+
+    it("never passes the background item even when the auto signal is clean (O2)", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template(),
+        staticCheckResult({
+          quality: {
+            status: "warn",
+            issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+            metrics: {
+              darkClipRatio: 0,
+              brightClipRatio: 0,
+              sharpness: 120,
+              background: { lumaStd: 5, blockRange: 8, leftRightDiff: 3, topBottomDiff: 4 },
+            },
+          },
+        }),
+      );
+      const item = checks.find((c) => c.id === "background")!;
+      expect(item.status).not.toBe("pass");
+      expect(item.detail).toContain("仍需人工确认");
+    });
+
+    it("warns with the heuristic notice when the background signal exceeds a threshold (O2)", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template(),
+        staticCheckResult({
+          quality: {
+            status: "warn",
+            issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+            metrics: {
+              darkClipRatio: 0,
+              brightClipRatio: 0,
+              sharpness: 120,
+              background: { lumaStd: 5, blockRange: 8, leftRightDiff: 120, topBottomDiff: 4 },
+            },
+          },
+        }),
+      );
+      const item = checks.find((c) => c.id === "background")!;
+      expect(item.status).toBe("warn");
+      expect(item.detail).toContain("左右阴影不平衡");
+      expect(item.detail).toContain(HEURISTIC_NOTICE);
+    });
+
     it("passes the pose check when the recheck says ready", async () => {
       // 回归：复检结果曾被丢弃，这一项无条件写「后续版本提供」
       const s = await statuses(template(), artifact(96), staticCheckResult());
@@ -336,7 +409,12 @@ describe("buildChecks", () => {
           quality: {
             status: "warn",
             issues: ["曝光不足：暗部剪切像素占 8.3%"],
-            metrics: { darkClipRatio: 0.083, brightClipRatio: 0, sharpness: 120 },
+            metrics: {
+              darkClipRatio: 0.083,
+              brightClipRatio: 0,
+              sharpness: 120,
+              background: { lumaStd: 5, blockRange: 8, leftRightDiff: 3, topBottomDiff: 4 },
+            },
           },
         }),
       );
@@ -466,6 +544,7 @@ describe("buildChecks", () => {
     it("leaves the base summary unchanged when captureRules is empty (P8)", async () => {
       const checks = await buildChecks(artifact(96), template({ captureRules: [] }));
       const ids = checks.map((c) => c.id).sort();
+      // O2 起基线含 background（自动信号未测量时为 unknown「未检查」）
       expect(ids).toEqual(
         [
           "exact-pixels",
@@ -475,6 +554,7 @@ describe("buildChecks", () => {
           "source-resolution",
           "pose",
           "exposure",
+          "background",
         ].sort(),
       );
       expect(ids.some((id) => id.startsWith("capture:"))).toBe(false);
