@@ -3,11 +3,15 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearServicePolicyCache } from "../api/service-policy";
+import { clearTemplateCatalogCache } from "../lib/templates/catalog";
 import { routes } from "./App";
 import { ErrorBoundary } from "./error-boundary";
 
 vi.mock("../create/create-page", () => ({ CreatePage: () => <p>创建流程占位</p> }));
 vi.mock("../pages/retrieve-page", () => ({ RetrievePage: () => <p>取回流程占位</p> }));
+vi.mock("../pages/template-detail-page", () => ({
+  TemplateDetailPage: () => <p>模板详情占位</p>,
+}));
 
 function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
@@ -16,6 +20,7 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   clearServicePolicyCache();
+  clearTemplateCatalogCache();
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -55,6 +60,13 @@ describe("App shell", () => {
     expect(screen.getByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
     expect(screen.getByText("/no-such-page", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "回到首页" })).toBeInTheDocument();
+  });
+
+  it("renders the template detail page for /templates/:revisionId (P4)", () => {
+    // 回归：该路径曾命中 * 兜底路由渲染 NotFoundPage
+    renderAt("/templates/fi-police-digital@1");
+    expect(screen.getByText("模板详情占位")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "页面不存在" })).toBeNull();
   });
 
   it("renders the privacy page from server policy, not hard-coded numbers", async () => {

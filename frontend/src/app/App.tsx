@@ -5,6 +5,7 @@ import { HomePage } from "../pages/home-page";
 import { NotFoundPage } from "../pages/not-found-page";
 import { PrivacyPage } from "../pages/privacy-page";
 import { RetrievePage } from "../pages/retrieve-page";
+import { TemplateDetailPage } from "../pages/template-detail-page";
 import { Layout } from "./layout";
 
 /**
@@ -19,6 +20,7 @@ export const routes: RouteObject[] = [
       { path: "/create", element: <CreatePage /> },
       { path: "/retrieve", element: <RetrievePage /> },
       { path: "/privacy", element: <PrivacyPage /> },
+      { path: "/templates/:revisionId", element: <TemplateDetailPage /> },
       // 兜底路由：没有它时未匹配地址渲染成一块空白页
       { path: "*", element: <NotFoundPage /> },
     ],

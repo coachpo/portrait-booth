@@ -753,3 +753,29 @@ input[type="range"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 模板详情页（P4） */
+.rule-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rule-meta {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.capability-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}

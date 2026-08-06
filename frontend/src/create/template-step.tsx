@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   channelName,
@@ -10,11 +11,11 @@ import {
   jurisdictionName,
   uniqueJurisdictions,
 } from "../lib/templates/catalog";
+import { outputDescription } from "../lib/templates/describe";
 import { capabilityRestrictions, sourceNotesFor } from "../lib/templates/disclosure";
 import { editorPolicy } from "../lib/templates/policy";
 import type {
   DocumentType,
-  OutputProfile,
   SubmissionChannel,
   TemplateCatalog,
   TemplateEntry,
@@ -27,21 +28,6 @@ const CHANNELS: SubmissionChannel[] = [
   "certified_transfer",
   "onsite_capture",
 ];
-
-function outputDescription(output: OutputProfile): string {
-  switch (output.kind) {
-    case "exact_pixels":
-      return `${output.widthPx}×${output.heightPx} 像素`;
-    case "ranged_pixels":
-      return `${output.minWidthPx}–${output.maxWidthPx}×${output.minHeightPx}–${output.maxHeightPx} 像素，默认 ${output.defaultWidthPx}×${output.defaultHeightPx}`;
-    case "physical_raster":
-      return `${output.widthMm}×${output.heightMm} 毫米（${output.printPpi} ppi → ${output.widthPx}×${output.heightPx} 像素）`;
-    case "portal_source":
-      return "由官方门户执行裁剪";
-    case "guidance_only":
-      return "仅拍摄指导，不生成文件";
-  }
-}
 
 export interface TemplateStepProps {
   onSelect: (entry: TemplateEntry) => void;
@@ -253,6 +239,9 @@ function TemplateCard({
             不可用于提交
           </button>
         )}
+        <Link className="secondary-link" to={`/templates/${entry.revision.revisionId}`}>
+          查看模板详情
+        </Link>
         <details className="sources">
           <summary>{official ? "官方来源" : "项目内部规格来源"}</summary>
           <ul>

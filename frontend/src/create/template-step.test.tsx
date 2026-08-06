@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchTemplateCatalog } from "../lib/templates/catalog";
@@ -110,14 +111,22 @@ beforeEach(() => {
 describe("TemplateStep", () => {
   it("renders templates after catalog loads", async () => {
     mockedFetch.mockResolvedValue(catalog);
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     expect(await screen.findByRole("heading", { name: "测试模板" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "通用肖像" })).toBeInTheDocument();
   });
 
   it("shows error and retries on failure", async () => {
     mockedFetch.mockRejectedValueOnce(new Error("网络错误")).mockResolvedValueOnce(catalog);
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     expect(await screen.findByText("模板目录加载失败：网络错误")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByRole("heading", { name: "测试模板" })).toBeInTheDocument();
@@ -126,7 +135,11 @@ describe("TemplateStep", () => {
 
   it("filters by jurisdiction chip", async () => {
     mockedFetch.mockResolvedValue(catalog);
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     await screen.findByRole("heading", { name: "测试模板" });
     fireEvent.click(screen.getByRole("button", { name: "美国" }));
     expect(screen.queryByRole("heading", { name: "通用肖像" })).not.toBeInTheDocument();
@@ -135,7 +148,11 @@ describe("TemplateStep", () => {
 
   it("marks non-official and reference_only templates", async () => {
     mockedFetch.mockResolvedValue(catalog);
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     await screen.findByRole("heading", { name: "测试模板" });
     expect(screen.getByText("非证件模板")).toBeInTheDocument();
     expect(screen.getByText("仅供参考")).toBeInTheDocument();
@@ -145,7 +162,11 @@ describe("TemplateStep", () => {
   it("only active templates are selectable", async () => {
     mockedFetch.mockResolvedValue(catalog);
     const onSelect = vi.fn();
-    render(<TemplateStep onSelect={onSelect} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={onSelect} />
+      </MemoryRouter>,
+    );
     await screen.findByRole("heading", { name: "测试模板" });
     const selectable = screen.getAllByRole("button", { name: "选择此模板" });
     expect(selectable).toHaveLength(2);
@@ -177,7 +198,11 @@ describe("TemplateStep", () => {
         }),
       ],
     });
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     await screen.findByRole("heading", { name: "需专业拍摄" });
     const card = screen
       .getByRole("heading", { name: "需专业拍摄" })
@@ -191,7 +216,11 @@ describe("TemplateStep", () => {
 
   it("hides requirement markers when all prerequisites are satisfied (P2)", async () => {
     mockedFetch.mockResolvedValue(catalog);
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     await screen.findByRole("heading", { name: "测试模板" });
     expect(screen.queryByText(/认证摄影师/)).toBeNull();
     expect(screen.queryByText(/原始相机文件/)).toBeNull();
@@ -220,7 +249,11 @@ describe("TemplateStep", () => {
           : t,
       ),
     });
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     await screen.findByRole("heading", { name: "测试模板" });
     const card = screen
       .getByRole("heading", { name: "测试模板" })
@@ -234,9 +267,29 @@ describe("TemplateStep", () => {
     expect(within(card).getByText("官方来源")).toBeInTheDocument(); // 官方模板保持原标题
   });
 
+  it("links every card to its template detail page (P4)", async () => {
+    mockedFetch.mockResolvedValue(catalog);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { name: "测试模板" });
+    const links = screen.getAllByRole("link", { name: "查看模板详情" });
+    expect(links).toHaveLength(3);
+    const hrefs = links.map((l) => l.getAttribute("href"));
+    expect(hrefs).toContain("/templates/t@1");
+    expect(hrefs).toContain("/templates/generic@1");
+    expect(hrefs).toContain("/templates/us-paper@1");
+  });
+
   it("places the statusReason above the card details (P3)", async () => {
     mockedFetch.mockResolvedValue(catalog);
-    render(<TemplateStep onSelect={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
     await screen.findByRole("heading", { name: "测试模板" });
     const card = screen
       .getByRole("heading", { name: "美国护照纸质" })
