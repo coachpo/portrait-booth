@@ -72,6 +72,22 @@ class TestSaveFlow:
         )
         assert resp.status_code == 400
 
+    def test_global_upload_limit_caps_template_max_bytes(self, client, monkeypatch):
+        """回归：模板 maxBytes 曾整体压过全局上限，调小全局值后上传仍被拒。"""
+        photo = make_jpeg()
+        monkeypatch.setenv("PORTRAIT_MAX_UPLOAD_BYTES", str(len(photo) - 1))
+        session = client.post("/api/v1/save-sessions")
+        cookie = session.cookies["pb_save_session"]
+        resp = client.post(
+            "/api/v1/saves",
+            files={"photo": ("p.jpg", photo, "image/jpeg")},
+            data={"templateId": "fi-police-digital", "templateVersion": 1},
+            headers={"Idempotency-Key": "test-idem-key-0009"},
+            cookies={"pb_save_session": cookie},
+        )
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "PHOTO_TOO_LARGE"
+
     def test_save_rejects_wrong_size(self, client):
         session = client.post("/api/v1/save-sessions")
         cookie = session.cookies["pb_save_session"]

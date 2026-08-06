@@ -147,7 +147,7 @@ def _do_save(
     try:
         encoded = validate_and_reencode(
             photo_bytes,
-            max_bytes=rev["outputFile"]["sizeLimit"]["maxBytes"]
+            max_bytes=rev["outputFile"]["sizeLimit"].get("maxBytes")
             if rev.get("outputFile") and rev["outputFile"].get("sizeLimit")
             else None,
             max_pixels=cfg.max_pixels,

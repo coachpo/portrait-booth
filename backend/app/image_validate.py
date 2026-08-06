@@ -30,7 +30,11 @@ def validate_and_reencode(
 ) -> bytes:
     """验证 → sRGB 重编码 → PPI 写入；任一不满足即抛 ImageValidationError。"""
     cfg = settings or get_settings()
-    if len(data) > (max_bytes or cfg.max_upload_bytes):
+    # §8.2：模板 maxBytes 与全局上限取交集——模板只是候选之一，不能再抬高全局值
+    effective_max = (
+        cfg.max_upload_bytes if max_bytes is None else min(max_bytes, cfg.max_upload_bytes)
+    )
+    if len(data) > effective_max:
         raise ImageValidationError("PHOTO_TOO_LARGE", "文件超过上传上限")
 
     try:
@@ -73,7 +77,7 @@ def validate_and_reencode(
     if target_ppi is not None:
         encoded = _write_jfif_density(encoded, target_ppi)
 
-    if max_bytes and len(encoded) > max_bytes:
+    if len(encoded) > effective_max:
         raise ImageValidationError("PHOTO_TOO_LARGE", "重编码后仍超过文件上限")
 
     if orientation and orientation != 1:
