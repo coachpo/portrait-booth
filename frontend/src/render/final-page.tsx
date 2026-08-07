@@ -263,7 +263,7 @@ export function FinalPage({
             <ul className="check-list">
               {checks.map((c) => (
                 <li key={c.id} className={`check-${c.status}`}>
-                  <strong>{c.label}：</strong>
+                  <strong>{c.label}: </strong>
                   {statusText(c.status)}
                   {c.detail && <span className="muted"> ({c.detail})</span>}
                 </li>

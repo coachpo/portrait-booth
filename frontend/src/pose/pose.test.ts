@@ -83,17 +83,17 @@ const COLUMN_MAJOR_SAMPLES: Array<{
   expected: { yaw: number; pitch: number; roll: number };
 }> = [
   {
-    name: "yaw +30°（Ry）",
+    name: "yaw +30° (Ry)",
     m: [cos(30), 0, -sin(30), 0, 0, 1, 0, 0, sin(30), 0, cos(30), 0, 0, 0, 0, 1],
     expected: { yaw: 30, pitch: 0, roll: 0 },
   },
   {
-    name: "pitch +20°（Rx）",
+    name: "pitch +20° (Rx)",
     m: [1, 0, 0, 0, 0, cos(20), sin(20), 0, 0, -sin(20), cos(20), 0, 0, 0, 0, 1],
     expected: { yaw: 0, pitch: 20, roll: 0 },
   },
   {
-    name: "roll +15°（Rz）",
+    name: "roll +15° (Rz)",
     m: [cos(15), sin(15), 0, 0, -sin(15), cos(15), 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
     expected: { yaw: 0, pitch: 0, roll: 15 },
   },
