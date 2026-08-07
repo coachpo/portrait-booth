@@ -1,77 +1,131 @@
-# 源代码规模与职责规则
+# Source size and responsibility rules
 
-## 目的
+## Purpose
 
-本规则用于约束手写源代码的职责边界和可维护规模，帮助开发者及 Coding Agent 在实现功能时保持既有架构、避免职责扩散，并在文件继续增长前主动审查结构。
+This policy constrains the responsibility boundaries and maintainable
+size of hand-written source code, helping developers and coding agents keep
+the existing architecture, avoid responsibility sprawl, and proactively
+review structure before files keep growing.
 
-行数是审查信号，不是质量结论。任何拆分都必须改善职责、依赖方向、可测试性或变更隔离；不得为了满足数字而破坏内聚性。
+Line counts are review signals, not quality verdicts. Any split must
+improve responsibility, dependency direction, testability, or change
+isolation; never break cohesion just to satisfy a number.
 
-本规则的行数阈值按有效代码行计算：空行和仅包含注释的行不计入；包含代码的行即使带有行尾注释也应计入。
+This policy's line thresholds count effective code lines: blank lines and
+comment-only lines are excluded; lines containing code count even with a
+trailing comment.
 
-## 适用范围
+## Applicability
 
-本规则适用于承载业务行为、交互行为、状态管理、编排、适配、数据访问或基础设施行为的普通手写源文件。
+This policy applies to ordinary hand-written source files carrying
+business behavior, interaction behavior, state management, orchestration,
+adaptation, data access, or infrastructure behavior.
 
-以下内容不直接套用普通行为文件阈值，但仍应保持清晰、可审查并遵守项目架构：
+The following do not directly apply the ordinary behavior-file
+thresholds but must stay clear, reviewable, and compliant with the project
+architecture:
 
-- 自动生成且能由确定流程重新生成的代码；
-- 数据库迁移和不可分割的历史演进记录；
-- schema、协议、目录、映射表和其他以声明数据为主的文件；
-- 第三方或 vendored 代码；
-- 测试快照、固定样例和大规模测试数据；
-- 因完整叙事或端到端流程而保持内聚的集成测试。
+- Auto-generated code reproducible by a deterministic process;
+- database migrations and indivisible historical evolution records;
+- schemas, protocols, catalogs, mapping tables, and other files that are
+  primarily declarative data;
+- third-party or vendored code;
+- test snapshots, fixed fixtures, and large test data;
+- integration tests kept cohesive by a full narrative or end-to-end flow.
 
-不得通过把行为代码伪装成配置、宏、回调、生成代码或数据表来规避本规则。
+This policy must not be evaded by disguising behavior code as
+configuration, macros, callbacks, generated code, or data tables.
 
-## 规模审查信号
+## Size review signals
 
-- 文件达到约 240 行时，提前检查其主职责、依赖方向和自然拆分边界，避免在后续需求中被动膨胀。
-- 普通手写行为文件超过 300 行时，需要在变更说明中提供结构化依据：文件的单一主职责、对外接口、主要依赖、测试边界，以及此时拆分为何会降低内聚性或增加不必要耦合。
-- 新增的普通手写行为文件预计超过 500 行时，必须在实现前形成明确的项目级决定，并把经验证的结构性例外记录在 `docs/架构说明.md`。不得先写成长文件，再用事后说明替代事前判断。
-- 函数或方法达到约 50 行时，检查是否混合了多个阶段、抽象层、错误处理策略或副作用。保持较长函数时，应能说明其连续性和可测试边界。
+- At about 240 lines, check the file's main responsibility, dependency
+  direction, and natural split boundaries early, to avoid passive growth
+  under later requirements.
+- Above 300 lines, an ordinary hand-written behavior file needs structured
+  justification in the change note: the file's single main responsibility,
+  external interface, main dependencies, test boundary, and why splitting
+  now would lower cohesion or add unnecessary coupling.
+- When a new ordinary hand-written behavior file is expected to exceed 500
+  lines, form an explicit project-level decision before implementation and
+  record the verified structural exception in `docs/architecture.md`.
+  Never write the long file first and substitute post-hoc notes for
+  up-front judgment.
+- At about 50 lines, a function or method should be checked for mixed
+  stages, abstraction layers, error-handling strategies, or side effects.
+  Keeping a longer function requires explaining its continuity and testable
+  boundary.
 
-这些数字不是自动拆分线。项目可以基于可验证的结构原因保留例外，但例外不得改写本通用规则。
+These numbers are not automatic split lines. The project may keep
+exceptions based on verifiable structural reasons, but exceptions must not
+rewrite this general policy.
 
-## 职责与拆分原则
+## Responsibility and splitting principles
 
-- 每个文件应有一个可清楚表述的主职责和主要变更原因。
-- 依照领域边界、模块边界、状态生命周期、输入输出边界或副作用边界拆分。
-- 入口、组合根和路由层应保持轻薄，主要负责装配、调度和边界转换；不为它们设置脱离项目事实的统一行数上限。
-- 新职责应放入已有正确模块，或建立具有明确接口的新模块；不得把方便访问当作放置依据。
-- 抽取后应减少认知负担，并保持或改善依赖方向、命名、测试和错误处理。
+- Every file should have one clearly expressible main responsibility and
+  primary reason to change.
+- Split along domain boundaries, module boundaries, state lifecycles,
+  input/output boundaries, or side-effect boundaries.
+- Entry points, composition roots, and route layers stay thin - mainly
+  assembly, dispatch, and boundary conversion; no uniform line ceiling is
+  imposed on them detached from project facts.
+- New responsibilities go into an existing correct module or a new module
+  with a clear interface; convenient access is not a placement rationale.
+- Extraction should reduce cognitive load and keep or improve dependency
+  direction, naming, tests, and error handling.
 
-禁止以下机械拆分：
+The following mechanical splits are forbidden:
 
-- 按行数切成 `part1`、`part2` 或含义不明的同级文件；
-- 把无关逻辑集中到通用 `utils`、`helpers` 或“公共”模块；
-- 增加只做透传的包装层、代理层或无业务含义的接口；
-- 通过嵌套回调、宏、配置或生成步骤隐藏复杂度；
-- 仅移动代码而不形成新的职责边界或测试边界。
+- cutting by line count into `part1`, `part2`, or sibling files without
+  clear meaning;
+- pooling unrelated logic into generic `utils`, `helpers`, or "common"
+  modules;
+- adding pass-through wrapper layers, proxy layers, or interfaces without
+  business meaning;
+- hiding complexity through nested callbacks, macros, configuration, or
+  generation steps;
+- moving code without forming a new responsibility or test boundary.
 
-## 遗留大文件
+## Legacy large files
 
-- 已存在的大文件不因数字本身自动成为无关变更的重构目标。
-- 修改遗留大文件时，不得继续加入新的独立职责。
-- 若本次变更附近存在安全、自然且可验证的拆分边界，应优先抽取该边界并运行适用验证。
-- 若拆分会扩大范围、改变行为或缺少验证条件，应保持本次修改局部化，并在变更说明中解释未拆分原因；不得用大规模顺手重构掩盖当前需求。
+- Existing large files do not automatically become refactoring targets of
+  unrelated changes just because of the number.
+- When modifying a legacy large file, do not keep adding new independent
+  responsibilities.
+- If a safe, natural, verifiable split boundary exists near this change,
+  extract it first and run the applicable verification.
+- If splitting would widen scope, change behavior, or lack verification
+  conditions, keep the change local and explain in the change note why it
+  was not split; never mask the current requirement with a large drive-by
+  refactor.
 
-## Coding Agent 执行要求
+## Coding agent execution requirements
 
-开始编码前：
+Before starting to code:
 
-1. 阅读 `docs/架构说明.md`、`docs/开发规范.md` 和本规则；
-2. 确认目标模块、允许的依赖方向及现有实现；
-3. 检查计划修改或新增文件的当前规模和职责。
+1. Read `docs/architecture.md`, `docs/development-guidelines.md`, and this
+   policy;
+2. confirm the target module, allowed dependency direction, and existing
+   implementation;
+3. check the current size and responsibility of the files to be modified or
+   added.
 
-编码过程中：
+While coding:
 
-1. 持续检查是否新增了独立职责、跨越架构边界或复制已有能力；
-2. 在自然边界出现时及时拆分，不等到文件完成后再机械处理；
-3. 保持入口和组合代码轻薄，业务规则留在其归属模块。
+1. Keep checking whether independent responsibilities, architecture-boundary
+   crossings, or duplicated capabilities were added;
+2. split at natural boundaries as they appear, rather than mechanically
+   after the file is complete;
+3. keep entry and composition code thin, with business rules in their own
+   modules.
 
-完成前：
+Before finishing:
 
-1. 运行项目适用的测试、静态检查和构建验证；
-2. 列出本次新增或修改后超过 300 行的普通手写行为文件；如无，明确说明无；
-3. 对列出的文件说明其职责依据；超过 500 行的新文件还必须指向 `docs/架构说明.md` 中事先记录的结构性例外；
-4. 确认没有通过机械拆分、无意义抽象或隐藏复杂度规避本规则。
+1. Run the project's applicable tests, static checks, and build
+   verification;
+2. list ordinary hand-written behavior files above 300 lines added or
+   modified this round; if none, say so explicitly;
+3. explain each listed file's responsibility basis; new files above 500
+   lines must also point to the structural exception recorded in advance in
+   `docs/architecture.md`;
+4. confirm this policy was not evaded via mechanical splits, meaningless
+   abstractions, or hidden complexity.

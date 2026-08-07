@@ -1,86 +1,231 @@
-# 项目状态
+# Project status
 
-> 最近一次基于仓库证据的评审日期：2026-08-06
+> Last review date based on repository evidence: 2026-08-06
 
-## 生命周期
+## Lifecycle
 
-Portrait Booth 处于首个 MVP 实现阶段。产品与技术规格（[产品说明](docs/PRODUCT.md)、[SPEC](docs/SPEC.md)）已完成，P0 取回策略已选定（`key_only_ephemeral`，暂存 TTL 30 天，见 SPEC §1.2.1）。创建与取回两条主流程首尾闭合，可完整走通；公开上线所需的防滥用与可观测性尚未补齐（见「已知缺口」）。
+Portrait Booth is in its first MVP implementation stage. The product and
+technical specifications ([product overview](docs/PRODUCT.md),
+[SPEC](docs/SPEC.md)) are complete and the P0 retrieval policy is decided
+(`key_only_ephemeral`, staging TTL 30 days; see SPEC §1.2.1). The two main
+flows - create and retrieve - are closed end to end and fully walkable;
+abuse resistance and observability required for a public launch are not yet
+in place (see "Known gaps").
 
-## 当前实现
+## Current implementation
 
-- monorepo 工具链：`frontend/`（Vite + React + TypeScript）、`backend/`（FastAPI + SQLite + 本地磁盘存储）、`templates/`（版本化模板数据）。
-- 创建流程：模板选择 → 上传/拍摄 → **确认** → 非破坏性编辑 → 终态渲染与检查摘要。「返回」只改变步骤，不销毁下游状态；会话内更换模板保留照片与编辑状态、按新模板输出尺寸重新投影（并据新 capabilities 归一化镜像/旋转）；源照片被替换时才作废编辑状态。
-- 编辑器实现了 EDT-008 模板蒙版：`cropRules` 的像素/毫米/归一化三种坐标空间统一换算到输出像素，画出头部椭圆与各条允许区间，并列出对应的官方来源原文。
-- 终态检查摘要接入静态复检的真实结果（姿态、曝光、清晰度、裁剪区透明度、源图分辨率），不再无条件写「后续版本提供」。模板 captureRules 中机器判不了的强制拍摄要求逐条显示为「需人工确认」并附官方原文，其余为「未检查」。所有启发式项都标注未经官方容差校准。
-- 暂存/取回/删除闭环：匿名保存会话、幂等租约、KEY-only 取回、单次下载 token、删除密钥授权，取回页提供删除入口与可下载回执。
-- 应用外壳：全局导航、404 兜底、ErrorBoundary、`/privacy` 隐私说明页（留存时长等数字全部来自 `/api/v1/service-policy`）。
-- 模板内容门：`python -m app.template_tools validate` 校验 schema、发布规则、引用完整性与 `contentHash` 绑定，已接入 CI。
-- 部署：单容器 Docker（非 root 运行、健康检查、只读根文件系统）。仅用于本地开发与验收，尚未上线。
-- **部署前提**：镜像不信任任何转发头。反代不在本机时，用 `FORWARDED_ALLOW_IPS` 环境变量写出那台反代的具体地址或 CIDR，**不要用通配符**——信任任意客户端的 `X-Forwarded-For` 会让 §9.3 的单 IP 限速完全失效，6 位取回码可被无限速枚举。同时确保反代**覆写**而不是追加该头（nginx 的 `$proxy_add_x_forwarded_for` 是追加，最左值仍来自客户端）。
+- Monorepo toolchain: `frontend/` (Vite + React + TypeScript), `backend/`
+  (FastAPI + SQLite + local disk storage), `templates/` (versioned template
+  data).
+- Creation flow: template selection → upload/capture → **confirmation** →
+  non-destructive editing → final render and check summary. "Back" only
+  changes the step and never destroys downstream state; same-session
+  template switches keep the photo and edit state and re-project to the new
+  template's output size (normalizing mirror/rotation per the new
+  capabilities); edit state is voided only when the source photo is
+  replaced.
+- The editor implements EDT-008 template masks: `cropRules` pixel/mm/
+  normalized coordinate spaces all convert to output pixels, drawing the
+  head ellipse and each allowed range with the corresponding official source
+  text.
+- The final check summary uses the static recheck's real results (pose,
+  exposure, sharpness, crop transparency, source resolution) instead of an
+  unconditional "provided in a later version". Mandatory captureRules items
+  a machine cannot judge show one by one as "needs manual confirmation"
+  with the official source text; the rest are "not checked". Every heuristic
+  item is labeled not calibrated to official tolerance.
+- Staging/retrieval/deletion loop: anonymous save sessions, idempotency
+  leases, KEY-only retrieval, single-use download tokens, delete-secret
+  authorization; the retrieve page offers the delete entry and a downloadable
+  receipt.
+- App shell: global navigation, 404 fallback, ErrorBoundary, and the
+  `/privacy` page (retention and other numbers all come from
+  `/api/v1/service-policy`).
+- Template content gate: `python -m app.template_tools validate` checks
+  schemas, publication rules, reference integrity, and `contentHash`
+  binding; wired into CI.
+- Deployment: single-container Docker (non-root, healthcheck, read-only
+  root filesystem). For local development and acceptance only; not yet
+  launched.
+- **Deployment prerequisite**: the image trusts no forwarded headers. When
+  the reverse proxy is not on the same host, use the `FORWARDED_ALLOW_IPS`
+  environment variable with the proxy's concrete address or CIDR - **never a
+  wildcard**: trusting `X-Forwarded-For` from arbitrary clients completely
+  defeats §9.3's per-IP rate limit, and the 6-character retrieval code space
+  can be enumerated without limit. Also make sure the proxy **overwrites**
+  rather than appends the header (nginx's `$proxy_add_x_forwarded_for`
+  appends, so the leftmost value still comes from the client).
 
-## 本轮修复的安全与正确性缺陷
+## Security and correctness defects fixed this round
 
-- **SPA 静态回退的路径穿越**：`%2e%2e%2f` 编码穿越可未认证读取容器内任意文件（含 SQLite 库与全部照片对象），绕过 KEY、限速、下载 token、到期与删除的全部控制。现按 resolve 后的归属校验封堵，并让未实现的 API 路径返回 404 而不是 index.html 200。
-- **HMAC 根密钥每进程随机**：容器重启即作废此前发出的全部 KEY 与删除密钥，而照片仍按 TTL 留存。现改为单一 `PORTRAIT_SECRET_KEY_BASE` 经 HKDF 派生，缺失时拒绝启动。
-- **生命周期 worker 从未被调度**：清理逻辑只有 `__main__` 入口，到期照片不撤销、用户删除只标记状态。现随 API 进程调度，删除即物理删除，orphan sweep 带 15 分钟年龄门限。
-- **OUT-003 质量搜索无效**：`toBlob` 的 quality 传了 40–95（规范要求 0.0–1.0），越界值被 UA 忽略并回落默认值，十次二分编码出同一结果。
-- **EDT-009 裁剪区检查是字面量 pass**：配合「旋转把裁剪框甩出源图」，用户会看到检查全绿、同时拿到带黑角的成品。现在编码前扫描画布 alpha，并在编辑器侧自动补足旋转所需的缩放。
-- **下载 token 非原子消费**：先 SELECT 再无条件 UPDATE，两个并发请求都能拿到同一张照片。
-- **幂等无租约**：并发重复保存会各建一张照片、第二次撞主键返回 500。现用主键抢占租约，冲突时返回 409 `IDEMPOTENCY_IN_PROGRESS` 与 `Retry-After`。
-- **对象完整性 MAC 从未被校验**，且只绑定对象名与长度（等长替换看不出来）。现绑定内容摘要并在下载时校验。
-- **全站无 CSP / 无 HSTS**：现补齐 §9.4 基线（`'wasm-unsafe-eval'` 严格不放宽到 `'unsafe-eval'`），长缓存只挂 `/assets/`，照片与取回响应保持 `no-store`。
-- **同源校验只看 Origin 且缺头即跳过**：现同时检查 `Sec-Fetch-Site`，对浏览器请求强制同源。
-- **统一错误契约**：`requestId` 不再恒为空串，422 与模板 404 不再漏出 FastAPI 原生的 `{"detail": ...}`。
-- **后端测试隔离失效**：`Settings` 默认值在 import 期冻结，`tmp_path` fixture 完全无效，所有并发行为都无法被可信验证。现改为调用时读取环境变量。
+- **SPA static fallback path traversal**: `%2e%2e%2f` encoded traversal
+  could read any file inside the container unauthenticated (including the
+  SQLite database and all photo objects), bypassing every control of KEY,
+  rate limiting, download tokens, expiry, and deletion. Now blocked by a
+  post-resolve containment check, and unimplemented API paths return 404
+  instead of index.html 200.
+- **HMAC root key random per process**: a container restart invalidated
+  every previously issued KEY and delete secret while photos stayed for the
+  TTL. Now derived from a single `PORTRAIT_SECRET_KEY_BASE` via HKDF, with
+  startup refused when missing.
+- **Lifecycle worker never scheduled**: cleanup only had a `__main__`
+  entry, so expired photos were never revoked and user deletion only marked
+  status. Now scheduled inside the API process; deletion is physical, and the
+  orphan sweep carries a 15-minute age gate.
+- **OUT-003 quality search ineffective**: `toBlob` received quality 40–95
+  (the spec requires 0.0–1.0); UAs ignored the out-of-range values and fell
+  back to the default, so ten binary-search iterations encoded the same
+  result.
+- **EDT-009 crop-area check was a literal pass**: combined with "rotation
+  throws the crop frame outside the source", users saw all-green checks and
+  an artifact with black corners. The canvas alpha is now scanned before
+  encoding, and the editor automatically adds the scale rotation needs.
+- **Download token consumed non-atomically**: SELECT then unconditional
+  UPDATE let two concurrent requests both get the same photo.
+- **Idempotency without leases**: concurrent duplicate saves each created
+  a photo and the second commit hit the primary key with a 500. Now a
+  primary-key lease takeover returns 409 `IDEMPOTENCY_IN_PROGRESS` with
+  `Retry-After` on conflict.
+- **Object-integrity MAC never verified** and bound only to name and
+  length (invisible to equal-length swaps). Now binds the content digest and
+  is verified on download.
+- **No CSP / no HSTS site-wide**: the §9.4 baseline is now in place
+  (`'wasm-unsafe-eval'` strictly not widened to `'unsafe-eval'`); long
+  caching only on `/assets/`, and photo and retrieval responses stay
+  `no-store`.
+- **Same-origin check looked only at Origin and skipped when absent**: now
+  also checks `Sec-Fetch-Site`, enforcing same-origin for browser requests.
+- **Unified error contract**: `requestId` is no longer always empty, and
+  422/template-404 no longer leak FastAPI's native `{"detail": ...}`.
+- **Backend test isolation broken**: `Settings` defaults froze at import
+  time, making `tmp_path` fixtures completely ineffective and concurrency
+  behavior unverifiable. Now reads environment variables at call time.
 
-## 姿态推理：已评估的有意偏差
+## Pose inference: evaluated, deliberate deviation
 
-SPEC §4.4 正文提到把推理放进 Worker，但 GDE-001~010 的验收表没有一条要求它，GDE-006 反而要求「无 WebGL/WASM/**Worker** 的降级测试可完成全流程」。当前实现跑在主线程，属于**已评估的有意偏差**：
+SPEC §4.4's prose mentions moving inference into a Worker, but no
+acceptance item in GDE-001~010 requires it; GDE-006 instead requires that
+"the degraded path without WebGL/WASM/**Worker** can complete the full
+flow". The current implementation runs on the main thread - an **evaluated,
+deliberate deviation**:
 
-- 决策依据：迁移决策原本依据的「30–50 ms/帧」来自一条与实测矛盾的代码注释；在拿到真实分布之前，线程重构是在优化一个没被测量过的量。
-- 本轮已修正的更高优先级缺陷：`facialTransformationMatrixes` 是**列主序**而解算按行主序读取（yaw/roll 符号与轴对调）、左上 3×3 含均匀缩放导致 pitch 被放大甚至饱和、滞回方向写反（进入 ready 后阈值反而收紧）、`selectPrimaryFace` 因 blendshapes 关闭而退化为取第一张脸、rVFC 循环无法取消、推理无帧率门控、指令措辞用镜像标记翻转身体方向。
-- 已建立测量口径：`pose/perf.ts` 采集 `detectVideo` 的 p50/p95 与长任务，判定门限为 p95 > 50 ms（Long Tasks API 的规范门限）。
-- **重新评审条件**：目标硬件上单帧 p95 越过 50 ms，或预览期间 INP 明显劣化，或项目主动决定优先消化 §4.4 的架构偏差。
+- Rationale: the migration decision's original basis, "30–50 ms/frame",
+  came from a code comment contradicting measurements; without the real
+  distribution, a thread refactor optimizes an unmeasured quantity.
+- Higher-priority defects fixed this round: `facialTransformationMatrixes`
+  is **column-major** but the solver read it row-major (yaw/roll signs and
+  axes swapped), the top-left 3×3 carries a uniform scale that amplifies or
+  even saturates pitch, the hysteresis direction was inverted (thresholds
+  tightened after entering ready), `selectPrimaryFace` degenerated to
+  first-face because blendshapes are off, the rVFC loop could not be
+  cancelled, inference had no frame-rate gate, and the guidance wording
+  flipped body direction via the mirror flag.
+- A measurement basis exists: `pose/perf.ts` collects `detectVideo`
+  p50/p95 and long tasks, with the decision gate at p95 > 50 ms (the Long
+  Tasks API's spec threshold).
+- **Re-review condition**: single-frame p95 crosses 50 ms on the target
+  hardware, INP visibly degrades during preview, or the project actively
+  decides to absorb §4.4's architectural deviation first.
 
-## 已知缺口（公开上线前必须处理）
+## Known gaps (must be addressed before a public launch)
 
-- 后端零日志、零指标：故障不可诊断（§9.4 的字段白名单目前只存在于注释里）。
-- §9.3 的风险预算与多层限速未补齐：无 /24 聚合、无 IPv6 聚合、无指数退避。
-- 上传未流式处理：整份 multipart 先读进内存再校验大小；保存端点无限速。
-- 取回响应没有恒定处理时间（SAV-008 / §6.5 的差分计时验收）。
-- 图片验证接受带尾随数据的 polyglot，解码未沙箱化、无 CPU/时间预算。
-- 已消费/已过期的下载凭证、purged 后的照片元数据行与超过幂等窗口的幂等记录随进程内清理循环删除（延迟最多一个清理间隔；清理间隔默认 300 秒）。窗口期内的幂等重放仍返回同一 envelope；`PORTRAIT_IDEMPOTENCY_WINDOW_SECONDS` 可调窗口。
-- §5.3 模板治理自动化（reviewDueAt SLA 告警、validUntil 到期、链接检查）只有 CLI 工具链，未接入运行期告警；导出/暂存前重新确认 publication 也未实现。目录缓存已改为 `must-revalidate` 且内容改动会自动失效，紧急停用信号能生效。
-- 目录 API 的服务端筛选参数（jurisdiction/documentType/channel/applicantClass 与 `all` 回退）未实现，筛选仍在客户端完成。
-- 姿态模型没有「不加载模型」的手动路径与初始化前披露。
-- 位图预算计量、i18n 未实现。模型/WASM 版本锁定与构建期资产复制已实现：`frontend/assets-lock.json` 登记 3 个资产的字节数/SHA-256/来源，`npm run build`/`dev` 的 pre 钩子从 npm 包同步 wasm 并逐字节校验，失败非零退出。注意 `/assets/*` 的一年 immutable 缓存挂在无内容哈希的固定文件名上，模型或 SDK 升级需要同时改 URL 路径（`landmarker.ts` 的路径常量）。print-ready 与参考图的区分已实现，但仅在纸质模板转 active 后可见（现有两个纸质模板均为 reference_only，前端不可选）。
-- P1/P2 扩展（冲印排版与 PDF、PWA 外壳）未实现。更深质量检测已部分实现：静态复检新增眼/嘴几何（疑似闭眼/张嘴，仅确认页提示）与背景均匀度启发式（终态摘要条目，状态只能是 warn/unknown，永不 pass；未测量时明确标「未检查」）；确认页在存在未检查项时不再宣称「复检未发现明显问题」。剩余范围：阈值未校准（与 LANDMARKER_CONFIDENCE 同性质）、背景仅 luma 域（色偏需显式配置字段并同步 SPEC）、未实现 captureRules 消费链。ranged_pixels 尺寸可选已实现：us-visa-digital 可在确认页切 600/1200 档，贯穿编辑器、终态与暂存校验。
-- Playwright 端到端测试未接入 CI，需要手工执行。
-- **Public Beta 最低模板 manifest 未达成**：6 项硬门槛中 3 项仍是 `reference_only`（us-passport-paper、jp-passport-paper 缺 PPI 校准打印测试；cn-visa-digital-ma-rabat 缺门户实测），真正可产出证件成品的官方模板只有 2 个。补齐需要官方来源实测证据，属内容工作。
+- Backend has zero logs and zero metrics: failures are undiagnosable
+  (the §9.4 field whitelist currently exists only in comments).
+- §9.3's risk budget and multi-layer rate limiting are incomplete: no /24
+  aggregation, no IPv6 aggregation, no exponential backoff.
+- Uploads are not streamed: the whole multipart is read into memory before
+  size validation; the save endpoint has no rate limit.
+- Retrieval responses have no constant processing time (SAV-008 / §6.5's
+  differential-timing acceptance).
+- Image validation accepts polyglots with trailing data; decoding is not
+  sandboxed and has no CPU/time budget.
+- Consumed/expired download grants, purged photo metadata rows, and
+  idempotency records past the window are deleted by the in-process cleanup
+  loop (delayed at most one cleanup interval; default interval 300 s).
+  In-window idempotent replays still return the same envelope;
+  `PORTRAIT_IDEMPOTENCY_WINDOW_SECONDS` tunes the window.
+- §5.3 template-governance automation (reviewDueAt SLA alerts, validUntil
+  expiry, link checks) exists only as a CLI toolchain with no runtime
+  alerting; re-confirming the publication before export/staging is also not
+  implemented. The catalog cache is now `must-revalidate` and auto-invalidates
+  on content changes, so the emergency-takedown signal works.
+- Server-side catalog filter parameters (jurisdiction/documentType/
+  channel/applicantClass with an `all` fallback) are not implemented;
+  filtering still happens client-side.
+- The pose model has no "don't load the model" manual path or
+  pre-initialization disclosure.
+- Bitmap budget metering and i18n are not implemented. Model/WASM version
+  locking and build-time asset copying are: `frontend/assets-lock.json`
+  registers bytes/SHA-256/source for the 3 assets, and the `npm run
+  build`/`dev` pre hooks sync wasm from the npm package with byte-level
+  verification and non-zero exit on failure. Note that the one-year immutable
+  `/assets/*` cache sits on fixed filenames without content hashes, so model
+  or SDK upgrades must also change the URL paths (the path constants in
+  `landmarker.ts`). The print-ready vs reference-image distinction is
+  implemented but only visible once paper templates turn active (both current
+  paper templates are reference_only and unselectable in the frontend).
+- P1/P2 extensions (print layout and PDF, PWA shell) are not implemented.
+  Deeper quality checks are partially implemented: the static recheck gained
+  eye/mouth geometry (possibly-closed eyes/open mouth, confirm-page hints
+  only) and a background-uniformity heuristic (a final-summary item whose
+  status can only be warn/unknown, never pass; explicitly "not checked" when
+  unmeasured); the confirm page no longer claims "recheck found no obvious
+  issues" when unchecked items exist. Remaining scope: uncalibrated
+  thresholds (same nature as LANDMARKER_CONFIDENCE), background in the luma
+  domain only (color cast needs an explicit config field plus SPEC sync), and
+  the captureRules consumption chain not implemented. Optional ranged_pixels
+  sizes are implemented: us-visa-digital can switch 600/1200 bands on the
+  confirm page, through the editor, final page, and staging validation.
+- Playwright end-to-end tests are not wired into CI and must be run
+  manually.
+- **The Public Beta minimum template manifest is not met**: 3 of the 6 hard
+  gates are still `reference_only` (us-passport-paper and
+  jp-passport-paper lack calibrated PPI print tests;
+  cn-visa-digital-ma-rabat lacks portal verification), leaving only 2
+  official templates that actually produce document artifacts. Closing this
+  requires measured evidence from official sources; it is content work.
 
-## 已记录的决定
+## Recorded decisions
 
-- 不实现「最近作品」式本地历史：与 §9.2「编辑状态只在会话内存」冲突。
-- 不实现 PNG/TIFF 多格式导出与批量照片：证件受理渠道普遍要求 JPEG；PNG 无法走 OUT-003 体积搜索、TIFF 浏览器端无编码器；一旦导出非 JPEG，导出物就不再是暂存上传的那份 blob，直接破坏 OUT-001 的「同一不可变终态工件」模型。如确有需求，须先在 SPEC §4.6 增补对应 OUT 条目。
+- No "recent works" local history: it conflicts with §9.2 "edit state
+  lives only in session memory".
+- No PNG/TIFF multi-format export or batch photos: acceptance channels
+  commonly require JPEG; PNG cannot go through OUT-003's size search, and
+  the browser has no TIFF encoder; once a non-JPEG is exported it is no
+  longer the staged blob, breaking OUT-001's "one immutable final artifact"
+  model. If genuinely needed, the corresponding OUT item must first be added
+  to SPEC §4.6.
 
-## 数据与兼容性
+## Data and compatibility
 
-- 仓库本身不包含用户照片、运行时数据库或应用生成数据。
-- 当前没有经过生产验证的浏览器、API、配置或存储兼容性承诺；目标浏览器与生命周期约束按 [SPEC](docs/SPEC.md) 实现草案执行。
+- The repository itself contains no user photos, runtime databases, or
+  application-generated data.
+- There are no production-verified browser, API, configuration, or storage
+  compatibility promises today; target browsers and lifecycle constraints
+  follow the [SPEC](docs/SPEC.md) implementation draft.
 
-## 允许的变更
+## Permitted changes
 
-- 依据[产品说明](docs/PRODUCT.md)和[SPEC](docs/SPEC.md)实施与修正应用实现。
-- 维护工具链、运行时代码和自动化测试，并同步记录稳定命令。
-- 在不削弱隐私、安全、模板可追溯性和输出一致性的前提下实现已确认需求。
+- Implement and fix the application per the [product overview](docs/PRODUCT.md)
+  and [SPEC](docs/SPEC.md).
+- Maintain the toolchain, runtime code, and automated tests, keeping the
+  stable commands recorded in sync.
+- Implement confirmed requirements without weakening privacy, security,
+  template traceability, or output consistency.
 
-## 禁止的变更
+## Forbidden changes
 
-- 在没有实现和验证证据时，把规划功能描述为已发布或可用。
-- 把启发式照片检查描述为政府批准、官方认证或必然获批。
-- 提交凭据、私密照片、个人数据、本地环境文件或无法安全公开的测试素材。
-- 未经验证就放宽照片暂存、KEY 取回、日志、缓存或删除方面的安全约束。
+- Describe planned features as shipped or available without
+  implementation and verification evidence.
+- Present heuristic photo checks as government-approved, officially
+  certified, or guaranteed to be accepted.
+- Commit credentials, private photos, personal data, local environment
+  files, or test material that cannot be safely made public.
+- Loosen security constraints on photo staging, KEY retrieval, logging,
+  caching, or deletion without verification.
 
-## 再次评审条件
+## Re-review conditions
 
-引入外部用户、生产部署、不可丢弃数据、公开 API 或浏览器兼容承诺时，必须重新评审本文件。
+This file must be re-reviewed when introducing external users, a
+production deployment, non-discardable data, a public API, or browser
+compatibility promises.

@@ -1,91 +1,138 @@
-# 贡献指南
+# Contribution guide
 
-## 当前开发状态
+## Current development status
 
-仓库为 monorepo，包含 `frontend/`（Vite + React + TypeScript）、`backend/`（FastAPI + SQLite + 本地磁盘存储）与 `templates/`（版本化模板数据）。
+The repository is a monorepo with `frontend/` (Vite + React + TypeScript),
+`backend/` (FastAPI + SQLite + local disk storage), and `templates/`
+(versioned template data).
 
-下面「稳定命令」里除 `npm run dev`、`uv run uvicorn`、`docker compose` 与 Playwright 端到端之外，其余命令都在 CI 中运行（见 `.github/workflows/ci.yml`）。端到端测试目前需要手工执行，尚未接入 CI。
+Of the "stable commands" below, all but `npm run dev`, `uv run uvicorn`,
+`docker compose`, and the Playwright end-to-end tests run in CI (see
+`.github/workflows/ci.yml`). End-to-end tests currently require manual
+execution and are not wired into CI.
 
-## 稳定命令
+## Stable commands
 
 ```sh
-# 前端（工作目录 frontend/）
-npm install                # 安装依赖
-npm run dev                # 开发服务器（端口 5173，/api 代理到 8000）
-npm run build              # 类型检查 + 生产构建到 dist/
-npm test                   # Vitest 单元测试
-npm run test:e2e           # Playwright 端到端（首次需先 npx playwright install chromium；后端需先 uv sync --extra dev）
+# Frontend (working directory frontend/)
+npm install                # install dependencies
+npm run dev                # dev server (port 5173, /api proxied to 8000)
+npm run build              # type check + production build to dist/
+npm test                   # Vitest unit tests
+npm run test:e2e           # Playwright end-to-end (first run needs npx playwright install chromium; backend needs uv sync --extra dev first)
 npm run lint               # ESLint
-npm run format:check       # Prettier 检查
+npm run format:check       # Prettier check
 
-# 后端（工作目录 backend/，使用 uv）
-uv sync --extra dev        # 安装依赖（含 dev）
-uv run uvicorn app.main:app --reload   # 开发服务器（端口 8000）
-uv run pytest              # pytest 测试
-uv run ruff check .        # 静态检查
-uv run ruff format --check .           # 格式检查
-uv run python -m app.template_tools validate   # 模板内容门（schema + 引用完整性 + contentHash）
-uv run python -m app.template_tools report     # 模板复核状态与 SLA 剩余天数
-uv run python -m app.template_tools rehash     # 模板内容改动后写回 contentHash
+# Backend (working directory backend/, using uv)
+uv sync --extra dev        # install dependencies (including dev)
+uv run uvicorn app.main:app --reload   # dev server (port 8000)
+uv run pytest              # pytest tests
+uv run ruff check .        # static checks
+uv run ruff format --check .           # format check
+uv run python -m app.template_tools validate   # template content gate (schema + reference integrity + contentHash)
+uv run python -m app.template_tools report     # template review status and days left to SLA
+uv run python -m app.template_tools rehash     # write back contentHash after template content changes
 
-# 全栈（根目录）
-docker compose up --build  # 构建并启动前后端容器
+# Full stack (repository root)
+docker compose up --build  # build and start frontend/backend containers
 ```
 
-## 当前可用检查
+## Currently available checks
 
 ```sh
 git status --short
 git diff --check
 ```
 
-## 开发工作流
+## Development workflow
 
-1. 阅读[产品说明](docs/PRODUCT.md)、[项目状态](STATUS.md)、[架构说明](docs/架构说明.md)和[开发规范](docs/开发规范.md)。
-2. 确认需求范围、模块职责、数据边界和验收条件后再修改。
-3. 采用满足当前需求的最小实现；新行为添加自动化测试，缺陷修复添加回归用例。
-4. 运行当前工具链提供的全部适用测试、静态检查、格式检查和构建。
-5. 同步更新唯一权威文档，复核工作区只包含本次变更。
+1. Read the [product overview](docs/PRODUCT.md), [project status](STATUS.md),
+   [architecture](docs/architecture.md), and [development guidelines](docs/development-guidelines.md).
+2. Confirm the requirement scope, module responsibilities, data boundaries,
+   and acceptance conditions before making changes.
+3. Use the minimal implementation that satisfies the current requirements;
+   add automated tests for new behavior and regression cases for bug fixes.
+4. Run all applicable tests, static checks, format checks, and builds provided
+   by the current toolchain.
+5. Sync the single authoritative documents and verify the working tree
+   contains only this change.
 
-项目特有技术规则见[开发规范](docs/开发规范.md)，组件职责与依赖方向见[架构说明](docs/架构说明.md)，长文件和职责拆分见[源代码规模与职责规则](docs/源代码规模与职责规则.md)。
+Project-specific technical rules live in the [development guidelines](docs/development-guidelines.md); component responsibilities and dependency
+orientation in the [architecture](docs/architecture.md); long files and
+responsibility splitting in the [source size and responsibility rules](docs/source-size-and-responsibility-rules.md).
 
-## 通用设计原则
+## General design principles
 
-在满足已确认的功能范围、架构边界、质量属性、安全性、兼容性和运行约束的前提下，按以下顺序选择设计方案：
+Given confirmed functional scope, architectural boundaries, quality
+attributes, security, compatibility, and runtime constraints, choose a
+design in the following order:
 
-1. 项目中已有、经验证且仍适用的设计、模式、接口或组件；
-2. 适用的正式标准、标准协议，以及平台或框架的官方推荐方案；
-3. 在相似场景中被广泛采用、持续维护且有可靠实践证据的成熟行业方案；
-4. 只有上述方案不能满足已核实约束时，才采用满足当前需求的最小定制设计。
+1. Designs, patterns, interfaces, or components already in the project that
+   are proven and still applicable;
+2. applicable formal standards, standard protocols, and official platform or
+   framework recommendations;
+3. mature industry solutions widely adopted in similar scenarios, actively
+   maintained, and backed by reliable practice evidence;
+4. only when none of the above satisfies a verified constraint, a minimal
+   custom design that meets the current requirements.
 
-“广泛使用”只是候选信号，不是充分的采用理由。采用前按风险核对需求适配、安全与兼容、主要失败模式、维护与迁移成本；不得为套用惯例引入当前范围不需要的能力、抽象或依赖。
+"Widely used" is only a candidate signal, not a sufficient reason to adopt.
+Before adopting, check against risk: requirement fit, security and
+compatibility, primary failure modes, and maintenance and migration cost;
+never introduce capabilities, abstractions, or dependencies the current
+scope does not need just to follow convention.
 
-涉及架构边界、依赖方向、数据责任、安全边界或长期依赖的重要设计选择，应在设计结果中记录适用依据、主要权衡和验证方式。采用定制设计时，同时说明成熟方案不适用的已核实约束。高风险且证据不足时，先定义可观察的成功、失败和退出条件，再执行当前权限允许的最小可逆验证；不得把未接受或未实现的候选写成当前架构事实。
+Important design choices touching architecture boundaries, dependency
+direction, data responsibility, security boundaries, or long-lived
+dependencies should record the applicable rationale, key trade-offs, and
+verification method in the design result. When adopting a custom design,
+also state the verified constraints that make mature solutions inapplicable.
+For high-risk, evidence-poor choices, first define observable success,
+failure, and exit conditions, then run the smallest reversible verification
+permitted by current permissions; never write unaccepted or unimplemented
+candidates into the current architecture as fact.
 
-## 通用实现原则
+## General implementation principles
 
-在满足功能范围、架构边界、正确性、安全性和可验证性的前提下，按以下顺序选择实现方式：
+Given the functional scope, architecture boundaries, correctness,
+security, and verifiability, choose an implementation in the following
+order:
 
-1. 项目中已有的实现；
-2. 语言标准库；
-3. 平台原生能力；
-4. 项目已安装且适合当前场景的依赖；
-5. 适合当前环境、成熟、活跃并被广泛使用的第三方库；
-6. 满足当前需求的最小自定义实现。
+1. Implementations already in the project;
+2. the language standard library;
+3. native platform capabilities;
+4. dependencies already installed and fitting the current scenario;
+5. third-party libraries that fit the environment, are mature, active, and
+   widely used;
+6. a minimal custom implementation that satisfies the current requirements.
 
-新增代码前先搜索已有实现。不要为小功能引入大型依赖；不要为假设中的未来需求创建抽象层、扩展层或兼容层；保持自定义实现局部、简单且可测试。
+Search for existing implementations before adding code. Do not introduce
+large dependencies for small features; do not create abstraction,
+extension, or compatibility layers for hypothetical future needs; keep
+custom implementations local, simple, and testable.
 
-实现必须遵守 [`docs/架构说明.md`](docs/架构说明.md) 的项目架构事实、[`docs/开发规范.md`](docs/开发规范.md) 的项目/技术专属规则，以及 [`docs/源代码规模与职责规则.md`](docs/源代码规模与职责规则.md) 的统一规模与职责规则。
+Implementations must follow the architecture facts in [`docs/architecture.md`](docs/architecture.md), the project/technical rules in
+[`docs/development-guidelines.md`](docs/development-guidelines.md), and the
+uniform size and responsibility rules in
+[`docs/source-size-and-responsibility-rules.md`](docs/source-size-and-responsibility-rules.md).
 
-## 完成定义
+## Definition of done
 
-一项变更只有在以下条件全部满足时才算完成：
+A change is done only when all of the following hold:
 
-- 实现符合已确认的功能范围和验收条件；
-- 重要设计选择已验证成熟方案的适用性；采用定制方案时，已记录不适用约束、主要权衡和验证方式；
-- 保持既有架构边界和依赖方向，没有加入无关职责或顺手改动；
-- 已满足适用的项目/技术专属开发规范；
-- 相关测试、静态检查、格式检查和构建验证已经通过；
-- 已按开发规范完成唯一权威文档、机器合同和验证的同步；
-- 没有提交密钥、凭据、个人数据、生成产物或无关文件；
-- 已按源代码规模与职责规则完成检查，并报告需要说明的长文件。
+- The implementation matches the confirmed functional scope and acceptance
+  conditions;
+- important design choices verified the applicability of mature solutions;
+  when a custom solution was adopted, the inapplicable constraints, key
+  trade-offs, and verification method are recorded;
+- existing architecture boundaries and dependency directions are preserved,
+  with no unrelated responsibilities or drive-by changes;
+- the applicable project/technical development guidelines are met;
+- the relevant tests, static checks, format checks, and build verification
+  pass;
+- single authoritative documents, machine contracts, and verification are
+  synced per the development guidelines;
+- no keys, credentials, personal data, generated artifacts, or unrelated
+  files are committed;
+- the source size and responsibility rules check is done and any long files
+  needing explanation are reported.

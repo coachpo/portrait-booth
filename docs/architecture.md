@@ -1,10 +1,17 @@
-# 架构说明
+# Architecture
 
-## 当前架构状态
+## Current architecture status
 
-仓库处于首个 MVP 实现阶段，已建立 monorepo 工具链：`frontend/`（Vite + React + TypeScript，浏览器客户端）、`backend/`（FastAPI + SQLite + 本地磁盘存储，暂存/取回 API 与生命周期任务）、`templates/`（版本化模板数据与 JSON Schema）。本文件把“当前仓库事实”和 [SPEC](SPEC.md) 中记录的“实现边界”分开描述；实现边界是后续验证必须满足的约束，不代表相关能力已经全部完成。
+The repository is in its first MVP implementation stage with a monorepo
+toolchain: `frontend/` (Vite + React + TypeScript, browser client),
+`backend/` (FastAPI + SQLite + local disk storage, staging/retrieval API and
+lifecycle tasks), and `templates/` (versioned template data and JSON
+Schemas). This file separates the "current repository facts" from the
+"implementation boundaries" recorded in [SPEC](SPEC.md); implementation
+boundaries are constraints later verification must satisfy and do not imply
+all related capabilities are complete.
 
-## 当前仓库结构
+## Current repository structure
 
 ```text
 portrait-booth/
@@ -14,112 +21,157 @@ portrait-booth/
 ├── STATUS.md
 ├── CONTRIBUTING.md
 ├── .github/workflows/ci.yml
-├── docker-compose.yml            # 全栈容器编排
-├── Dockerfile                    # 后端容器（托管前端产物）
+├── docker-compose.yml            # full-stack container orchestration
+├── Dockerfile                    # backend container (hosts the frontend build)
 ├── .env.example
-├── templates/                    # 共享模板数据
+├── templates/                    # shared template data
 │   ├── revisions/                # <id>@<version>.json
-│   └── schema/                   # 版本化 JSON Schema
+│   └── schema/                   # versioned JSON Schemas
 ├── frontend/                     # Vite + React + TS
 │   └── src/
-│       ├── app/                  # App 路由表、Layout、ErrorBoundary
-│       ├── pages/                # home / retrieve / privacy / not-found / 模板详情页
-│       ├── create/               # 向导状态机与步骤组件（template/source/capture/review）
-│       ├── camera/               # getUserMedia、能力检测、拍摄
-│       ├── pose/                 # Face Landmarker 实例、角度解算、跟踪（只产提示 key）、提示文案格式化（guidance-text）、静态复检、人脸几何启发式（face-geometry）、质量、性能测量
-│       ├── editor/               # 非破坏性变换、模板蒙版换算、撤销
-│       ├── render/               # 终态渲染、FinalArtifact、检查摘要、JPEG/PPI、暂存面板
-│       ├── image/                # 解码、EXIF 归一化、限制
-│       ├── lib/                  # 模板目录客户端、模板政策派生（policy.ts）、展示用纯函数（describe/disclosure）、UI 语言键（locale.ts）、取回码归一化
-│       └── api/                  # fetch 客户端（save / service-policy）
-├── frontend/e2e/                 # Playwright 全流程（见 CONTRIBUTING.md）
+│       ├── app/                  # app route table, Layout, ErrorBoundary
+│       ├── pages/                # home / retrieve / privacy / not-found / template detail
+│       ├── create/               # wizard state machine and step components (template/source/capture/review)
+│       ├── camera/               # getUserMedia, capability detection, capture
+│       ├── pose/                 # Face Landmarker instances, angle solving, tracking (hint keys only), hint copy formatting (guidance-text), static recheck, face-geometry heuristics, quality, performance measurement
+│       ├── editor/               # non-destructive transforms, template-mask conversion, undo
+│       ├── render/               # final render, FinalArtifact, check summary, JPEG/PPI, staging panel
+│       ├── image/                # decode, EXIF normalization, limits
+│       ├── lib/                  # template catalog client, template policy derivation (policy.ts), display pure functions (describe/disclosure), UI locale key (locale.ts), retrieval-code normalization
+│       └── api/                  # fetch clients (save / service-policy)
+├── frontend/e2e/                 # Playwright full flow (see CONTRIBUTING.md)
 ├── backend/                      # FastAPI
 │   ├── app/
-│   │   ├── main.py               # 入口、静态托管、安全头与 CSP、统一错误处理
-│   │   ├── config.py             # 服务政策（每次调用读环境变量，不在 import 期冻结）
-│   │   ├── db.py                 # SQLite schema/迁移
-│   │   ├── keygen.py             # KEY 生成
-│   │   ├── hmac_utils.py         # 根密钥 HKDF 派生与域隔离 HMAC
-│   │   ├── http_utils.py         # 统一错误 envelope 与同源校验
-│   │   ├── image_validate.py     # 解码限制与重编码
-│   │   ├── storage.py            # 磁盘对象存储
-│   │   ├── rate_limit.py         # 限速
-│   │   ├── save_service.py       # 幂等租约与原子提交边界
-│   │   ├── template_store.py     # 模板加载、schema 校验、引用完整性
-│   │   ├── template_tools.py     # 模板内容工具链（validate/rehash/report/new）
-│   │   ├── worker.py             # 生命周期任务（随 API 进程调度）
-│   │   └── routers/              # sessions（政策+会话）/templates/saves/retrievals
+│   │   ├── main.py               # entry, static hosting, security headers and CSP, unified error handling
+│   │   ├── config.py             # service policy (reads env per call, not frozen at import)
+│   │   ├── db.py                 # SQLite schema/migrations
+│   │   ├── keygen.py             # KEY generation
+│   │   ├── hmac_utils.py         # root-key HKDF derivation and domain-isolated HMAC
+│   │   ├── http_utils.py         # unified error envelope and same-origin enforcement
+│   │   ├── image_validate.py     # decode limits and re-encoding
+│   │   ├── storage.py            # on-disk object storage
+│   │   ├── rate_limit.py         # rate limiting
+│   │   ├── save_service.py       # idempotency leases and atomic commit boundary
+│   │   ├── template_store.py     # template loading, schema validation, reference integrity
+│   │   ├── template_tools.py     # template content toolchain (validate/rehash/report/new)
+│   │   ├── worker.py             # lifecycle tasks (scheduled inside the API process)
+│   │   └── routers/              # sessions (policy+session) / templates / saves / retrievals
 │   └── tests/
 └── docs/
 ```
 
-曝光与清晰度启发式在 `pose/quality.ts`，人脸几何启发式（眼/嘴 EAR/MAR 与 ROI 包围盒）在 `pose/face-geometry.ts`（纯函数，可脱离 canvas 与 MediaPipe 单测），检查摘要在 `render/checks.ts`——不存在独立的
-`quality/` 与 `checks/` 目录。`pages/` 只放不属于创建流程的独立页面。
+Exposure and sharpness heuristics live in `pose/quality.ts`; face-geometry
+heuristics (eye/mouth EAR/MAR and the ROI bounding box) live in
+`pose/face-geometry.ts` (pure functions, unit-testable without canvas or
+MediaPipe); the check summary lives in `render/checks.ts` - there are no
+separate `quality/` or `checks/` directories. `pages/` holds only standalone
+pages that do not belong to the creation flow.
 
-## 规划系统边界
+## Planned system boundaries
 
-[产品说明](PRODUCT.md)与[SPEC](SPEC.md)记录了以下实现边界：
+[Product overview](PRODUCT.md) and [SPEC](SPEC.md) record the following
+implementation boundaries:
 
-- **浏览器客户端**：模板选择、文件解码、摄像头访问、脸部几何分析、非破坏性编辑、终态渲染和本地下载。
-- **模板服务**：提供版本化照片模板及其来源、状态、渠道和编辑政策。
-- **暂存与取回服务**：接收用户明确选择暂存的终态照片，分配 KEY，完成授权、下载、删除和到期控制。
-- **图片验证边界**：服务端在隔离环境中实际解码并重新编码暂存图片，不信任扩展名、MIME 或客户端声明。
-- **私有存储边界**：照片对象与元数据分离；对象不公开，KEY 不作为对象路径。
-- **生命周期任务**：使过期或删除的照片同步失去访问资格，并完成后续物理清理。
+- **Browser client**: template selection, file decoding, camera access,
+  face-geometry analysis, non-destructive editing, final rendering, and
+  local download.
+- **Template service**: provides versioned photo templates with their
+  sources, status, channels, and editing policies.
+- **Staging and retrieval service**: accepts final photos the user
+  explicitly chose to stage, assigns KEYs, and handles authorization,
+  download, deletion, and expiry.
+- **Image-validation boundary**: the server actually decodes and
+  re-encodes staged images in isolation, trusting neither extensions, MIME,
+  nor client claims.
+- **Private-storage boundary**: photo objects and metadata are separate;
+  objects are not public, and KEYs are never object paths.
+- **Lifecycle tasks**: make expired or deleted photos lose access
+  eligibility, then complete the physical cleanup.
 
-这些责任组件尚未映射到具体目录、进程、供应商或部署单元。
+These responsibility components are not yet mapped to concrete
+directories, processes, vendors, or deployment units.
 
-## 规划依赖方向
+## Planned dependency direction
 
-浏览器中的主数据流为：
+The main browser data flow is:
 
 ```text
-上传或摄像头
-  → 方向与颜色归一化
-  → 本地姿态/质量分析
-  → 非破坏性编辑
-  → 单一 FinalArtifact
-  ├─→ 本地导出
-  └─→ 用户确认后暂存
+upload or camera
+  → orientation and color normalization
+  → local pose/quality analysis
+  → non-destructive editing
+  → single FinalArtifact
+  ├─→ local export
+  └─→ staging after user confirmation
 ```
 
-服务器数据流为：
+The server data flow is:
 
 ```text
 Save API
-  → 隔离验证与重编码
-  → 私有对象存储 + 元数据存储
+  → isolated validation and re-encoding
+  → private object storage + metadata storage
   → Resolve API
-  → 短时下载能力
+  → short-lived download capability
 ```
 
-浏览器分析结果、原始摄像头帧、原图和编辑历史不得因为普通导出而越过客户端边界。导出和暂存必须从同一不可变终态工件分支，避免两条路径产生不同构图。
+Browser analysis results, raw camera frames, source images, and edit
+history must not cross the client boundary due to ordinary export. Export
+and staging must branch from the same immutable final artifact so the two
+paths never produce different compositions.
 
-## 数据与安全边界
+## Data and security boundaries
 
-- 普通上传、拍摄、分析、编辑和导出默认在浏览器内完成。
-- 只有用户主动选择暂存时，终态照片才进入服务器边界。
-- 暂存不应包含原图、视频帧、人脸关键点、身份 embedding 或编辑历史。
-- KEY 固定为 6 位 `[A-Z0-9]` 字符串，每个位置独立生成，字母和数字数量不限；KEY 永不复用于另一张照片。
-- 6 位 KEY 的空间约为 31.0 比特，不能单独视为强认证。公开取回实现必须遵守[SPEC](SPEC.md)中的防枚举、授权、限速、统一错误、缓存和日志约束。
-- 删除授权与下载授权分离；照片到期或删除后，访问拒绝不能依赖异步清理任务是否已经运行。
-- 政府照片规则按国家、证件、提交渠道、适用人群和来源版本管理，不存在一个可覆盖全部场景的通用尺寸模板。
+- Ordinary upload, capture, analysis, editing, and export happen in the
+  browser by default.
+- The final photo enters the server boundary only when the user actively
+  chooses to stage.
+- Staging must not include the source image, video frames, face
+  landmarks, identity embeddings, or edit history.
+- KEYs are fixed 6-character `[A-Z0-9]` strings, each position generated
+  independently with no letter/digit quota; a KEY is never reused for
+  another photo.
+- A 6-character KEY space is roughly 31.0 bits and cannot count as strong
+  authentication alone. A public retrieval implementation must follow the
+  anti-enumeration, authorization, rate-limiting, unified-error, caching,
+  and logging constraints in [SPEC](SPEC.md).
+- Delete authorization and download authorization are separate; after
+  expiry or deletion, access denial must not depend on whether the async
+  cleanup task has run.
+- Government photo rules are managed per country, document type,
+  submission channel, applicant class, and source version; no single
+  universal-size template covers every scenario.
 
-## 外部能力与依赖状态
+## External capabilities and dependency status
 
-已选定的技术栈：前端 Vite + React + TypeScript（路由 react-router-dom；状态用组件内 useState，
-创建流程的状态机集中在 `create/create-page.tsx`，没有引入独立状态管理库）；后端 FastAPI + SQLite（标准库 `sqlite3`）+ 本地磁盘对象存储；部署为单容器 Docker（FastAPI 托管前端产物）。浏览器姿态分析候选为 MediaPipe Face Landmarker（模型同源自托管、版本锁定；权威清单为 `frontend/assets-lock.json`，wasm 由 prebuild/predev 钩子从 npm 包同步并逐字节校验），尚未完成遥测审计与模型 QA；对象存储与图片重编码（Pillow）只用于服务器暂存路径。云服务、托管数据库与 CDN 未选择，本地磁盘存储满足 MVP 部署范围。
+Chosen stack: frontend Vite + React + TypeScript (react-router-dom for
+routing; state via component-local useState, with the creation-flow state
+machine concentrated in `create/create-page.tsx` and no separate state
+library); backend FastAPI + SQLite (stdlib `sqlite3`) + local disk object
+storage; deployment as a single Docker container (FastAPI hosts the
+frontend build). The browser pose-analysis candidate is MediaPipe Face
+Landmarker (same-origin self-hosted, version-locked; authoritative manifest
+is `frontend/assets-lock.json`, wasm synced from the npm package by the
+prebuild/predev hooks with byte-level verification), with telemetry audit
+and model QA not yet done; object storage and image re-encoding (Pillow) are
+used only on the server staging path. No cloud services, managed databases,
+or CDNs are chosen; local disk storage satisfies the MVP deployment scope.
 
-## 本地运行模型
+## Local run model
 
-开发拓扑为两个进程：后端 FastAPI（端口 8000，SQLite + 磁盘存储于 `backend/data/`）与前端 Vite dev server（端口 5173，`/api` 代理到 8000）。生产拓扑为单容器：后端托管前端 `dist/` 产物，SQLite 与照片对象存于挂载卷。命令见 [README](../README.md) 与[贡献指南](../CONTRIBUTING.md)。
+The development topology is two processes: the backend FastAPI (port
+8000, SQLite + disk storage under `backend/data/`) and the frontend Vite
+dev server (port 5173, `/api` proxied to 8000). The production topology is
+one container: the backend hosts the frontend `dist/` build, with SQLite and
+photo objects on a mounted volume. Commands are in [README](../README.md)
+and the [contribution guide](../CONTRIBUTING.md).
 
-## 主要风险与退出条件
+## Main risks and exit conditions
 
-| 风险 | 当前限制 | 可验证退出条件 |
+| Risk | Current limitation | Verifiable exit condition |
 | --- | --- | --- |
-| 尚无实现 | 不能验证用户流程、性能或兼容性 | 建立最小端到端实现并通过自动化与真实设备测试 |
-| 证件规则变化或馆站差异 | 规格中的模板只能作为候选 | 每个启用模板均有官方来源、版本、复核记录和停用能力 |
-| 6 位 KEY 可枚举 | 不能把 KEY 当作强密码 | 公开取回前完成威胁评审并验证授权与滥用控制 |
-| 浏览器摄像头和图像 API 差异 | 自动指导不能成为唯一路径 | 支持上传、手动拍摄和无模型降级并完成目标浏览器验证 |
-| 图像处理可能泄露或改变照片 | 普通流程应保持本地，暂存必须重编码 | 网络、元数据、像素和生命周期测试全部通过 |
+| No implementation | Cannot verify user flows, performance, or compatibility | Build a minimal end-to-end implementation and pass automated and real-device tests |
+| Document-rule changes or mission differences | Templates in the spec are only candidates | Every enabled template has an official source, version, review record, and takedown capability |
+| 6-character KEYs enumerable | KEYs cannot be treated as strong passwords | Complete the threat review and verify authorization and abuse controls before public retrieval |
+| Browser camera and image API variance | Automatic guidance cannot be the only path | Support upload, manual capture, and no-model degradation, verified on target browsers |
+| Image processing could leak or alter photos | Ordinary flows stay local; staging must re-encode | Network, metadata, pixel, and lifecycle tests all pass |

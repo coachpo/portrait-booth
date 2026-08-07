@@ -1,23 +1,29 @@
-# 项目文档
+# Project documentation
 
-本页只负责文档导航。每项事实或政策以表中列出的唯一权威文档为准。
+This page only navigates the documentation. Every fact or policy is governed
+by the single authoritative document listed in the tables below.
 
-## 规范文档
+## Authoritative documents
 
-| 文档 | 唯一权威范围 |
+| Document | Sole authoritative scope |
 | --- | --- |
-| [项目入口](../README.md) | 项目说明、普通安装与启动、派生状态摘要及文档入口 |
-| [项目状态](../STATUS.md) | 生命周期、实现状态、数据与兼容性政策以及允许和禁止的变更 |
-| [贡献指南](../CONTRIBUTING.md) | 开发环境、稳定命令、开发工作流、共享原则与完成定义 |
-| [产品说明](PRODUCT.md) | 产品问题、用户、目标、范围、流程、需求和验收事实 |
-| [架构说明](架构说明.md) | 当前仓库架构、规划边界、职责、数据流、安全边界和风险 |
-| [开发规范](开发规范.md) | Portrait Booth 特有的代码风格、评审要求和技术实现规则 |
-| [源代码规模与职责规则](源代码规模与职责规则.md) | 与项目技术无关的统一规模、职责和拆分策略 |
+| [Project entry](../README.md) | Project description, ordinary install and startup, derived-status summary, and documentation entry |
+| [Project status](../STATUS.md) | Lifecycle, implementation status, data and compatibility policies, and permitted and forbidden changes |
+| [Contribution guide](../CONTRIBUTING.md) | Development environment, stable commands, development workflow, shared principles, and definition of done |
+| [Product overview](PRODUCT.md) | Product problem, users, goals, scope, flows, requirements, and acceptance facts |
+| [Architecture](architecture.md) | Current repository architecture, planned boundaries, responsibilities, data flows, security boundaries, and risks |
+| [Development guidelines](development-guidelines.md) | Portrait Booth-specific code style, review requirements, and technical implementation rules |
+| [Source size and responsibility rules](source-size-and-responsibility-rules.md) | Technology-independent uniform size, responsibility, and splitting strategies |
 
-[贡献指南](../CONTRIBUTING.md)是开发工作流、共享设计原则、实现原则和完成定义的入口；[开发规范](开发规范.md)只承载本项目特有规则；[源代码规模与职责规则](源代码规模与职责规则.md)是独立专项策略。
+The [contribution guide](../CONTRIBUTING.md) is the entry to the development
+workflow, shared design principles, implementation principles, and the
+definition of done; [development guidelines](development-guidelines.md) carry
+only this project's specific rules; [source size and responsibility
+rules](source-size-and-responsibility-rules.md) are a standalone special
+policy.
 
-## 专项文档
+## Topic documents
 
-| 文档 | 用途 |
+| Document | Purpose |
 | --- | --- |
-| [SPEC](SPEC.md) | 详细功能需求、模板模型、API 草案、数据生命周期、安全约束、测试计划和调研来源 |
+| [SPEC](SPEC.md) | Detailed functional requirements, template model, API draft, data lifecycle, security constraints, test plan, and research sources |

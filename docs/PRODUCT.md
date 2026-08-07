@@ -1,202 +1,349 @@
 # Portrait Booth — PRODUCT
 
-> 当前状态：产品与技术规格阶段，以 [STATUS.md](../STATUS.md) 为准。
-> 调研基线：2026-08-05
-> 文档用途：定义产品问题、目标、边界、流程、需求和验收事实，不替代各证件签发机关的最新规则。
+> Current status: product and technical specification stage; governed by [STATUS.md](../STATUS.md).
+> Research baseline: 2026-08-05
+> Purpose: define the product problem, goals, boundaries, flows, requirements, and acceptance facts; does not replace the latest rules of any document-issuing authority.
 
-## 1. 产品定义
+## 1. Product definition
 
-Portrait Booth 是一个无需账户即可使用的 Web App。用户先选择目标证件模板；如果儿童/成人等申请人类别会改变规则，再补充选择该类别。系统固定当时最新的有效模板版本，然后用户上传照片或调用设备摄像头拍摄；应用用取景指引和本地脸部几何分析帮助用户调整正脸角度、距离和位置，随后提供裁剪、移动、缩放、旋转及镜像等基础编辑，最终生成目标尺寸照片。
+Portrait Booth is an account-free web app. The user first selects the
+intended document template; if an applicant class such as child/adult
+changes the rules, that class is also selected. The system pins the latest
+valid template version, then the user uploads a photo or captures one with
+the device camera; the app uses framing guidance and local face-geometry
+analysis to help the user adjust frontal angle, distance, and position, and
+then offers basic editing - crop, move, zoom, rotate, and mirror - to
+produce the target-size photo.
 
-完成编辑后有两个并列终态：
+After editing, there are two parallel terminal states:
 
-1. **导出**：把当前终态照片下载到用户设备。
-2. **暂存**：把同一编辑终态渲染出的照片保存到服务器，返回唯一的 6 位大写字母或数字 KEY，供用户稍后或在另一设备取回。
+1. **Export**: download the current final photo to the user's device.
+2. **Stage**: save the photo rendered from the same editing terminal state
+   to the server, returning a unique 6-character uppercase-alphanumeric KEY
+   for later or cross-device retrieval.
 
-这里的“同一终态”是一份不可变的终态工件：它固定模板版本、裁剪区域、缩放、旋转、镜像、方向和输出尺寸。导出和暂存只是这份工件上的两个非互斥操作；任何继续编辑都会使旧工件失效并重新生成。服务器为安全而重新编码时，取回文件不要求与本地文件字节级一致，但构图、方向和像素尺寸必须一致。
+"The same terminal state" here is one immutable final artifact: it pins
+the template version, crop region, zoom, rotation, mirror, orientation, and
+output size. Export and staging are two non-exclusive operations on that
+artifact; any further editing invalidates the old artifact and regenerates
+it. When the server re-encodes for security, the retrieved file need not be
+byte-identical to the local file, but composition, orientation, and pixel
+dimensions must match.
 
-## 2. 要解决的问题
+## 2. Problem to solve
 
-- 用户不清楚不同护照、签证及证件的照片尺寸和构图规则。
-- 自拍时很难同时判断偏航、俯仰、侧倾、距离、眼位和头部大小。
-- 通用图片编辑器不理解证件模板，尺寸正确也不代表构图或提交渠道正确。
-- 用户常需在手机拍摄、在电脑申请，或把照片交给打印店，跨设备转移不顺畅。
-- 同类工具常在最后一步收费、把照片长期留存在服务器，或含糊宣称“保证获批”。
+- Users do not know the photo sizes and composition rules for different
+  passports, visas, and documents.
+- During selfies it is hard to judge yaw, pitch, roll, distance, eye
+  position, and head size at the same time.
+- Generic image editors do not understand document templates; correct size
+  does not mean correct composition or submission channel.
+- Users often shoot on a phone and apply on a computer, or hand the photo
+  to a print shop; cross-device transfer is awkward.
+- Similar tools often charge at the last step, retain photos long-term on
+  servers, or vaguely claim "guaranteed acceptance".
 
-## 3. 目标用户与待办任务
+## 3. Target users and jobs to be done
 
-### 3.1 主要用户
+### 3.1 Primary users
 
-- 临时需要制作护照、签证或其他证件照的个人。
-- 只有手机摄像头、没有专业拍摄设备的用户。
-- 需要从拍摄设备切换到申请或打印设备的用户。
-- 希望手动掌控裁剪、不接受自动美化或改变外貌的用户。
+- Individuals who occasionally need passport, visa, or other document
+  photos.
+- Users with only a phone camera and no professional capture equipment.
+- Users who need to switch from the capture device to an application or
+  print device.
+- Users who want manual control over cropping and reject automatic
+  beautification or appearance alteration.
 
 ### 3.2 Jobs to be Done
 
-- “当我准备线上证件申请时，我希望快速得到尺寸和文件格式正确的照片，并知道仍有哪些风险。”
-- “当我自拍时，我希望应用明确告诉我头应该往哪边调整，而不是只在拍完后说不合格。”
-- “当我在手机完成照片后，我希望用一个容易抄写的 KEY 在另一台设备取回成品。”
-- “当官方规则不允许自拍或数字修改时，我希望在浪费时间前就得到提示。”
+- "When I prepare an online document application, I want a photo with the
+  correct size and file format quickly, and to know what risks remain."
+- "When I take a selfie, I want the app to tell me clearly which way to
+  adjust my head, not just say it is unacceptable after the fact."
+- "After finishing the photo on my phone, I want to retrieve the result on
+  another device with an easy-to-type KEY."
+- "When official rules forbid selfies or digital modification, I want to be
+  warned before wasting time."
 
-## 4. 产品目标与非目标
+## 4. Product goals and non-goals
 
-### 4.1 MVP 目标
+### 4.1 MVP goals
 
-- 覆盖上传和浏览器摄像头两种输入。
-- 在摄像头预览中提供正脸角度、距离、位置和基础拍摄环境提示；分析不可用时仍可手动拍摄。
-- 让用户先选国家/地区、证件、提交介质及必要的申请人类别；系统选择并固定当前有效模板版本，再进入拍摄与编辑。
-- 提供基于模板的裁剪蒙版、移动、缩放、旋转、镜像、撤销和重置。
-- 输出单张 sRGB JPEG，并明确区分“尺寸已生成”“检测通过”和“官方最终接受”；纸质模板只有在 JPEG 写入正确打印密度并通过校准打印后才可标为 `print-ready`。
-- 让导出和暂存共享同一终态生成步骤。
-- 无账户暂存一个终态成品，生成唯一 6 位大写字母或数字 KEY，并可输入 KEY 取回。
-- 对暂存照片实施短期留存、自动删除、主动删除和防枚举控制。
+- Cover both upload and browser-camera inputs.
+- Provide frontal-angle, distance, position, and basic capture-environment
+  hints in the camera preview; manual capture stays available when analysis
+  is unavailable.
+- Have the user first choose country/region, document, submission medium,
+  and any required applicant class; the system selects and pins the current
+  valid template version before capture and editing.
+- Provide template-based crop masks, move, zoom, rotate, mirror, undo, and
+  reset.
+- Output a single sRGB JPEG and clearly distinguish "size generated",
+  "checks passed", and "official final acceptance"; paper templates may only
+  be labeled `print-ready` once the JPEG carries the correct print density
+  and passes calibrated printing.
+- Have export and staging share the same terminal generation step.
+- Stage one final artifact without an account, generate a unique
+  6-character uppercase-alphanumeric KEY, and allow retrieval by entering
+  the KEY.
+- Enforce short retention, automatic deletion, proactive deletion, and
+  anti-enumeration controls on staged photos.
 
-### 4.2 后续候选
+### 4.2 Later candidates
 
-- 4×6 英寸、10×15 cm 等多张冲印排版和 PDF。
-- 更多由内容运营审核过的国家、证件和渠道模板。
-- 在规则允许时提供背景均匀度辅助；背景替换单独评估，不默认启用。
-- QR 码、私密取件链接或系统分享面板；如果采用第二取件凭证，这些能力将进入 P0。
-- 专业摄影师或人工复核服务。
-- 离线/PWA、批量照片、组织级品牌模板。
+- Multi-photo print layouts such as 4×6 in and 10×15 cm, and PDFs.
+- More country, document, and channel templates reviewed by content
+  operations.
+- Background-uniformity assistance where rules allow; background
+  replacement is evaluated separately and not enabled by default.
+- QR codes, private pickup links, or the system share sheet; if a second
+  pickup credential is adopted, these enter P0.
+- Professional photographer or human review services.
+- Offline/PWA, batch photos, and organization-branded templates.
 
-### 4.3 明确非目标
+### 4.3 Explicit non-goals
 
-- 不代办护照、签证或其他政府申请。
-- 不承诺照片一定获批，也不冒充签发机关的官方检查器。
-- 不做人脸身份识别、1:N 人脸搜索或身份验证。
-- 不做美颜、换脸、五官重塑、生成式补脸或改变真实外貌的编辑。
-- MVP 不提供永久相册、账户体系、社交发布、实体冲印或支付。
-- 不把“常见 35×45 mm”当作所有国家、证件和渠道通用的法律标准。
+- No passport, visa, or other government application filing.
+- No promise that photos will be approved, and no impersonation of an
+  issuing authority's official checker.
+- No face identity recognition, 1:N face search, or identity verification.
+- No beautification, face swapping, feature reshaping, generative face
+  completion, or edits that alter real appearance.
+- The MVP offers no permanent gallery, account system, social posting,
+  physical printing, or payments.
+- "Common 35×45 mm" is never treated as a universal legal standard across
+  all countries, documents, and channels.
 
-## 5. 产品原则
+## 5. Product principles
 
-1. **隐私默认**：上传、摄像头帧、脸部几何分析和普通导出均留在浏览器；只有用户主动选择“暂存”时，终态照片才发送到服务器。
-2. **先说明适用性**：模板不仅包含宽高，还包含申请渠道、是否允许自拍、是否允许裁剪/镜像/背景处理及来源日期。
-3. **指导而非裁决**：自动检测说明“发现什么、如何调整、哪些规则未检查”，不使用未经证明的“100% 合规”文案。
-4. **编辑可逆**：任何变换都可撤销和重置，不覆盖用户原图。
-5. **规则可追溯**：每个可发布模板必须有版本、官方来源和复核日期；规则过期时可远程停用。
-6. **无障碍降级**：脸部分析失败、性能不足或用户拒绝摄像头权限时，上传、手动蒙版和文字指导仍可完成任务。
+1. **Privacy by default**: uploads, camera frames, face-geometry analysis,
+   and ordinary export stay in the browser; the final photo is sent to the
+   server only when the user actively chooses "stage".
+2. **Applicability first**: templates carry not only dimensions but also the
+   application channel, whether self-capture is allowed, whether
+   crop/mirror/background handling is allowed, and source dates.
+3. **Guide, do not adjudicate**: automatic checks say "what was found, how
+   to adjust, which rules were not checked", never unproven "100%
+   compliant" copy.
+4. **Reversible editing**: every transform can be undone and reset without
+   overwriting the user's original photo.
+5. **Traceable rules**: every publishable template must have a version,
+   official source, and review date; expired rules can be taken down
+   remotely.
+6. **Accessible degradation**: when face analysis fails, performance is
+   insufficient, or the user denies camera permission, upload, manual
+   masks, and text guidance still complete the task.
 
-## 6. 核心体验
+## 6. Core experience
 
 ```mermaid
 flowchart TD
-  A["首页"] --> B["选择国家 / 证件 / 提交介质"]
-  B --> C{"规则允许自助制作吗？"}
-  C -->|"否或仅认证渠道"| D["说明限制并提供官方来源"]
-  C -->|"是"| E{"选择照片来源"}
-  E -->|"设备摄像头"| F["权限说明与实时姿态指导"]
-  E -->|"本地上传"| G["解析方向与静态质量检查"]
-  F --> H["拍摄并选片"]
-  G --> I["模板裁剪编辑器"]
+  A["Home"] --> B["Choose country / document / submission medium"]
+  B --> C{"Does the rule allow self-service?"}
+  C -->|"No or certified channel only"| D["Explain the restriction and provide official sources"]
+  C -->|"Yes"| E{"Choose photo source"}
+  E -->|"Device camera"| F["Permission explanation and real-time pose guidance"]
+  E -->|"Local upload"| G["Parse orientation and run static quality checks"]
+  F --> H["Capture and select frame"]
+  G --> I["Template crop editor"]
   H --> I
-  I --> J["终态预览与检查摘要"]
-  J --> K["导出到设备"]
-  J --> L["暂存到服务器"]
-  L --> M["显示 6 位 KEY、到期时间和删除凭证"]
-  N["取回入口"] --> O["输入 6 位 KEY；凭证模式待安全决策"]
-  O --> P["预览摘要 / 下载"]
+  I --> J["Final preview and check summary"]
+  J --> K["Export to device"]
+  J --> L["Stage to server"]
+  L --> M["Show 6-character KEY, expiry, and delete credential"]
+  N["Retrieval entry"] --> O["Enter 6-character KEY; credential model pending security decision"]
+  O --> P["Preview summary / download"]
 ```
 
-### 6.1 首次创建
+### 6.1 First-time creation
 
-1. 用户按国家/地区、证件类型、纸质/数字及申请渠道选择模板。
-2. 应用先显示关键规则、官方来源、最近复核日期和自助制作限制；普通用户不手动选择历史模板版本。
-3. 用户选择上传或摄像头。摄像头权限只在点击该选项后请求。
-4. 摄像头模式依次提示：只检测到一张脸、面对镜头、头部摆正、保持合适距离、光线/清晰度基本可用；连续稳定后允许自动倒计时，也始终保留手动快门。上传照片也执行一次静态角度/位置分析，并在无法靠裁剪修复时建议重拍。
-5. 用户在模板蒙版中移动和缩放照片，并可按模板政策旋转、镜像。
-6. 完成页列出通过项、警告项、未检查项、需人工确认项和官方最终审核提示。
-7. 用户选择导出或暂存；两者不串联，也不要求先下载或先保存。
+1. The user selects a template by country/region, document type,
+   paper/digital, and application channel.
+2. The app first shows the key rules, official sources, most recent review
+   date, and self-service restrictions; ordinary users do not manually pick
+   historical template versions.
+3. The user chooses upload or camera. Camera permission is requested only
+   after clicking that option.
+4. Camera mode guides in order: exactly one face detected, facing the
+   camera, head level, correct distance, lighting/sharpness basically
+   usable; once steadily stable, an automatic countdown is allowed while a
+   manual shutter always remains. Uploaded photos also get one static
+   angle/position analysis, suggesting a retake when cropping cannot fix
+   it.
+5. The user moves and zooms the photo inside the template mask, and may
+   rotate or mirror per the template policy.
+6. The completion page lists passed items, warnings, unchecked items,
+   needs-manual-confirmation items, and the official final review notice.
+7. The user chooses export or stage; the two are not chained and neither
+   requires downloading or saving first.
 
-### 6.2 暂存与取回
+### 6.2 Staging and retrieval
 
-- 暂存仅保存终态照片，不保存摄像头视频、逐帧图像、脸部关键点、原图或编辑历史。
-- 一次暂存生成一个总长度恰好为 6 位的 KEY；每一位独立从 `A–Z` 或 `0–9` 中均匀选择，不规定字母和数字各自数量，也不强制两类都出现。一个 KEY 在产品生命周期内不得映射到另一张照片。
-- “一 KEY 一照片”按保存记录解释：同一幂等重试返回同一 KEY；用户主动再次独立暂存可以得到新 KEY，不对人像内容做全局去重。
-- 暂存采用由服务政策明确声明的短期留存；确认前显示权威留存时长和预计到期时间，保存成功后显示服务端返回的绝对 `expiresAt`。
-- 保存成功页同时显示 KEY、到期时间、复制按钮和独立删除凭证。删除凭证只在创建响应中提供，可复制或下载为删除回执；页面会话内可暂存，关闭后不保证可恢复。
-- 跨设备取回要求用户输入 6 位 KEY。由于 KEY 不能作为强认证凭证，公开取回实现还必须满足 [SPEC](SPEC.md) 规定的授权、防枚举、限速、统一错误、缓存和日志约束；当前仓库尚无公开取回实现。
-- 取回成功后允许下载。删除权限与下载权限分离：只有保存时获得独立删除凭证且当前浏览器仍持有它时才显示“删除”；仅凭 KEY/取件凭证不能删除，避免猜中者造成删除型拒绝服务。
-- 无效、已过期和已删除使用相同错误文案。
-- 到期后立即禁止任何 API 访问，并在 60 分钟内删除应用可访问的主对象、版本和临时副本；MVP 照片存储桶不做长期备份。如基础设施仍产生应用不可恢复的灾备副本，必须另行披露并在不超过 30 天内销毁。
+- Staging saves only the final photo, never camera video, per-frame
+  images, face landmarks, source images, or edit history.
+- One stage generates one KEY of total length exactly 6; each position is
+  chosen uniformly and independently from `A–Z` or `0–9`, with no required
+  letter/digit quota and no requirement that both appear. A KEY must never
+  map to another photo over the product's lifetime.
+- "One KEY, one photo" is interpreted by save record: the same idempotent
+  retry returns the same KEY; a user actively staging again independently
+  gets a new KEY, with no global deduplication on portrait content.
+- Staging uses a short retention explicitly declared by the service policy;
+  the authoritative retention and expected expiry are shown before
+  confirmation, and the server-returned absolute `expiresAt` is shown after
+  a successful save.
+- The success page shows the KEY, expiry, a copy button, and the separate
+  delete credential. The delete credential is provided only in the creation
+  response, copyable or downloadable as a delete receipt; staging is
+  possible within the page session, with no guarantee of recovery after
+  closing.
+- Cross-device retrieval requires entering the 6-character KEY. Because a
+  KEY cannot serve as a strong authentication credential, a public
+  retrieval implementation must also satisfy the authorization,
+  anti-enumeration, rate-limiting, unified-error, caching, and logging
+  constraints in [SPEC](SPEC.md); this repository has no public retrieval
+  implementation yet.
+- After a successful retrieval, download is allowed. Delete rights and
+  download rights are separate: "delete" appears only when the separate
+  delete credential was obtained at save time and the current browser still
+  holds it; KEY/pickup credentials alone cannot delete, preventing a
+  delete-style denial of service by guessers.
+- Invalid, expired, and deleted use identical error copy.
+- At expiry, all API access is denied immediately, and application-accessible
+  primary objects, versions, and temporary copies are deleted within 60
+  minutes; the MVP photo bucket has no long-term backups. If infrastructure
+  still produces application-unrecoverable disaster-recovery copies, they
+  must be separately disclosed and destroyed within no more than 30 days.
 
-> **上线阻断风险**：由 26 个大写字母和 10 个数字组成的 6 位 KEY 共有 `36^6 = 2,176,782,336` 种组合，约 31.0 比特，仍不能视为强认证凭证。若坚持只凭 KEY 跨设备取回，必须先定义并书面接受最大同时有效照片数、全局解析请求预算和自动关闭阈值，再同时上线短留存、多维限速、递增延迟、失败阈值 CAPTCHA、统一错误和短时下载会话。CAPTCHA 和单 IP 限速不是认证替代品。若延长留存或扩大规模，产品必须增加第二个秘密或改为更长代码。
+> **Launch-blocking risk**: a 6-character KEY from 26 uppercase letters and
+> 10 digits has `36^6 = 2,176,782,336` combinations, roughly 31.0 bits, and
+> still cannot be treated as a strong authentication credential. If
+> cross-device retrieval stays KEY-only, the maximum simultaneously valid
+> photo count, the global resolve-request budget, and auto-shutdown
+> thresholds must first be defined and accepted in writing, while short
+> retention, multi-dimensional rate limiting, escalating delay, failure-
+> threshold CAPTCHA, unified errors, and short-lived download sessions ship
+> together. CAPTCHA and per-IP rate limiting are not authentication
+> substitutes. If retention is extended or scale grows, the product must add
+> a second secret or switch to a longer code.
 
-### 6.3 模板不适用时
+### 6.3 When a template does not apply
 
-- 模板可以标为 `reference_only` 或 `unsupported`，仍向用户展示官方规则和来源，但不提供“可提交成品”的承诺。
-- 例如加拿大护照要求商业摄影师且禁止数字修改；英国在线护照要求提交包含上半身的原图并由官方流程裁剪；[德国联邦门户](https://verwaltung.bund.de/leistungsverzeichnis/DE/leistung/99085001012000/herausgeber/BY-358/region/09162)说明自 2025-05-01 起境内护照/身份证照片采用现场或认证云传输。这些不能被一个通用裁剪框掩盖。
+- Templates may be marked `reference_only` or `unsupported`, still showing
+  the official rules and sources, but without a "submittable artifact"
+  promise.
+- Examples: Canadian passports require a commercial photographer and
+  forbid digital modification; UK online passports require submitting an
+  original photo including the upper body, cropped by the official process;
+  the [German federal portal](https://verwaltung.bund.de/leistungsverzeichnis/DE/leistung/99085001012000/herausgeber/BY-358/region/09162) states that domestic passport/ID photos use on-site or certified
+  cloud transfer from 2025-05-01. These must not be masked by a generic
+  crop box.
 
-## 7. MVP 功能优先级
+## 7. MVP feature priorities
 
-| 优先级 | 能力 | MVP 结果 |
+| Priority | Capability | MVP outcome |
 | --- | --- | --- |
-| P0 | 模板选择与来源披露 | 可按国家、证件、介质和渠道筛选；仅启用已复核模板 |
-| P0 | 上传与摄像头 | JPEG/PNG/WebP 上传；HTTPS 下请求相机；拒绝权限可回到上传 |
-| P0 | 拍摄指导 | 单脸、偏航/俯仰/侧倾、距离/头框、稳定度与基础质量提示 |
-| P0 | 裁剪编辑 | 拖移、缩放、细微旋转、90° 旋转、镜像、撤销、重置 |
-| P0 | 终态检查 | 精确像素/比例、头部位置及模板政策检查，区分错误/警告/未知 |
-| P0 | 单图导出 | 浏览器本地生成 sRGB JPEG；移除 EXIF；纸质模板写入正确 PPI 并校准打印；显示文件规格 |
-| P0 | 暂存与取回 | 一图一 KEY、服务政策声明的固定短 TTL、下载、主动删除、自动清理 |
-| P0 | 隐私与滥用防护 | 明确告知并主动确认、最小存储、限速、CAPTCHA 升级、私有对象存储 |
-| P1 | 冲印排版 | 4×6 英寸/10×15 cm 多张排版及 PDF |
-| P1 | 更深质量检测 | 背景均匀度、阴影、眩光、闭眼、嘴部状态的可解释提示 |
-| P2 | 专业服务 | 人工审核、摄影师传输、实体冲印或付费能力 |
+| P0 | Template selection and source disclosure | Filter by country, document, medium, and channel; only reviewed templates enabled |
+| P0 | Upload and camera | JPEG/PNG/WebP upload; camera requested under HTTPS; permission denial falls back to upload |
+| P0 | Capture guidance | Single-face, yaw/pitch/roll, distance/head-frame, stability, and basic quality hints |
+| P0 | Crop editing | Drag, zoom, fine rotation, 90° rotation, mirror, undo, reset |
+| P0 | Final checks | Exact-pixel/ratio, head position, and template-policy checks, distinguishing error/warning/unknown |
+| P0 | Single-image export | Browser-local sRGB JPEG; EXIF stripped; paper templates get correct PPI and calibrated printing; file spec shown |
+| P0 | Staging and retrieval | One photo per KEY, policy-declared fixed short TTL, download, proactive delete, automatic cleanup |
+| P0 | Privacy and abuse protection | Clear disclosure and explicit confirmation, minimal storage, rate limiting, CAPTCHA escalation, private object storage |
+| P1 | Print layout | 4×6 in / 10×15 cm multi-photo layouts and PDF |
+| P1 | Deeper quality checks | Explainable hints for background uniformity, shadows, glare, closed eyes, and mouth state |
+| P2 | Professional services | Human review, photographer transfer, physical printing, or paid capabilities |
 
-## 8. 竞品与可借鉴模式
+## 8. Competitors and transferable patterns
 
-调研快照截至 2026-08-05；产品能力、价格和隐私政策会变化，开发前应重新核对。
+Research snapshot as of 2026-08-05; product capabilities, prices, and
+privacy policies change, so re-verify before development.
 
-| 产品/服务 | 已观察能力 | 对本项目的启示 |
+| Product/service | Observed capabilities | Implications for this project |
 | --- | --- | --- |
-| [PhotoAiD](https://photoaid.com/) / [Passport Photo Online](https://passport-photo.online/how-it-works) | 上传/拍摄、AI 自动裁剪和背景处理、人工复核、大量模板；下载和实体照片 | 自动化反馈有价值，但不能复制“保证合规”文案；第三方处理商和较长留存需清楚披露 |
-| [IDPhoto4You](https://www.idphoto4you.com/?Target=HelpPage) | 73 国模板、手动生物识别蒙版、移动/缩放/旋转、单图和冲印排版 | 模板蒙版与透明手动控制适合 MVP；其[隐私页](https://www.idphoto4you.com/?Target=PrivacyPage)所示最长 6 小时留存可作为最小化参考 |
-| [PersoFoto](https://www.persofoto.de/upload/passbild) | 已确认文件上传、拍摄说明、生物识别蒙版、免费裁剪与付费服务并列；页面把 webcam 作为拍摄来源建议，但未确认浏览器内直接调用 | “完成后下载或进入服务端流程”的并列终态最接近本产品；其[隐私资料](https://www.persofoto.de/de/datenschutz)称使用随机加密链接，但未公开长度或熵 |
-| [123PassportPhoto](https://www.123passportphoto.com/) | 上传、自动/手动裁剪、背景处理、常见国家模板和冲印排版 | 打印排版是明确的 P1 需求；其[隐私政策](https://www.123passportphoto.com/privacy.php)称照片在 1 小时内删除 |
-| [IDstation.online](https://www.idstation.online/default/Default) | 合作摄影商上传；用户凭 personal code 跨设备查看、下载或删除；含 CAPTCHA 和失败锁定 | 是 KEY 取回最接近的商业参照，但其代码为大小写敏感字母数字且有额外防自动化措施 |
-| [GOV.UK Photo Code](https://www.passport.service.gov.uk/help/photo-codes) | 6–8 字符短 URL 路径把照片加入在线申请 | 短码并非唯一安全边界：政府取图请求还有 JWS 签名验证；本产品不能把“官方也用短码”当作 KEY-only 安全证明 |
-| [芬兰警方照片代码](https://poliisi.fi/en/submitting-passport-photographs) | 摄影棚把照片传至警方服务器，用户在申请中输入 retrieval code | 验证了跨设备照片代码的用户价值，也说明认证来源和下载权限与普通云相册不同 |
+| [PhotoAiD](https://photoaid.com/) / [Passport Photo Online](https://passport-photo.online/how-it-works) | Upload/capture, AI auto-crop and background handling, human review, many templates; download and physical photos | Automated feedback is valuable, but "guaranteed compliance" copy must not be copied; third-party processors and longer retention need clear disclosure |
+| [IDPhoto4You](https://www.idphoto4you.com/?Target=HelpPage) | 73-country templates, manual biometric masks, move/zoom/rotate, single and print-layout output | Template masks with transparent manual control suit the MVP; its [privacy page](https://www.idphoto4you.com/?Target=PrivacyPage) showing up to 6-hour retention is a minimization reference |
+| [PersoFoto](https://www.persofoto.de/upload/passbild) | Confirmed file upload, capture instructions, biometric masks, free cropping alongside paid services; the page suggests webcam as a capture source but browser-native capture is unconfirmed | The parallel terminal states "download when done or enter the server flow" are closest to this product; its [privacy material](https://www.persofoto.de/de/datenschutz) claims random encrypted links without disclosing length or entropy |
+| [123PassportPhoto](https://www.123passportphoto.com/) | Upload, auto/manual crop, background handling, common-country templates and print layouts | Print layout is a clear P1 requirement; its [privacy policy](https://www.123passportphoto.com/privacy.php) states photos are deleted within 1 hour |
+| [IDstation.online](https://www.idstation.online/default/Default) | Partner-photographer uploads; users view, download, or delete cross-device with a personal code; CAPTCHA and failure lockout included | The closest commercial reference for KEY retrieval, but its code is case-sensitive alphanumeric with extra anti-automation measures |
+| [GOV.UK Photo Code](https://www.passport.service.gov.uk/help/photo-codes) | A 6–8 character short URL path attaches the photo to an online application | Short codes are not the only security boundary: government photo-fetch requests also carry JWS signature verification; this product cannot cite "the government also uses short codes" as a KEY-only security proof |
+| [Finnish police photo code](https://poliisi.fi/en/submitting-passport-photographs) | Studios upload photos to the police server; users enter a retrieval code in the application | Validates the cross-device photo-code user value, and shows that credentialed sources and download permissions differ from ordinary cloud galleries |
 
-### 8.1 差异化机会
+### 8.1 Differentiation opportunities
 
-- 竞品多为拍前静态说明和拍后判定；实时、可解释的偏航/俯仰/侧倾指引仍有差异化空间。
-- 免费工具多缺少跨设备取回，商业工具多依赖邮箱、订单或长链接；无账户短 KEY 是便利点，也是核心安全风险。
-- “模板尺寸 + 渠道限制 + 编辑政策 + 来源版本”比单纯堆叠国家尺寸更可信。
-- 隐私默认的本地处理可成为明确价值主张：只有“暂存”会上传终态照片。
+- Competitors mostly give static pre-capture instructions and post-capture
+  verdicts; real-time, explainable yaw/pitch/roll guidance still has room
+  to differentiate.
+- Free tools usually lack cross-device retrieval; commercial tools rely on
+  email, orders, or long links; an account-free short KEY is a convenience
+  and the core security risk.
+- "Template size + channel restrictions + editing policy + source version"
+  is more credible than piling up country sizes.
+- Privacy-default local processing can be an explicit value proposition:
+  only "stage" uploads the final photo.
 
-### 8.2 MVP 最低模板范围
+### 8.2 MVP minimum template scope
 
-Public Beta 的硬最低 release manifest 如下；除通用肖像外先只发布已单独复核的成人 revision。任何一项失败都会阻止 Public Beta；缩小集合属于产品范围变更，必须同步修改 PRODUCT、SPEC 和 release manifest，不能在发布评审中静默豁免：
+The hard-minimum Public Beta release manifest follows; apart from the
+generic portrait, only individually reviewed adult revisions are released
+first. Any failure blocks Public Beta; shrinking the set is a product-scope
+change that must update PRODUCT, SPEC, and the release manifest together,
+never silently waived at release review:
 
-- 通用肖像 1200×1200 px（明确标为非官方模板，允许镜像，用于基础肖像与编辑能力）。
-- 美国护照—纸质 2×2 in（50.8×50.8 mm）；产品采用 300 ppi 时为 600×600 px。
-- 美国签证—适用 DS-160/DS-1648 的数字照片，600–1200 px 正方形；不覆盖 DS-260、DV 或馆站特殊规则。
-- 芬兰警方证件—数字 500×653 px。
-- 中国签证—首个数字 revision 固定 354×472 px，且绑定已复核的具体受理来源。
-- 日本护照—纸质 35×45 mm；产品采用 300 ppi 时为 413×531 px。
+- Generic portrait 1200×1200 px (explicitly unofficial, mirror allowed,
+  for basic portraits and editing capability).
+- US passport - paper 2×2 in (50.8×50.8 mm); 600×600 px at the product's
+  300 ppi.
+- US visa - applicable DS-160/DS-1648 digital photos, 600–1200 px square;
+  does not cover DS-260, DV, or mission-specific rules.
+- Finnish police document - digital 500×653 px.
+- China visa - the first digital revision is fixed at 354×472 px and bound
+  to a reviewed concrete acceptance source.
+- Japan passport - paper 35×45 mm; 413×531 px at the product's 300 ppi.
 
-美国 DV 只在具体项目年度说明和适用申请窗口已正式发布时加入当期 manifest，不作为无条件发布门槛；每个年度单独复核和版本化。美国和日本纸质模板只有在正确 PPI 编码与校准打印测试通过后才可成为 `active`。儿童/婴儿、英国纸质/在线护照、加拿大护照及通用 Schengen 入口先以 `reference_only` 或渠道说明呈现：英国纸照公开规则禁止从较大图片裁切，英国在线路径由官方服务裁剪，加拿大要求商业摄影师原始文件，不能伪装成通用自助裁剪模板。
+US DV enters the current manifest only when the specific program year's
+instructions and applicable application window are formally published; it is
+not an unconditional release gate, and each year is individually reviewed
+and versioned. US and Japan paper templates may become `active` only after
+correct PPI encoding and calibrated print tests pass. Child/infant, UK
+paper/online passports, Canadian passports, and generic Schengen entries
+are presented as `reference_only` or with channel explanations: UK paper
+rules publicly forbid cropping from a larger image, the UK online path is
+cropped by the official service, and Canada requires the commercial
+photographer's original file - none can masquerade as a generic self-
+service crop template.
 
-## 9. 验收事实
+## 9. Acceptance facts
 
-- 用户可以通过本地上传或明确授权的设备摄像头取得照片；摄像头、自动指导或模型不可用时仍可通过上传和手动路径完成。
-- 用户可以根据所选模板移动、缩放、裁剪，并按模板政策旋转或镜像；预览与终态使用同一变换规则。
-- 导出和暂存使用同一不可变终态工件；服务器安全重编码后允许字节不同，但构图、方向和像素尺寸必须保持一致。
-- KEY 必须匹配 `^[A-Z0-9]{6}$`，全字母、全数字和任意混合均有效；同一个 KEY 永不映射到另一张照片。
-- 每次输出显示模板 ID、版本、来源、复核日期、通过项、警告项和未检查项。
-- 到期或删除的照片立即不可取回；日志、分析和错误追踪不包含照片、KEY、取件或删除凭证、对象存储标识或脸部关键点。
-- 终态页不得把启发式检查描述为官方批准、官方认证或受理保证。
+- The user can obtain a photo via local upload or an explicitly authorized
+  device camera; when the camera, automatic guidance, or the model is
+  unavailable, upload and manual paths still complete the task.
+- The user can move, zoom, and crop per the selected template, and rotate
+  or mirror per the template policy; preview and final state use the same
+  transform rules.
+- Export and staging use the same immutable final artifact; after secure
+  server re-encoding bytes may differ, but composition, orientation, and
+  pixel dimensions must match.
+- KEYs must match `^[A-Z0-9]{6}$`; all-letter, all-digit, and any mixed
+  forms are valid; the same KEY never maps to another photo.
+- Every output shows the template ID, version, source, review date, passed
+  items, warnings, and unchecked items.
+- Expired or deleted photos are immediately unretrievable; logs, analytics,
+  and error tracking contain no photos, KEYs, pickup or delete credentials,
+  object-storage identifiers, or face landmarks.
+- The final page must never describe heuristic checks as official
+  approval, official certification, or an acceptance guarantee.
 
-## 10. 风险与应对
+## 10. Risks and responses
 
-| 风险 | 影响 | 产品应对 |
+| Risk | Impact | Product response |
 | --- | --- | --- |
-| 官方规则变化或渠道差异 | 输出尺寸正确但申请被拒 | 模板版本化、官方来源、复核日期、远程停用和 `reference_only` 状态 |
-| 6 位 KEY 可枚举 | 未授权查看人像 | 固定短 TTL、分层限速、CAPTCHA、统一错误、私有对象存储；长留存或规模扩大前升级凭证模型 |
-| 自动检测误判或群体偏差 | 错误指导、排除部分用户 | 可解释检查、置信度、手动绕过、跨肤色/年龄/辅助设备测试，不做身份识别 |
-| 摄像头质量、权限或性能不足 | 无法拍摄或低帧率 | 延迟请求权限、上传回退、可关闭实时分析、使用原始高分辨率帧导出 |
-| 某些官方规则禁止自拍或编辑 | 产品能力与规则冲突 | 模板级 `submissionMode` 和 `editingPolicy`；不合适模板只做参考 |
-| 上传接口被当作文件托管 | 成本、违法内容或恶意文件 | 只接受可解码白名单图像、限制尺寸/像素、重编码、短 TTL、限额和私有下载 |
-| 用户误把镜像预览当成成品 | 面貌方向错误或被拒 | 前置相机可镜像预览但默认保存非镜像；官方模板按政策禁止或强警告镜像 |
+| Official rule changes or channel differences | Correct output size but rejected application | Template versioning, official sources, review dates, remote takedown, and `reference_only` status |
+| 6-character KEYs enumerable | Unauthorized viewing of portraits | Fixed short TTL, layered rate limiting, CAPTCHA, unified errors, private object storage; upgrade the credential model before longer retention or scale growth |
+| Automatic-check misjudgment or group bias | Wrong guidance, excluding some users | Explainable checks, confidence, manual bypass, cross-skin-tone/age/assistive-device testing, no identity recognition |
+| Camera quality, permission, or performance shortfalls | No capture or low frame rate | Deferred permission requests, upload fallback, disableable real-time analysis, export from raw high-resolution frames |
+| Some official rules forbid selfies or editing | Product capability conflicts with rules | Template-level `submissionMode` and `editingPolicy`; unsuitable templates are reference only |
+| Upload endpoint used as file hosting | Cost, unlawful content, or malicious files | Only decodable whitelisted images, size/pixel limits, re-encoding, short TTL, quotas, and private downloads |
+| Users mistake the mirrored preview for the artifact | Wrong facial orientation or rejection | Front camera may mirror the preview but saves unmirrored by default; official templates forbid or strongly warn about mirroring per policy |

@@ -1,219 +1,314 @@
 # Portrait Booth — SPEC
 
-> 状态：Draft v0.1
-> 基线日期：2026-08-05
-> 关联产品文档：[PRODUCT.md](./PRODUCT.md)
-> 约束词：`MUST`/必须、`SHOULD`/应该、`MAY`/可以按 RFC 2119 语义理解。
+> Status: Draft v0.1
+> Baseline date: 2026-08-05
+> Related product document: [PRODUCT.md](./PRODUCT.md)
+> Keywords: `MUST`, `SHOULD`, and `MAY` are to be interpreted as described in RFC 2119.
 
-## 1. 范围与关键决策
+## 1. Scope and key decisions
 
-本规格覆盖一个无账户 Web App 的 MVP：模板选择、照片上传、设备摄像头、脸部角度指导、基础编辑、精确尺寸渲染、导出、短期服务器暂存、6 位大写字母或数字 KEY 取回以及模板内容管理。
+This specification covers an account-free web app MVP: template selection,
+photo upload, device camera, face-angle guidance, basic editing,
+exact-size rendering, export, short-term server staging, retrieval with a
+6-character uppercase-alphanumeric KEY, and template content management.
 
-### 1.1 Draft 实现假设
+### 1.1 Draft implementation assumptions
 
-- 用户在拍摄前选择 `国家/地区 + 证件 + 提交渠道`；只有规则发生差异时才补充 `申请人类别`。
-- 原图、摄像头视频帧、脸部关键点和编辑状态默认仅存在于浏览器内存。
-- “导出”完全可在客户端完成；只有选择“暂存”才把终态成品上传服务器。
-- 服务器只保存终态成品，不保存原图、中间帧、脸部几何、身份 embedding 或编辑历史。
-- 暂存 TTL 固定为 30 天（2026-08-06 产品确认，由基线 24 小时变更，见 §1.2.1）；显示服务政策的预计留存，保存后显示服务端权威 `expiresAt`。
-- 一个 KEY 只对应一张终态照片；过期或删除后也不得复用于另一张照片。
-- “一 KEY 一照片”按保存记录解释：同一幂等请求始终返回同一 KEY，独立保存同一视觉内容可以产生新 KEY；不做会扩大隐私处理范围的内容去重。
-- 自动检查是拍摄和构图辅助，不是政府受理保证。
+- The user selects `country/region + document + submission channel`
+  before capture; `applicant class` is added only when rules differ.
+- Source images, camera video frames, face landmarks, and edit state exist
+  only in browser memory by default.
+- "Export" is fully client-side; only choosing "stage" uploads the final
+  artifact to the server.
+- The server stores only the final artifact - never source images,
+  intermediate frames, face geometry, identity embeddings, or edit history.
+- The staging TTL is fixed at 30 days (product-confirmed 2026-08-06,
+  changed from the 24-hour baseline; see §1.2.1); the service-policy
+  expected retention is shown, and the server-authoritative `expiresAt` is
+  shown after saving.
+- One KEY corresponds to exactly one final photo and must never be reused
+  for another photo even after expiry or deletion.
+- "One KEY, one photo" is interpreted by save record: the same idempotent
+  request always returns the same KEY, and independently saving the same
+  visual content may produce a new KEY; no content deduplication that would
+  widen the privacy-processing scope is performed.
+- Automatic checks are capture and composition assistance, not a government
+  acceptance guarantee.
 
-### 1.2 P0 安全决策门
+### 1.2 P0 security decision gate
 
-用户需求基线是“根据总长度为 6 位、每位均为 `A–Z` 或 `0–9` 的 KEY 自行取得照片”，即 KEY-only。字母和数字各自数量不限，也不强制两类都出现。36 字符空间为 `36^6 = 2,176,782,336`，约 31.0 比特。它可通过唯一约束解决生成碰撞，但仍不能单独提供保护肖像照片所需的强认证。
+The user-requirements baseline is "retrieve photos yourself with a KEY of
+total length 6, each position `A–Z` or `0–9`", i.e. KEY-only. Letter and
+digit counts are unrestricted and neither type is required. The 36-character
+space is `36^6 = 2,176,782,336`, about 31.0 bits. A uniqueness constraint
+solves generation collisions, but this still cannot alone provide the strong
+authentication needed to protect portrait photos.
 
-实现前必须在以下两种策略中确认一种：
+One of the two following strategies must be confirmed before
+implementation:
 
-| 策略 | 需求兼容性 | 安全性 | 规格结论 |
+| Strategy | Requirement compatibility | Security | Spec conclusion |
 | --- | --- | --- | --- |
-| `key_only_ephemeral` | 完全符合“只输入 KEY” | 依赖 30 天 TTL（§1.2.1）、容量上限、限速、CAPTCHA（暂缓）和监控；仍有分布式枚举剩余风险 | 已按 §1.2.1 产品决策选定；剩余风险接受记录见该节 |
-| `key_plus_claim` | 保留 6 位 KEY，但跨设备还需私密链接/QR 中的 ≥128 比特访问密钥 | 推荐；KEY 是定位码，访问密钥才是访问证明 | 推荐安全变体，但属于产品需求偏差，未经确认不得视为已采用 |
+| `key_only_ephemeral` | Fully matches "enter only the KEY" | Relies on the 30-day TTL (§1.2.1), capacity caps, rate limiting, CAPTCHA (deferred), and monitoring; distributed enumeration residual risk remains | Selected by the §1.2.1 product decision; residual-risk acceptance recorded there |
+| `key_plus_claim` | Keeps the 6-character KEY but requires a ≥128-bit access secret in a private link/QR for cross-device use | Recommended; the KEY is a locator and the access secret is the proof of access | Recommended secure variant, but a product-requirement deviation; must not be treated as adopted without confirmation |
 
-该决策已于 2026-08-06 选定为 `key_only_ephemeral`（见 §1.2.1）。两种策略都必须生成独立的删除密钥。任何实现不得把 KEY 当作对象存储路径、公开 URL 或强密码来描述。
+The decision was made on 2026-08-06 in favor of `key_only_ephemeral`
+(see §1.2.1). Both strategies must generate a separate delete secret. No
+implementation may describe a KEY as an object-storage path, a public URL,
+or a strong password.
 
-#### 1.2.1 决策记录（2026-08-06，产品确认）
+#### 1.2.1 Decision record (2026-08-06, product-confirmed)
 
-- **策略**：选定 `key_only_ephemeral`。API、客户端与数据模型按此实现；不实现 `key_plus_claim` 分支。
-- **暂存 TTL**：30 天，由 §1.1 基线 24 小时变更。`service-policy` 返回 `temporaryStorageTtlSeconds = 2592000`。
-- **威胁评审**：产品决定永久忽略正式威胁评审流程，不再作为 Public Beta blocker。§9.3 中的低成本工程控制（限速、失败阈值、统一错误、预算自动关闭、无静默续期、监测告警）全部保留并实现；CAPTCHA 暂缓为后续增强，接口保留 `captchaToken` 字段兼容。
-- **剩余风险**：分布式枚举在 30 天留存与更大容量下的剩余风险由产品按此记录接受。
+- **Strategy**: `key_only_ephemeral` is selected. The API, client, and
+  data model implement this; the `key_plus_claim` branch is not
+  implemented.
+- **Staging TTL**: 30 days, changed from the §1.1 baseline of 24 hours.
+  `service-policy` returns `temporaryStorageTtlSeconds = 2592000`.
+- **Threat review**: the product permanently waives the formal threat-
+  review process; it is no longer a Public Beta blocker. All low-cost
+  engineering controls in §9.3 (rate limiting, failure thresholds, unified
+  errors, budget auto-shutdown, no silent renewal, monitoring alerts)
+  remain and are implemented; CAPTCHA is deferred as a later enhancement
+  with the `captchaToken` field kept for interface compatibility.
+- **Residual risk**: the residual distributed-enumeration risk under 30-day
+  retention and larger capacity is accepted by the product as recorded
+  here.
 
-## 2. 系统边界
+## 2. System boundaries
 
 ```mermaid
 flowchart LR
-  subgraph Browser["浏览器（默认私有边界）"]
-    A["上传 / getUserMedia"] --> B["方向与颜色归一化"]
-    B --> C["本地 Face Landmarker"]
-    B --> D["非破坏性编辑器"]
+  subgraph Browser["Browser (private boundary by default)"]
+    A["upload / getUserMedia"] --> B["orientation and color normalization"]
+    B --> C["local Face Landmarker"]
+    B --> D["non-destructive editor"]
     C --> D
-    D --> E["统一终态渲染器"]
+    D --> E["unified final renderer"]
     E --> F["FinalArtifact.blob"]
-    F --> G["下载到设备"]
+    F --> G["download to device"]
   end
-  F -->|"仅用户选择暂存"| H["Save API"]
-  H --> I["隔离图片验证/重编码"]
-  I --> J["私有对象存储"]
-  H --> K["元数据数据库"]
-  L["取回表单"] --> M["Resolve API"]
+  F -->|"only when the user chooses to stage"| H["Save API"]
+  H --> I["isolated image validation/re-encoding"]
+  I --> J["private object storage"]
+  H --> K["metadata database"]
+  L["retrieval form"] --> M["Resolve API"]
   M --> K
-  M --> N["短时下载能力"]
+  M --> N["short-lived download capability"]
   N --> J
 ```
 
-### 2.1 逻辑组件
+### 2.1 Logical components
 
-- **Web Client**：模板浏览、相机、上传解码、姿态分析、编辑、终态渲染和本地下载。
-- **Template Service**：发布版本化模板清单，可停用过期模板；公开只读。
-- **Save/Retrieve API**：接收终态照片、生成 KEY/凭证、解析取回、删除和限速。
-- **Image Validator**：在隔离、低权限、无外网环境中实际解码并重编码服务器暂存图。
-- **Private Object Storage**：无公开 ACL；短生命周期；对象名与 KEY 无关。
-- **Metadata Store**：保存映射、模板版本、生命周期和摘要，不保存图像二进制。
-- **Lifecycle Worker**：使到期对象立即不可访问，并在 SLO 内完成物理删除和审计。
+- **Web Client**: template browsing, camera, upload decoding, pose
+  analysis, editing, final rendering, and local download.
+- **Template Service**: publishes the versioned template catalog and can
+  take down expired templates; public read-only.
+- **Save/Retrieve API**: accepts final photos, generates KEYs/credentials,
+  resolves retrieval, deletion, and rate limiting.
+- **Image Validator**: actually decodes and re-encodes server-staged images
+  in an isolated, low-privilege, no-outbound-network environment.
+- **Private Object Storage**: no public ACLs; short lifecycle; object names
+  are unrelated to KEYs.
+- **Metadata Store**: holds mappings, template versions, lifecycle, and
+  digests, never image binaries.
+- **Lifecycle Worker**: makes expired objects immediately inaccessible and
+  completes physical deletion and audit within the SLO.
 
-框架、数据库和云供应商尚未选择；首次实现应优先使用项目约定和现有依赖，避免在本规格阶段锁死技术栈。
+Frameworks, databases, and cloud vendors are not yet chosen; the first
+implementation should prefer project conventions and existing dependencies,
+avoiding a locked-in stack at this spec stage.
 
-## 3. 页面与状态
+## 3. Pages and states
 
-### 3.1 建议路由
+### 3.1 Suggested routes
 
-| 路由 | 用途 | 注意事项 |
+| Route | Purpose | Notes |
 | --- | --- | --- |
-| `/` | 首页、创建或取回入口 | 不请求摄像头权限 |
-| `/create` | 模板、来源、拍摄、编辑和完成向导 | 编辑状态仅在内存；刷新前提示 |
-| `/retrieve` | KEY 输入、访问证明兑换和下载；仅在本浏览器另持删除密钥时显示删除 | KEY 不放入 URL、query 或 referrer；下载凭证不自动授予删除权 |
-| `/privacy` | 简明与完整隐私说明 | 无需加载相机/分析模型 |
-| `/templates/:id` | 模板规则、来源与版本历史 | 不把非官方推导值标成强制规则 |
+| `/` | Home, entry to create or retrieve | No camera permission requested |
+| `/create` | Template, source, capture, edit, and completion wizard | Edit state is memory-only; prompt before refresh |
+| `/retrieve` | KEY entry, access-proof redemption, and download; delete shown only when this browser separately holds the delete secret | KEY never enters URLs, query, or referrer; download credentials do not grant delete rights |
+| `/privacy` | Concise and full privacy statement | No camera/analysis model needed |
+| `/templates/:id` | Template rules, sources, and version history | Derived unofficial values are never presented as mandatory rules |
 
-### 3.2 客户端创建状态机
+### 3.2 Client creation state machine
 
 `template-selection → source-selection → permission/capture-or-upload → review → edit → validate → final-ready`
 
-- 选择新原图会清除此前终态 Blob 和分析结果。
-- 更换模板必须重新计算裁剪、输出尺寸和规则检查；不可静默沿用不兼容变换。
-- `final-ready` 持有一份不可变 `FinalArtifact`，是唯一允许执行导出或暂存的共享状态。
-- 导出和暂存是该工件上的非互斥副作用，不是会替换 `final-ready` 的新状态；同一工件可以先后执行两者。
-- 任何源图、模板或变换变化都会立即销毁旧工件及其检查摘要，并回到 `edit`/`validate`；不得把旧 Blob 继续用于另一操作。
+- Selecting a new source image clears the previous final Blob and
+  analysis results.
+- Switching templates must recompute crop, output size, and rule checks;
+  incompatible transforms must not be silently carried over.
+- `final-ready` holds one immutable `FinalArtifact`, the only shared state
+  from which export or staging is allowed.
+- Export and staging are non-exclusive side effects on that artifact, not
+  new states replacing `final-ready`; the same artifact may be both
+  exported and staged.
+- Any source, template, or transform change destroys the old artifact and
+  its check summary immediately and returns to `edit`/`validate`; the old
+  Blob must not be reused for another operation.
 
-### 3.3 服务端照片状态机
+### 3.3 Server photo state machine
 
 `validating → active → access-revoked → purging → purged`
 
-- `active` 前不可取回。
-- 到达 `expiresAt` 或收到有效删除请求时，事务内进入 `access-revoked` 并撤销所有下载能力；同步鉴权不得依赖异步清理任务是否已运行。
-- 验证失败不保留照片正文：清理 staging 后直接结束请求；只有不含图像的短期错误分类可留作运维统计。
-- `access-revoked`、`purging`、`purged` 和不存在对取回者返回统一结果；`purged` 后删除照片关联元数据，只保留不含人物信息的 KEY 登记项。
+- Not retrievable before `active`.
+- On reaching `expiresAt` or receiving a valid delete request, the photo
+  enters `access-revoked` within a transaction and all download
+  capabilities are revoked; synchronous authorization must not depend on
+  whether the async cleanup task has run.
+- Validation failures retain no photo bytes: the request ends after
+  cleaning staging; only short-lived error categories without images may be
+  kept for operations statistics.
+- `access-revoked`, `purging`, `purged`, and nonexistent return identical
+  results to retrievers; after `purged`, photo-associated metadata is
+  deleted, keeping only the KEY registry entry without personal
+  information.
 
-## 4. 功能需求
+## 4. Functional requirements
 
-### 4.1 模板选择
+### 4.1 Template selection
 
-| ID | 要求 | 验收摘要 |
+| ID | Requirement | Acceptance summary |
 | --- | --- | --- |
-| TMP-001 | 系统必须先让用户选择国家/地区、证件类型和提交渠道；规则因儿童/成人等申请人类别而异时再要求选择类别 | 相同国家的纸质和数字规则可分别选择；无差异时类别固定为 `all`，不增加无意义步骤 |
-| TMP-002 | 每个证件模板必须展示官方来源、来源更新时间（若有）、本项目复核日期、状态和限制；非官方通用肖像模板展示项目内部规格、版本和“非证件模板”标识 | 用户可在创建前打开证件模板的官方来源；通用模板不得伪装成官方规则；过期来源可停用 |
-| TMP-003 | `reference_only`/`unsupported` 模板不得显示“可提交成品”或“已合规” | 加拿大自拍、英国在线预裁剪等限制有醒目说明 |
-| TMP-004 | 模板更新必须生成新版本；已打开的编辑会话固定使用其开始时版本 | 终态和暂存记录都含 `templateId + templateVersion` |
-| TMP-005 | 不得提供无受理国上下文的“通用 Schengen 35×45 法定模板” | EU 中央规则页只作为入口；用户须选受理成员国/使领馆 |
+| TMP-001 | The system must first ask the user for country/region, document type, and submission channel; applicant class is asked only when rules differ by class (e.g. child/adult) | Paper and digital rules for the same country are selectable separately; when no difference exists the class is fixed to `all`, adding no meaningless step |
+| TMP-002 | Every document template must show the official source, source update time (if any), this project's review date, status, and restrictions; unofficial generic portrait templates show the project-internal spec, version, and a "non-document template" marker | Users can open the official source before creating; generic templates must not masquerade as official rules; stale sources can be taken down |
+| TMP-003 | `reference_only`/`unsupported` templates must not show "submittable artifact" or "compliant" | Restrictions such as Canada's selfie ban and UK online pre-cropping have prominent explanations |
+| TMP-004 | Template updates must produce a new version; an open editing session stays pinned to the version at its start | Both final and staging records contain `templateId + templateVersion` |
+| TMP-005 | No "generic Schengen 35×45 legal template" without an accepting-country context | The EU central rules page is only an entry; the user must choose the accepting member state/mission |
 
-### 4.2 上传
+### 4.2 Upload
 
-| ID | 要求 | 验收摘要 |
+| ID | Requirement | Acceptance summary |
 | --- | --- | --- |
-| SRC-001 | MVP 客户端接受可实际解码的 JPEG、PNG、WebP | `accept` 属性不是安全检查；错误扩展/MIME 不能绕过实际解码 |
-| SRC-002 | 单个源文件默认上限 15 MB、24 MP、任一边 8,000 px；限制应可配置且须经一级移动设备真机验证 | 先解析文件头尺寸再进入完整解码；工作位图按模板所需分辨率受控缩放，超限显示可操作错误 |
-| SRC-003 | 必须按 EXIF orientation 归一化到实际像素方向 | 1–8 全部 EXIF 方向均有自动测试；编辑坐标不依赖 EXIF |
-| SRC-004 | HEIC/HEIF 可在能力检测后作为增强，但不属于跨浏览器 MVP | 不支持时明确提示转换或改用相机，不静默失败 |
-| SRC-005 | 选择本地文件不得自动上传 | 网络检查证明导出路径未发送照片内容 |
+| SRC-001 | The MVP client accepts actually decodable JPEG, PNG, WebP | The `accept` attribute is not a security check; wrong extensions/MIME cannot bypass actual decoding |
+| SRC-002 | Default per-source-file caps: 15 MB, 24 MP, 8,000 px per edge; limits configurable and must be verified on tier-1 real mobile devices | Header dimensions are parsed before full decoding; working bitmaps are scaled under control to the template's needed resolution, with actionable errors over the limits |
+| SRC-003 | Must normalize per EXIF orientation to actual pixel orientation | All EXIF orientations 1–8 have automated tests; edit coordinates do not depend on EXIF |
+| SRC-004 | HEIC/HEIF may be an enhancement after capability detection, but is not part of the cross-browser MVP | When unsupported, conversion or camera use is clearly suggested, never a silent failure |
+| SRC-005 | Selecting a local file must not auto-upload | Network checks prove the export path sends no photo content |
 
-### 4.3 摄像头与拍摄
+### 4.3 Camera and capture
 
-| ID | 要求 | 验收摘要 |
+| ID | Requirement | Acceptance summary |
 | --- | --- | --- |
-| CAM-001 | 仅在用户点击“开启摄像头”后调用 `getUserMedia`，且 `audio:false` | 初始加载不出现权限提示，也不请求麦克风 |
-| CAM-002 | 摄像头必须运行在 HTTPS/安全上下文；权限拒绝、无设备、设备占用和约束失败均提供上传回退 | 任一错误都不锁死创建流程 |
-| CAM-003 | 首次请求使用 `{audio:false, video:{facingMode:{ideal:'user'}, width:{ideal:1920}, height:{ideal:1080}}}`，不使用 `exact/min/max` | 失败时允许用户用 `video:true` 重试；理想约束不满足不应被当成常态 `OverconstrainedError` |
-| CAM-004 | 预览可 CSS 镜像，但分析坐标和默认成品必须为非镜像真实方向 | 前置相机导出与源帧方向一致；overlay 横坐标正确映射 |
-| CAM-005 | 每次相机请求使用递增 generation/session token；离开步骤、接受照片、隐藏页面超时或组件卸载时停止全部 tracks，迟到成功的旧请求也必须立即停止其返回 tracks | 浏览器权限 Promise 在离开后才成功时也不会绑定视频或泄漏 track；UI 取消只取消应用会话，不声称取消浏览器权限提示 |
-| CAM-006 | `ImageCapture.takePhoto()` 仅作能力检测后的高分辨率增强；基线从 `<video>` 固有像素捕获到 Canvas | Firefox/Safari 不支持 ImageCapture 时仍可完成拍摄 |
-| CAM-007 | 自动拍照必须由用户显式开启，保留手动快门、取消倒计时和重拍 | 不强迫用户在限时内完成动作 |
-| CAM-008 | 授权后可枚举并切换摄像头；发起新请求前停止旧 tracks，并用 CAM-005 的 token 丢弃乱序结果 | 前后摄像头反复切换无双流、旧画面回跳或残留指示 |
+| CAM-001 | `getUserMedia` is called only after the user clicks "open camera", with `audio:false` | No permission prompt on initial load and no microphone request |
+| CAM-002 | The camera must run in an HTTPS/secure context; permission denial, no device, device in use, and constraint failures all offer an upload fallback | No single error locks the creation flow |
+| CAM-003 | First request uses `{audio:false, video:{facingMode:{ideal:'user'}, width:{ideal:1920}, height:{ideal:1080}}}` without `exact/min/max` | On failure the user may retry with `video:true`; unsatisfied ideal constraints must not be treated as a routine `OverconstrainedError` |
+| CAM-004 | The preview may be CSS-mirrored, but analysis coordinates and the default artifact must be unmirrored true orientation | Front-camera export matches the source frame orientation; overlay x coordinates map correctly |
+| CAM-005 | Each camera request uses an increasing generation/session token; leaving the step, accepting a photo, page-hidden timeout, or unmount stops all tracks, and a stale request succeeding late must immediately stop the tracks it returns | A browser permission Promise resolving after leaving does not bind video or leak tracks; UI cancellation only cancels the app session and does not claim to cancel the browser permission prompt |
+| CAM-006 | `ImageCapture.takePhoto()` is only a high-resolution enhancement after capability detection; the baseline captures from the `<video>` intrinsic pixels to a Canvas | Capture still completes where Firefox/Safari lack ImageCapture |
+| CAM-007 | Auto-capture must be user-enabled explicitly, keeping a manual shutter, countdown cancellation, and retake | Users are never forced to act within a time limit |
+| CAM-008 | After authorization, devices can be enumerated and switched; old tracks stop before a new request, and CAM-005 tokens discard out-of-order results | Repeated front/rear switching shows no double streams, stale-frame jumps, or residual indicators |
 
-### 4.4 脸部角度与质量指导
+### 4.4 Face-angle and quality guidance
 
-推荐在设备端使用 MediaPipe Face Landmarker；模型和包版本必须锁定。采用前必须审计锁定构建的实际网络行为：官方 Tasks 隐私通知说明输入留在设备端，但 SDK 可能发送性能/使用指标。优先选择经验证不外发遥测的构建；若存在厂商指标，必须在模型初始化前披露字段、处理商、区域和法律基础并取得适用同意，且提供不加载模型的手动路径。
+MediaPipe Face Landmarker on-device is recommended; model and package
+versions must be locked. Before adoption, the locked build's actual network
+behavior must be audited: the official Tasks privacy notice states input
+stays on-device, but the SDK may send performance/usage metrics. Prefer a
+build verified not to exfiltrate telemetry; if vendor metrics exist, the
+fields, processor, region, and legal basis must be disclosed with
+applicable consent before model initialization, and a manual path that does
+not load the model must exist.
 
-最小配置固定为 `runningMode:'VIDEO'`、`numFaces:2`、`outputFacialTransformationMatrixes:true`、`outputFaceBlendshapes:false`，检测/存在/跟踪 confidence 阈值与模型版本一起校准和发布。`numFaces>1` 时不能依赖内置平滑，应用必须执行主脸关联、时序平滑和迟滞。
+The minimal configuration is pinned: `runningMode:'VIDEO'`,
+`numFaces:2`, `outputFacialTransformationMatrixes:true`,
+`outputFaceBlendshapes:false`; detection/presence/tracking confidence
+thresholds are calibrated and released together with the model version.
+With `numFaces>1`, built-in smoothing must not be relied on; the
+application must perform primary-face association, temporal smoothing, and
+hysteresis.
 
-主线程用 `requestVideoFrameCallback`（回退 `requestAnimationFrame`）为新帧创建可转移 `ImageBitmap`；Worker 同时只允许一次同步推理，至多保留一张最新待处理帧，替换或完成后立即 `close()`。`detectForVideo(frame, timestampMs)` 使用单调递增毫秒时间戳，结果携带 session/frame ID；旧会话结果必须丢弃。退出步骤时关闭 bitmap、Landmarker 和 Worker。
+The main thread uses `requestVideoFrameCallback` (falling back to
+`requestAnimationFrame`) to create transferable `ImageBitmap`s for new
+frames; the Worker allows only one synchronous inference at a time, keeps at
+most one latest pending frame, and `close()`s it immediately on
+replacement or completion. `detectForVideo(frame, timestampMs)` uses
+monotonically increasing millisecond timestamps, and results carry
+session/frame IDs; stale-session results must be dropped. Leaving the step
+closes the bitmap, Landmarker, and Worker.
 
-| ID | 要求 | 验收摘要 |
+| ID | Requirement | Acceptance summary |
 | --- | --- | --- |
-| GDE-001 | 实时状态至少覆盖：未检测到脸、多脸、位置/大小、yaw、pitch、roll、稳定、可拍摄 | 每种状态有文字与图形，不只依赖颜色 |
-| GDE-002 | 指令以用户身体方向表达，例如“脸向你自己的左侧微调”，不可含糊使用“屏幕左边” | 镜像与非镜像预览测试均给出正确方向 |
-| GDE-003 | 姿态值可从 facial transformation matrix 推导，但矩阵布局、轴向和符号必须用固定样本校准 | 正面、左/右转、抬/低头、左右倾斜样本全部通过 |
-| GDE-004 | 初始工程阈值建议为 `abs(yaw)≤7°`、`abs(pitch)≤7°`、`abs(roll)≤5°` 且稳定 ≥800 ms；阈值必须配置化 | UI 标为拍摄启发式，不称为官方法定容差 |
-| GDE-005 | 自动或手动拍摄固定确切 Blob/Bitmap 后必须再跑一次静态检查，不使用倒计时开始或最后一次预览推理的旧结果 | 人在倒计时中移动时不会保存旧“通过”状态；复检对象与进入编辑器的像素一致 |
-| GDE-006 | 模型失败、置信度低或性能不足时只关闭自动指导，不阻止手动拍摄/上传/编辑/导出 | 无 WebGL/WASM/Worker 的降级测试可完成全流程 |
-| GDE-007 | 脸部关键点、矩阵、角度和分析帧不得持久化、上传或写入遥测 | 网络、日志、IndexedDB/localStorage 检查无相关数据 |
-| GDE-008 | 头顶 crown、头发顶部、背景与眩光等模型不能可靠确定的项目必须标为人工确认或未检查 | 检查摘要区分 `pass/warn/fail/unknown/manual`（manual 为模板要求机器判不了、需人工确认的项） |
-| GDE-009 | 上传照片也必须执行一次静态位置及 yaw/pitch/roll 分析；无法用裁剪修复时建议重拍 | 固定上传样本能得到与同一捕获帧一致的角度结论，用户仍可手动继续 |
-| GDE-010 | 对实际捕获/上传的静态图执行可解释的曝光剪切与清晰度检查；指标、归一化尺寸和阈值随质量配置版本发布，未获官方依据时只给 `warn/unknown` | 固定欠曝、过曝、运动模糊、失焦和正常许可样本得到稳定分类；无脸/低置信度时不伪造“通过” |
+| GDE-001 | Real-time status covers at least: no face, multiple faces, position/size, yaw, pitch, roll, stable, shootable | Every status has text and graphics, not color alone |
+| GDE-002 | Guidance is expressed in the user's body direction, e.g. "turn your face slightly to your own left", never vague "screen left" | Both mirrored and unmirrored preview tests give the correct direction |
+| GDE-003 | Pose values may be derived from the facial transformation matrix, but matrix layout, axes, and signs must be calibrated with fixed samples | Frontal, left/right turn, up/down tilt, and left/right lean samples all pass |
+| GDE-004 | Initial engineering thresholds: `abs(yaw)≤7°`, `abs(pitch)≤7°`, `abs(roll)≤5°`, stable ≥800 ms; thresholds must be configurable | UI labels them capture heuristics, never official statutory tolerances |
+| GDE-005 | After auto or manual capture of a fixed exact Blob/Bitmap, a static recheck must run again, never using stale results from countdown start or the last preview inference | A person moving during the countdown does not save an old "passed" state; the rechecked object matches the pixels entering the editor |
+| GDE-006 | Model failure, low confidence, or insufficient performance only disables automatic guidance, never blocks manual capture/upload/edit/export | Degraded-path tests without WebGL/WASM/Worker complete the full flow |
+| GDE-007 | Face landmarks, matrices, angles, and analysis frames must not be persisted, uploaded, or written to telemetry | Network, log, IndexedDB/localStorage checks find no such data |
+| GDE-008 | Items the model cannot reliably determine - crown, top of hair, background, glare - must be marked manual confirmation or not checked | The check summary distinguishes `pass/warn/fail/unknown/manual` (manual = template items a machine cannot judge and that need human confirmation) |
+| GDE-009 | Uploaded photos must also get one static position and yaw/pitch/roll analysis; a retake is suggested when cropping cannot fix it | A fixed upload sample yields angle conclusions consistent with the same captured frame, while the user can still continue manually |
+| GDE-010 | Explainable exposure-clip and sharpness checks run on the actual captured/uploaded static image; metrics, normalization size, and thresholds ship with a quality-config version, and only `warn/unknown` without official basis | Fixed underexposed, overexposed, motion-blurred, out-of-focus, and normal licensed samples classify stably; no fabricated "pass" without a face/low confidence |
 
-为防指令抖动，应使用平滑、进入/退出迟滞和状态优先级；状态更新目标为 8–15 FPS，渲染线程不得因推理阻塞编辑控件。
+To prevent guidance flicker, smoothing, enter/exit hysteresis, and state
+priorities should be used; status updates target 8–15 FPS, and the render
+thread must not block editing controls on inference.
 
-`QualityConfig` 至少固定：版本、脸部 ROI/整图回退策略、亮度颜色空间、暗/亮剪切像素阈值与比例、清晰度算子、归一化到 512 px 长边的方式、数值阈值和测试集版本。任何数值为空都不得启用质量提示；首版数值必须由 §12.3 固定样本校准并只触发警告，不能用设备自适应后仍显示不可解释的“通过”。
+`QualityConfig` pins at least: version, face-ROI/whole-image fallback
+strategy, luminance color space, dark/bright clip pixel thresholds and
+ratios, sharpness operator, normalization to a 512 px long edge, numeric
+thresholds, and test-set version. With any value empty, quality hints must
+not be enabled; first-version values must be calibrated on the §12.3 fixed
+samples and trigger only warnings - never an unexplainable "pass" after
+device adaptation.
 
-### 4.5 编辑器
+### 4.5 Editor
 
-| ID | 要求 | 验收摘要 |
+| ID | Requirement | Acceptance summary |
 | --- | --- | --- |
-| EDT-001 | 编辑必须是非破坏性的，只保存变换参数，不反复重采样原图 | 多次修改后只在终态渲染一次 |
-| EDT-002 | 提供拖移、缩放、细微旋转、90° 旋转、水平镜像、撤销、重做和重置 | 鼠标、触屏和键盘路径都能完成 |
-| EDT-003 | 裁剪框锁定模板规定的输出比例；源图必须覆盖整个输出画布 | 不允许透明/空白边缘进入官方模板输出 |
-| EDT-004 | 缩放下限为刚好覆盖裁剪框；上限同时受可用像素质量和交互上限约束 | 低于模板最小像素时显示不可忽略警告 |
-| EDT-005 | 模板政策可禁用或警告镜像、背景处理、修饰和旋转 | 英国纸质模板禁止镜像；前置预览镜像不算用户编辑 |
-| EDT-006 | “旋转照片以纠正脸歪”不得被当作姿态合规修复 | roll 检测基于原脸姿态；旋转只修正扫描/相机画布方向 |
-| EDT-007 | 拖拽和双指手势必须有按钮、滑杆或数值输入替代 | 满足 WCAG 2.2 Dragging Movements 和键盘要求 |
-| EDT-008 | 编辑器必须显示模板蒙版、头顶/下巴或眼线允许区间及其含义 | 自动关键点不可靠时用户仍可人工对齐 |
-| EDT-009 | 终态检查必须检测裁剪区 alpha；官方模板禁止背景处理时拒绝任何透明像素，只有模板明确允许时才可合成到指定 sRGB 背景 | PNG 转 JPEG 不会静默得到黑色或意外底色；合成操作进入变换/检查摘要 |
+| EDT-001 | Editing must be non-destructive, storing only transform parameters without repeatedly resampling the source | Multiple edits render only once at final state |
+| EDT-002 | Drag, zoom, fine rotation, 90° rotation, horizontal mirror, undo, redo, and reset | Mouse, touch, and keyboard paths all complete |
+| EDT-003 | The crop frame locks to the template's mandated output ratio; the source must cover the whole output canvas | No transparent/blank edges into official template output |
+| EDT-004 | The zoom floor is exactly-covering the crop; the ceiling is bounded by available pixel quality and interaction limits | A cannot-be-ignored warning shows below the template's minimum pixels |
+| EDT-005 | Template policy can disable or warn on mirror, background handling, retouch, and rotation | UK paper templates forbid mirroring; front-camera preview mirroring is not user editing |
+| EDT-006 | "Rotating the photo to fix a tilted face" must not be treated as a pose-compliance fix | roll detection is based on the original face pose; rotation only corrects scan/camera canvas orientation |
+| EDT-007 | Drag and two-finger gestures must have button, slider, or numeric-input alternatives | Satisfies WCAG 2.2 Dragging Movements and keyboard requirements |
+| EDT-008 | The editor must show the template mask, head-top/chin or eye-line allowed ranges, and their meaning | Users can still align manually when automatic landmarks are unreliable |
+| EDT-009 | Final checks must detect crop-area alpha; official templates forbidding background handling reject any transparent pixel, and compositing to a specified sRGB background is allowed only when the template explicitly permits it | PNG-to-JPEG never silently yields black or unexpected backgrounds; compositing enters the transform/check summary |
 
-#### 4.5.1 变换模型
+#### 4.5.1 Transform model
 
-标准化源图坐标原点在左上角，终态保存以下参数：
+The normalized source-image coordinate origin is the top-left corner;
+the final state saves the following parameters:
 
 ```ts
 type EditTransform = {
-  translateX: number; // 归一化到输出宽度
-  translateY: number; // 归一化到输出高度
-  scale: number;      // 相对“刚好 cover”的倍率，>= 1
+  translateX: number; // normalized to the output width
+  translateY: number; // normalized to the output height
+  scale: number;      // multiplier relative to "exactly cover", >= 1
   rotationDeg: number;
   flipX: boolean;
 };
 ```
 
-渲染必须以同一仿射矩阵把方向已归一化的源像素映射到输出画布；矩阵约定固定为列向量、CSS 像素中心坐标、按 `cover → scale → flipX → rotation → translation` 组合，采样超出源边界即验证失败。预览和导出共用数学实现。浮点参数不可通过累计修改产生漂移，撤销记录参数快照而非已重采样位图；以金色向量覆盖四角、中心、90° 旋转、镜像和组合变换。
+Rendering must map orientation-normalized source pixels to the output
+canvas with the same affine matrix; the matrix convention is fixed as
+column vectors, CSS-pixel center coordinates, composed as
+`cover → scale → flipX → rotation → translation`, and sampling beyond the
+source boundary fails validation. Preview and export share the math
+implementation. Floating-point parameters must not drift through
+accumulated edits; undo records parameter snapshots, never resampled
+bitmaps; golden vectors cover the four corners, center, 90° rotation,
+mirror, and combined transforms.
 
-### 4.6 终态检查与导出
+### 4.6 Final checks and export
 
-| ID | 要求 | 验收摘要 |
+| ID | Requirement | Acceptance summary |
 | --- | --- | --- |
-| OUT-001 | 单次生成不可变 `FinalArtifact`，其中含 sRGB JPEG `blob` 及内存内 render manifest；导出使用该 Blob，暂存上传同一 Blob | 两个分支的上传/下载输入字节相同；服务器安全重编码后的取回图允许字节不同，但像素尺寸、方向和构图必须语义等价 |
-| OUT-002 | 精确像素模板必须输出完全相同的宽、高、格式、颜色空间和文件大小约束 | 芬兰 500×653 和美国 DV 600×600 不允许 1 px 偏差 |
-| OUT-003 | 有最大文件大小的 JPEG 使用有界质量搜索；不可为凑大小而改变规定像素 | 无法满足时清晰报错并建议更换源图，不输出违规文件 |
-| OUT-004 | 输出必须去除 EXIF/GPS/嵌入缩略图和未知 metadata，方向写入实际像素 | 元数据扫描和旋转回归测试通过 |
-| OUT-005 | MVP 的 `FinalArtifact.blob`、本地导出和服务器暂存统一为 JPEG/sRGB；其他输出格式属于后续能力 | 美国签证数字满足 JPEG、24-bit sRGB；Save API 与导出 MIME 不冲突 |
-| OUT-006 | 物理尺寸模板若宣称“可按实际尺寸打印”，必须用锁定版本的确定性编码器写入正确 PPI，像素按 `round(mm / 25.4 * ppi)` 生成，并通过校准打印；否则只能标为参考图 | 原生 Canvas `toBlob` 常写 96 dpi；编码后重新解析尺寸、色彩和密度元数据，未通过不得标为 print-ready |
-| OUT-009 | `ranged_pixels` 模板可由用户选择输出尺寸；候选值必须落在模板 min/max 范围、符合宽高比，存在 `allowedSizes` 时严格用它；选择贯穿编辑器画布、终态渲染、检查摘要与服务端校验 | us-visa-digital 默认 600×600、可选 1200×1200；服务端对越界/破比例尺寸返回 `PHOTO_SIZE_MISMATCH`，对落在范围内但超体积的成品走 OUT-003 搜索，下界仍超限才 `PHOTO_TOO_LARGE` |
-| OUT-007 | 终态页必须显示输出像素、物理尺寸（若有）、格式、字节数、模板版本、警告及未检查项 | 下载前无需阅读隐藏说明即可看到关键风险 |
-| OUT-008 | 输出文件名不得包含姓名或 KEY，建议 `{country}-{document}-{channel}-{yyyyMMdd}.jpg` | 文件名不暴露人像身份或访问凭证 |
+| OUT-001 | One render produces an immutable `FinalArtifact` with an sRGB JPEG `blob` and an in-memory render manifest; export uses that Blob and staging uploads the same Blob | The two branches' upload/download input bytes are identical; after secure server re-encoding the retrieved image may differ in bytes, but pixel size, orientation, and composition must be semantically equivalent |
+| OUT-002 | Exact-pixel templates must output exactly the same width, height, format, color space, and file-size constraints | Finland 500×653 and US DV 600×600 tolerate no 1 px deviation |
+| OUT-003 | JPEGs with a max file size use bounded quality search; mandated pixels must never change to fit the size | Unsatisfiable cases error clearly with a source-image suggestion, never an out-of-spec file |
+| OUT-004 | Output must strip EXIF/GPS/embedded thumbnails and unknown metadata, with orientation written into actual pixels | Metadata-scan and rotation regression tests pass |
+| OUT-005 | MVP `FinalArtifact.blob`, local export, and server staging are unified as JPEG/sRGB; other output formats are later capabilities | US visa digital satisfies JPEG, 24-bit sRGB; Save API and export MIME do not conflict |
+| OUT-006 | A physical-size template claiming "printable at actual size" must write the correct PPI with a locked-version deterministic encoder, generate pixels by `round(mm / 25.4 * ppi)`, and pass calibrated printing; otherwise it may only be labeled a reference image | Native Canvas `toBlob` often writes 96 dpi; size, color, and density metadata are re-parsed after encoding, and without passing it must not be marked print-ready |
+| OUT-009 | `ranged_pixels` templates let the user choose the output size; candidates must fall inside the template min/max and match the aspect, strictly using `allowedSizes` when present; the choice flows through editor canvas, final render, check summary, and server validation | us-visa-digital defaults to 600×600 with 1200×1200 optional; the server returns `PHOTO_SIZE_MISMATCH` for out-of-range/broken-aspect sizes, runs OUT-003 search for in-range-but-oversized artifacts, and only `PHOTO_TOO_LARGE` when the floor is still exceeded |
+| OUT-007 | The final page must show output pixels, physical size (if any), format, byte count, template version, warnings, and unchecked items | Key risks are visible before download without reading hidden notes |
+| OUT-008 | Output filenames must not contain names or KEYs; recommended `{country}-{document}-{channel}-{yyyyMMdd}.jpg` | Filenames expose no portrait identity or access credentials |
 
 ```ts
 interface FinalArtifact {
-  artifactId: string; // 每次重新渲染生成的浏览器会话内随机 ID
-  blob: Blob;         // image/jpeg，创建后不可变
+  artifactId: string; // random in-session ID generated per re-render
+  blob: Blob;         // image/jpeg, immutable after creation
   manifest: {
     schemaVersion: 1;
     templateId: string;
@@ -228,28 +323,33 @@ interface FinalArtifact {
 }
 ```
 
-manifest 只存在于浏览器内存，用于预览一致性、失效判断和 E2E 测试；MVP 不上传或持久化 manifest、源图摘要、变换摘要或普通内容哈希。服务端只按固定模板版本验证上传成品可观察到的尺寸、编码、方向和文件限制，不把客户端声明当证明。
+The manifest exists only in browser memory for preview consistency,
+invalidity determination, and E2E tests; the MVP never uploads or persists
+the manifest, source digests, transform digests, or plain content hashes.
+The server validates only the uploaded artifact's observable size, encoding,
+orientation, and file limits against the pinned template version, never
+accepting client claims as proof.
 
-### 4.7 暂存、KEY 与取回
+### 4.7 Staging, KEY, and retrieval
 
-| ID | 要求 | 验收摘要 |
+| ID | Requirement | Acceptance summary |
 | --- | --- | --- |
-| SAV-001 | 选择暂存前必须显示会上传终态照片、保存目的、权威留存时长和预计到期时间并取得明确确认；保存成功后显示服务端 `expiresAt` | 仅导出流程不会触发该确认或网络上传；客户端不宣称在创建前知道精确绝对到期时间 |
-| SAV-002 | 服务端必须对终态文件实际解码、限制资源并重新编码；只信任客户端字段是不允许的 | 伪 MIME、脚本、多格式混淆、超大像素和截断文件被拒绝 |
-| SAV-003 | KEY 使用 CSPRNG 从固定字符集 `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789` 无模偏差生成，数据库唯一；每个位置独立取值，不强制字母/数字配比，碰撞时重采样 | 可注入 RNG 的边界向量证明拒绝采样正确；全字母、全数字及任意混合结果都有效；并发生成不产生重复映射，随机性统计仅作离线健康检查 |
-| SAV-004 | KEY 按字符串处理；输入去空格/ASCII 连字符并把 ASCII 字母转为大写，随后必须匹配 `^[A-Z0-9]{6}$`；显示可分组为 `A7C 2F9`，规范值为 `A7C2F9` | 保留开头的 `0`；手机复制、粘贴、手输和小写均能正确归一化；非 ASCII 字符和相似字形不被静默映射 |
-| SAV-005 | KEY 不能复用；单一 Key Registry 在照片删除后保留不含人物信息的 keyed-HMAC 登记项 | 旧 KEY 永远不会在未来显示另一人的照片；分配与建图在一个事务内完成 |
-| SAV-006 | 保存同时生成独立 ≥128 比特删除密钥；`key_plus_claim` 模式另生成 ≥128 比特访问密钥 | 数据库只保存版本化校验摘要；原密钥只在同一匿名会话可访问、最长 10 分钟的加密幂等响应窗口内可重放 |
-| SAV-007 | 取回使用 POST body/安全 cookie，不把 KEY 或长期 secret 放进 URL/query | 代理、浏览器历史、referrer 和默认日志不含凭证 |
-| SAV-008 | 无效、过期、已删除和未授权返回相同对外状态/文案，并采用近似处理时间 | 自动化差异测试在预设容差内 |
-| SAV-009 | 验证成功后只签发短时、单用途下载能力；下载响应 `Cache-Control:no-store` | 能力过期或使用后不可重放 |
-| SAV-010 | 用户只能凭创建时取得的独立删除密钥立即撤销照片；仅当当前浏览器仍持有删除密钥时显示删除入口 | 单凭 KEY、访问密钥或下载会话不能删除；删除后所有下载能力失效 |
-| SAV-011 | 到期时同步禁止读取；分钟级生命周期任务在 60 分钟内删除主对象的所有版本、主复制件和临时文件 | 持续监控 purge backlog 和最老年龄并在 SLO 前告警；每日 canary 仅作补充验证 |
-| SAV-012 | 同一匿名保存会话、同一 ≥128 比特 `Idempotency-Key` 和同一请求摘要必须返回同一个保存记录与 KEY | 重试不生成第二个 KEY；相同幂等键配不同 payload 返回 409；独立保存可生成不同 KEY |
+| SAV-001 | Before choosing to stage, the upload of the final photo, save purpose, authoritative retention, and expected expiry must be shown with explicit confirmation; after a successful save the server `expiresAt` is shown | An export-only flow never triggers the confirmation or network upload; the client never claims to know the precise absolute expiry before creation |
+| SAV-002 | The server must actually decode, bound resources, and re-encode the final file; trusting client fields alone is not allowed | Fake MIME, scripts, polyglots, oversized pixels, and truncated files are rejected |
+| SAV-003 | KEYs are generated with a CSPRNG from the fixed charset `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789` without modulo bias and are unique in the database; each position is drawn independently with no letter/digit quota, resampling on collision | Injectable-RNG boundary vectors prove rejection sampling; all-letter, all-digit, and any mixed results are valid; concurrent generation produces no duplicate mappings; randomness statistics are only an offline health check |
+| SAV-004 | KEYs are handled as strings; input strips spaces/ASCII hyphens and uppercases ASCII letters, then must match `^[A-Z0-9]{6}$`; display may group as `A7C 2F9` with the canonical value `A7C2F9` | Leading `0`s are kept; phone copy, paste, manual entry, and lowercase all normalize correctly; non-ASCII characters and similar glyphs are never silently mapped |
+| SAV-005 | KEYs are never reused; a single Key Registry keeps personal-information-free keyed-HMAC entries after photo deletion | An old KEY never shows another person's photo in the future; allocation and mapping happen in one transaction |
+| SAV-006 | A save simultaneously generates a separate ≥128-bit delete secret; `key_plus_claim` additionally generates a ≥128-bit access secret | The database stores only versioned verification digests; the raw secrets are replayable only within the same anonymous session's encrypted idempotency-response window of at most 10 minutes |
+| SAV-007 | Retrieval uses POST bodies/secure cookies, never putting KEYs or long-lived secrets in URLs/query | Proxies, browser history, referrer, and default logs contain no credentials |
+| SAV-008 | Invalid, expired, deleted, and unauthorized return the same external status/copy with similar processing time | Automated differential tests stay within preset tolerance |
+| SAV-009 | After successful verification, only a short-lived, single-use download capability is issued; download responses carry `Cache-Control:no-store` | The capability is not replayable after expiry or use |
+| SAV-010 | A user can revoke a photo immediately only with the separate delete secret obtained at creation; the delete entry shows only while the current browser still holds the delete secret | KEYs, access secrets, or download sessions alone cannot delete; all download capabilities die after deletion |
+| SAV-011 | At expiry, reads are synchronously denied; minute-level lifecycle tasks delete all versions, primary copies, and temporary files of the primary object within 60 minutes | The purge backlog and oldest age are continuously monitored and alerted before the SLO; the daily canary is supplementary verification only |
+| SAV-012 | The same anonymous save session, the same ≥128-bit `Idempotency-Key`, and the same request digest must return the same save record and KEY | Retries do not create a second KEY; the same idempotency key with a different payload returns 409; independent saves may produce different KEYs |
 
-## 5. 模板数据模型
+## 5. Template data model
 
-### 5.1 最小模式
+### 5.1 Minimal schema
 
 ```ts
 type RuleEnforcement = "mandatory" | "recommended";
@@ -369,7 +469,7 @@ interface CaptureRule {
 }
 
 interface TemplateRevision {
-  revisionId: string;          // 全局唯一，建议 `${id}@${version}`
+  revisionId: string;          // globally unique; suggested `${id}@${version}`
   id: string;
   version: number;
   schemaVersion: number;
@@ -442,87 +542,165 @@ interface TemplatePublication {
 }
 ```
 
-`TemplateRevision` 内容不可变，`revisionId` 全局唯一；`TemplatePublication` 通过 `revisionId + contentHash` 精确引用 revision，且只有发布状态可变。紧急停用只更新 publication，不改写历史规则。模板 `id` 必须编码 `jurisdiction + documentType + submissionChannel + applicantClass`；使领馆/受理地会改变规则时还必须编码 `applicationPost`，签证规则受国籍、居住地或目的影响时继续扩展相应维度。服务端用版本化 JSON Schema 拒绝模式组合错误。
+`TemplateRevision` content is immutable and `revisionId` is globally
+unique; `TemplatePublication` references the revision precisely via
+`revisionId + contentHash`, with only the publication status mutable.
+Emergency takedown updates only the publication and never rewrites
+historical rules. A template `id` must encode `jurisdiction +
+documentType + submissionChannel + applicantClass`; when a mission/
+accepting post changes rules, `applicationPost` must also be encoded, and
+visa rules affected by nationality, residence, or purpose extend the
+corresponding dimensions further. The server rejects schema-combination
+errors with versioned JSON Schemas.
 
-所有尺寸统一按 **宽×高** 书写。`active` 模板不得使用 `portal_source` 或 `guidance_only`，必须具有 `outputFile` 且只能生成 MVP 支持的 JPEG；前者仅描述供官方门户自行裁剪的输入，后者仅做规则选择引导，两者都保持 `reference_only`。规则的 `enforcement` 与证据 `provenance` 分开；所有推导比例、PPI 换算像素等标为 `derived`，不可冒充官方原文。来源只写 `KB/K/MB` 而未说明十/二进制时，必须保留 `sizeLimit.sourceLiteral`；`active` 模板须经门户实测或采用有记录且更保守的字节阈值，`unresolved` 不得激活。每个规则用 `sourceRefs` 指向具体来源，蒙版只能引用有明确锚点、轴向、单位兼容坐标系和边界语义的规则。
+All sizes are written uniformly as **width×height**. `active` templates
+must not use `portal_source` or `guidance_only`, must have `outputFile`,
+and may only produce the MVP-supported JPEG; the former describes only
+input for an official portal to crop itself, the latter only guides rule
+selection, and both stay `reference_only`. A rule's `enforcement` is
+separate from its evidence `provenance`; all derived ratios, PPI-converted
+pixels, and the like are marked `derived` and must not pose as official
+source text. When a source states `KB/K/MB` without declaring decimal or
+binary, `sizeLimit.sourceLiteral` must be kept; `active` templates need
+portal-measured or recorded-more-conservative byte thresholds, and
+`unresolved` must never activate. Every rule points to concrete sources via
+`sourceRefs`, and masks may only reference rules with clear anchors, axes,
+unit-compatible coordinate spaces, and boundary semantics.
 
-### 5.2 首批模板候选
+### 5.2 Initial template candidates
 
-下表是截至 2026-08-05 的调研种子，不等同于全部上线；证件模板在发布为 `active` 前仍需由内容维护人复核官方页面，通用肖像则复核项目内部规格和测试档案。
+The table below is the research seed as of 2026-08-05 and is not the
+entire launch set; document templates still need content-maintainer review
+of the official pages before becoming `active`, while the generic portrait
+is reviewed against the project-internal spec and test archive.
 
-| 模板 ID（建议） | 画布/文件 | 构图 | 发布政策 |
+| Template ID (suggested) | Canvas/file | Composition | Publication policy |
 | --- | --- | --- | --- |
-| `generic-portrait-square` | 恰好 1200×1200 px JPEG；非官方模板 | 用户自由构图 | 允许镜像；必须醒目标为“通用肖像、非证件合规模板” |
-| `us-passport-paper` | 2×2 in（50.8×50.8 mm，官方常近似写 51×51 mm）；产品选择 300 ppi 时恰好 600×600 px | 下巴至头顶 25–35 mm；锚点保留官方 `top of head` 原文，不擅自解释为 crown/hair | 可由朋友或家人拍摄；不得声称手持自拍或单人自动快门获官方认可；禁止 AI、换背景、滤镜或改变外貌；300 ppi 为 `derived`，须校准打印 |
-| `us-passport-online-source` | JPG/JPEG/PNG/HEIC/HEIF；54 KB–10 MB；无固定公开像素/比例 | 头肩原始数码照，由官方门户裁剪 | `reference_only/portal_source`；不可套纸质方形模板 |
-| `us-visa-paper` | 51×51 mm | 下巴至含头发顶部 25–35 mm；眼线距底 28–35 mm | `reference_only`，必须按 visa form/category 与受理馆确认，不作为无上下文通用成品 |
-| `us-visa-digital` | 600–1200 px 正方形；默认 600×600；JPEG、24-bit sRGB、≤240 KB、压缩比≤20:1 | 下巴至含头发顶部占图高 50%–69%；眼线距底 56%–69% | 仅覆盖适用的 DS-160/DS-1648 数字上传；不覆盖 DS-260、DV 或馆站特殊要求；active 阈值用≤240,000 bytes `conservative_derived`，门户验证后可更新 |
-| `us-dv-digital-{program-year}` | 恰好 600×600 px；JPEG、≤240 KB | 下巴至含头发顶部占图高 50%–69%；眼线距底 56%–69% | 仅在具体项目年度说明和适用申请窗口已正式发布时激活；≤240,000 bytes 先作 `conservative_derived`，不与普通签证范围模板合并 |
-| `uk-passport-paper` | 35×45 mm | 下巴至解剖学头顶 crown 29–34 mm | `reference_only`；官方要求不得从较大图片裁切且不得经软件修改；近 1 个月、专业品质打印；镜像通常会被质疑/拒绝，审查员确认真实外观后可能有例外 |
-| `uk-passport-online-source` | 最小 600×750 px；50 KB–10 MB；无固定公开比例 | 保留头、肩、上半身 | `reference_only/portal_source`；官方要求不要预裁剪 |
-| `ca-passport-paper` | 50×70 mm | 下巴至解剖学头顶 crown 31–36 mm | `reference_only`；必须商业摄影师、专业打印且不得修改 |
-| `ca-passport-online` | 1200×1800 至 3000×4500 px；宽高比 2:3（来源文字为 3:2 portrait）；JPEG；200 KB–5 MB | 头高 45%–50% | `reference_only`；仅符合条件的在线续签，必须是商业摄影师直接保存的原始相机文件；彩色或黑白均可，禁止裁剪、明暗/对比度/锐化、换背景等修改 |
-| `fi-police-paper` | 36×47 mm；彩色或黑白 | 不含头发/胡须的冠点至下巴尖 32–36 mm；冠点至上边 4–6 mm；下巴尖至下边 7–9 mm；面部中心线偏离照片中心线≤1.5 mm | 纸照只在警方服务点提交；禁止改变外貌细节或引发真实性疑问的处理；不能复用为要求彩色的芬兰签证模板 |
-| `fi-police-digital` | 恰好 500×653 px；JPEG；来源原文≤250 KB；active 阈值≤250,000 bytes `conservative_derived`；sRGB 若采用须标为推导 | 冠点至下巴尖 445–500 px；冠点至上边 56–84 px；下巴尖至下边 96–124 px；面部中心线偏离照片中心线≤21 px | 用户可自行上传警方 photo server 或走摄影棚流程，但本产品不能代传，也不混淆两种 KEY；禁止改变外貌细节或引发真实性疑问的处理 |
-| `cn-passport-paper-{post}` | 候选来源为 33×48 mm | 候选来源头宽 15–22 mm；头高 28–33 mm；上 3–5 mm；下≥7 mm | `reference_only`，必须绑定具体驻外馆/签发地和来源版本；不得称为中国全局规则 |
-| `cn-visa-paper-{post}` | 候选来源为 33×48 mm | 馆站间存在头宽等差异 | `reference_only`；绑定受理馆、国籍/居住地和签证目的后才可激活 |
-| `cn-visa-digital-{post}` | 来源允许 354×472 至 420×560 px；首个 active revision 固定 354×472；JPEG、24-bit RGB；“一般 40K–120K 字节”不是无条件硬阈值 | 仅对 354×472：脸宽 191–219 px、发际至上边 10–70 px、眼线距下边≥256 px、瞳距>60 px；正脸目标 0°，来源最大偏航≤20°、俯仰≤25°不能当目标 | 尺寸特定规则必须写 `appliesToOutputSize`；3:4 为端点推导；绑定馆站/来源版本并用实际门户验证后才激活 |
-| `jp-passport-paper` | 35×45 mm；产品选择 300 ppi 时 413×531 px | 头高 34±2 mm；上 4±2 mm；下 7±2 mm；水平中心 17±2 mm；脸部至左右边缘各≥2 mm | 无图案/阴影背景，白色推荐；近 6 个月；禁止水平镜像和改变本人形象的修饰；300 ppi 为 `derived`，须校准打印 |
-| `jp-passport-online-domestic-source` | JPG ≤600 KB；无公开固定像素 | 仍须护照构图 | `reference_only/portal_source`；不得与国外渠道合并 |
-| `jp-passport-online-overseas-source` | JPG/JPEG/BMP/PNG，20 KB–2 MB；无公开固定像素 | 仍须护照构图 | `reference_only/portal_source`；不得硬编码第三方像素 |
-| `jp-visa-paper-{post}` | 中央表列 35×45 mm（宽×高），另列 1.4×2 in，两者并不等值 | 中央表格无统一头高 | `reference_only`；必须按国籍、居住地、目的和受理馆复核，不得选一个尺寸冒充中央唯一规则 |
-| `in-passport-overseas-digital` | 630×810 px、彩色、≤250 KB；7:9 为推导 | 脸占 80%–85% | `reference_only`；驻外 Passport Seva 要求白底且不得软件修改，本应用重编码文件不能宣称适用 |
-| `in-regular-visa-digital` | 旧上传指南 PDF 列 350×350 至 1000×1000 px 正方形、JPEG、10–300 KB；当前 HTML 未列像素范围 | HTML 以实体尺度表达头高 25–35 mm，缺少数字图 PPI，不能直接换算像素 | `reference_only`；像素范围标为 `legacy_pdf_only/unverified`，实测当前门户前不作为强制规则，构图保持 unresolved |
-| `in-evisa-digital` | 正方形；JPEG、10 KB–1 MB；当前页无固定像素 | 头居中、完整头部、正面、睁眼 | 白/浅色无阴影背景、无边框、不戴眼镜；与 regular visa 分开 |
-| `schengen-short-stay-selector` | Schengen 中央层面没有单一固定 W×H 画布；共同指引为宽 35–40 mm | 近 6 个月、脸占高度 70%–80%；具体由受理国/馆站决定 | `reference_only/guidance_only` 选择入口；不是裁剪门户，不能输出“通用 Schengen 成品” |
+| `generic-portrait-square` | exactly 1200×1200 px JPEG; unofficial template | Free composition by the user | Mirror allowed; must be prominently labeled "generic portrait, non-document-compliance template" |
+| `us-passport-paper` | 2×2 in (50.8×50.8 mm; official pages often approximate 51×51 mm); exactly 600×600 px at the product's chosen 300 ppi | chin to top of head 25–35 mm; the anchor keeps the official `top of head` wording, not reinterpreted as crown/hair | May be taken by a friend or family member; handheld selfies or single-person auto-shutter shots must not be claimed as officially endorsed; AI, background replacement, filters, or appearance alteration forbidden; 300 ppi is `derived`, must pass calibrated printing |
+| `us-passport-online-source` | JPG/JPEG/PNG/HEIC/HEIF; 54 KB–10 MB; no fixed public pixels/ratio | original head-and-shoulders digital photo, cropped by the official portal | `reference_only/portal_source`; must not be fitted with the paper square template |
+| `us-visa-paper` | 51×51 mm | chin to top of head including hair 25–35 mm; eye line 28–35 mm from the bottom | `reference_only`; must be confirmed per visa form/category and accepting post, never a context-free generic artifact |
+| `us-visa-digital` | 600–1200 px square; default 600×600; JPEG, 24-bit sRGB, ≤240 KB, compression ratio ≤20:1 | chin to top of head including hair 50%–69% of image height; eye line 56%–69% from the bottom | Covers only the applicable DS-160/DS-1648 digital uploads; does not cover DS-260, DV, or mission-specific requirements; the active threshold uses ≤240,000 bytes `conservative_derived`, updatable after portal verification |
+| `us-dv-digital-{program-year}` | exactly 600×600 px; JPEG, ≤240 KB | chin to top of head including hair 50%–69% of image height; eye line 56%–69% from the bottom | Activates only when the specific program-year instructions and applicable application window are formally published; ≤240,000 bytes starts as `conservative_derived` and is not merged with the ordinary visa-scope template |
+| `uk-passport-paper` | 35×45 mm | chin to the anatomical crown 29–34 mm | `reference_only`; official rules forbid cropping from a larger image and software modification; within the last month, professional-quality printing; mirroring is usually challenged/rejected, with possible exceptions after a reviewer confirms the true appearance |
+| `uk-passport-online-source` | min 600×750 px; 50 KB–10 MB; no fixed public ratio | keep head, shoulders, upper body | `reference_only/portal_source`; official rules say do not pre-crop |
+| `ca-passport-paper` | 50×70 mm | chin to the anatomical crown 31–36 mm | `reference_only`; must be a commercial photographer, professional printing, no modification |
+| `ca-passport-online` | 1200×1800 to 3000×4500 px; aspect 2:3 (source text says 3:2 portrait); JPEG; 200 KB–5 MB | head height 45%–50% | `reference_only`; only eligible online renewals, must be the original camera file saved directly by the commercial photographer; colour or black and white, with cropping, brightness/contrast/sharpening, and background-replacement modification forbidden |
+| `fi-police-paper` | 36×47 mm; colour or black and white | crown point without hair/beard to chin tip 32–36 mm; crown point to top edge 4–6 mm; chin tip to bottom edge 7–9 mm; face centre line deviates from the photo centre line ≤1.5 mm | Paper photos are submitted only at police service points; processing that changes appearance details or raises authenticity doubts is forbidden; must not be reused as the colour-requiring Finnish visa template |
+| `fi-police-digital` | exactly 500×653 px; JPEG; source text ≤250 KB; active threshold ≤250,000 bytes `conservative_derived`; sRGB, if adopted, must be marked derived | crown point to chin tip 445–500 px; crown point to top edge 56–84 px; chin tip to bottom edge 96–124 px; face centre line deviates from the photo centre line ≤21 px | Users may upload to the police photo server themselves or use a studio flow, but this product cannot submit on their behalf and does not conflate the two KEY types; processing that changes appearance details or raises authenticity doubts is forbidden |
+| `cn-passport-paper-{post}` | candidate source 33×48 mm | candidate-source face width 15–22 mm; head height 28–33 mm; top 3–5 mm; bottom ≥7 mm | `reference_only`; must bind the concrete overseas mission/issuing post and source version; must not be called a China-wide rule |
+| `cn-visa-paper-{post}` | candidate source 33×48 mm | head-width and other differences exist between missions | `reference_only`; may activate only after binding the accepting post, nationality/residence, and visa purpose |
+| `cn-visa-digital-{post}` | source allows 354×472 to 420×560 px; the first active revision is pinned at 354×472; JPEG, 24-bit RGB; "generally 40K–120K bytes" is not an unconditional hard threshold | 354×472 only: face width 191–219 px, hairline to top edge 10–70 px, eye line ≥256 px from the bottom, interpupillary distance >60 px; front-facing target 0°, the source's max yaw ≤20° and pitch ≤25° are ceilings, not targets | Size-specific rules must write `appliesToOutputSize`; 3:4 is derived from the endpoints; activates only after binding the mission/source version and verifying against the actual portal |
+| `jp-passport-paper` | 35×45 mm; 413×531 px at the product's chosen 300 ppi | head height 34±2 mm; top 4±2 mm; bottom 7±2 mm; horizontal centre 17±2 mm; ≥2 mm from the face to each side edge | plain background without patterns/shadows, white recommended; within the last 6 months; horizontal mirroring and appearance-altering retouching forbidden; 300 ppi is `derived`, must pass calibrated printing |
+| `jp-passport-online-domestic-source` | JPG ≤600 KB; no public fixed pixels | passport composition still required | `reference_only/portal_source`; must not merge with the overseas channel |
+| `jp-passport-online-overseas-source` | JPG/JPEG/BMP/PNG, 20 KB–2 MB; no public fixed pixels | passport composition still required | `reference_only/portal_source`; third-party pixels must not be hard-coded |
+| `jp-visa-paper-{post}` | central table lists 35×45 mm (width×height) and separately 1.4×2 in; the two are not equivalent | the central table has no uniform head height | `reference_only`; must be reviewed per nationality, residence, purpose, and accepting post; no single size may pose as the central unique rule |
+| `in-passport-overseas-digital` | 630×810 px, colour, ≤250 KB; 7:9 is derived | face 80%–85% | `reference_only`; overseas Passport Seva requires a white background and no software modification, so this app's re-encoded files cannot claim applicability |
+| `in-regular-visa-digital` | the old upload-guide PDF lists 350×350 to 1000×1000 px squares, JPEG, 10–300 KB; the current HTML lists no pixel range | the HTML expresses head height 25–35 mm physically, with no digital-image PPI to convert pixels directly | `reference_only`; the pixel range is marked `legacy_pdf_only/unverified`, not a mandatory rule until the current portal is measured, with composition staying unresolved |
+| `in-evisa-digital` | square; JPEG, 10 KB–1 MB; the current page has no fixed pixels | head centred, full head, facing forward, eyes open | white/light plain background without shadows, no borders, no glasses; separate from the regular visa |
+| `schengen-short-stay-selector` | the Schengen central level has no single fixed W×H canvas; the common guidance is 35–40 mm wide | within the last 6 months, face 70%–80% of the height; specifics decided by the accepting country/mission | `reference_only/guidance_only` selection entry; not a crop portal and must not output a "generic Schengen artifact" |
 
-Public Beta 的硬最低 release manifest 为：`generic-portrait-square`、成人 `us-passport-paper`、成人 `us-visa-digital`、成人 `fi-police-digital`、经具体馆站复核的成人 `cn-visa-digital-{post}`、成人 `jp-passport-paper`。表中 ID 是模板族名，实际 `id/revisionId` 必须编码 `applicantClass`；儿童/婴儿在单独复核和测试前保持参考状态。DV 只有在具体项目年度及申请窗口已正式发布时才加入当期 manifest，不是无条件发布门槛。美国与日本纸质模板只有在表中 PPI/像素编码与校准打印通过后才可成为 `active`；英国、加拿大及 Schengen 保持参考/引导。任何硬最低项失败都会阻止 Public Beta；缩小集合属于明确产品变更，必须同步修改 PRODUCT、SPEC 和 release manifest，不能在发布评审中静默豁免。
+The Public Beta hard-minimum release manifest is: `generic-portrait-square`,
+adult `us-passport-paper`, adult `us-visa-digital`, adult
+`fi-police-digital`, adult `cn-visa-digital-{post}` reviewed for the
+concrete mission, and adult `jp-passport-paper`. The table IDs are template
+family names; the actual `id/revisionId` must encode `applicantClass`;
+child/infant stays reference until separately reviewed and tested. DV joins
+the current manifest only when the specific program year and application
+window are formally published - not an unconditional gate. US and Japan
+paper templates may become `active` only after the table's PPI/pixel
+encoding and calibrated printing pass; UK, Canada, and Schengen stay
+reference/guidance. Any hard-minimum failure blocks Public Beta; shrinking
+the set is an explicit product change that must update PRODUCT, SPEC, and
+the release manifest together, never silently waived at release review.
 
-### 5.3 模板治理
+### 5.3 Template governance
 
-- 每个 `active` 证件模板必须有一名内容维护人和至少一个政府/国际组织官方来源。`documentType:"portrait"` 的非官方通用模板可用版本化项目规格、负责人和测试档案替代，但必须永久显示“非证件模板”，且不继承任何官方合规文案。
-- 自动链接检查失败、`validUntil` 到期或超过复核 SLA 时，必须更新 `TemplatePublication` 为 `reference_only` 或更严格状态，不得改写 `TemplateRevision` 或继续静默发布。
-- 复核 SLA 建议为每 90 天；高变动渠道可更短。
-- 规则变更不得覆写旧版本；服务器暂存记录必须能解释它使用的历史版本。
-- 模板响应缓存必须有最大 TTL、ETag 强制重验证和紧急停用信号；导出/暂存前重新确认所固定版本未被安全或规则原因撤销。
-- 需要记录官方页面内部矛盾。例如截至复核日，美国部分总览仍把 1 inch 写成 22 mm，而官方构图页与数学换算为 25 mm；模板采用 25–35 mm，并在 `sourceNotes` 留痕。
+- Every `active` document template must have one content maintainer and
+  at least one official government/international-organization source.
+  Unofficial generic templates with `documentType:"portrait"` may use a
+  versioned project-internal spec, owner, and test archive instead, but
+  must permanently display "non-document template" and inherit no official
+  compliance wording.
+- When automated link checks fail, `validUntil` expires, or the review SLA
+  is exceeded, `TemplatePublication` must be updated to `reference_only` or
+  stricter - never rewriting `TemplateRevision` or continuing silent
+  publication.
+- The review SLA is suggested at every 90 days; high-volatility channels
+  may be shorter.
+- Rule changes must not overwrite old versions; server staging records must
+  be able to explain which historical version they used.
+- Template response caching must have a max TTL, mandatory ETag
+  revalidation, and an emergency-takedown signal; before export/staging,
+  re-confirm the pinned version was not revoked for security or rule
+  reasons.
+- Internal contradictions in official pages must be recorded. For example,
+  as of the review date some US overview pages still write 1 inch as
+  22 mm while the official composition page and the math give 25 mm; the
+  template uses 25–35 mm and leaves a trace in `sourceNotes`.
 
-## 6. API 契约草案
+## 6. Draft API contract
 
-所有端点使用 HTTPS，默认 `Content-Type: application/json`；图片上传使用 `multipart/form-data`。错误 `requestId` 可记录，凭证和照片内容不可记录。保存、解析、下载、删除及其成功/错误响应都必须发送 `Cache-Control: no-store, private`，并禁止 CDN、反向代理和 Service Worker 缓存。
+All endpoints use HTTPS with a default `Content-Type:
+application/json`; image uploads use `multipart/form-data`. Error
+`requestId`s may be logged; credentials and photo content may not. Save,
+resolve, download, delete, and their success/error responses must all send
+`Cache-Control: no-store, private`, and CDN, reverse-proxy, and Service
+Worker caching is forbidden.
 
-### 6.0 获取当前服务政策
+### 6.0 Fetch the current service policy
 
 ```http
 GET /api/v1/service-policy
 ```
 
-响应包含已确认的 `temporaryStorageTtlSeconds`（30 天，见 §1.2.1）、当前 `retrievalMode`（`key_only_ephemeral`）、最大上传限制和政策版本。暂存确认页据此显示预计到期时间；保存成功响应的 `expiresAt` 才是权威时间。客户端不得提交或延长留存时长。
+The response includes the confirmed `temporaryStorageTtlSeconds` (30 days;
+see §1.2.1), the current `retrievalMode` (`key_only_ephemeral`), the max
+upload limit, and the policy version. The staging confirmation page shows
+the expected expiry from it; the `expiresAt` in a successful save response
+is the authoritative time. Clients must not submit or extend retention.
 
-保存确认后、上传前先建立可恢复的匿名会话：
+After save confirmation and before upload, an anonymous recoverable
+session is created first:
 
 ```http
 POST /api/v1/save-sessions
 ```
 
-成功返回 `204` 并设置至少 128 比特随机 Cookie：`Secure; HttpOnly; SameSite=Strict; Path=/api/v1/saves; Max-Age=600`。客户端拿到该响应后才生成 `Idempotency-Key` 并上传；这样即使保存响应丢失，后续重试仍持有原会话。会话端点校验 Origin/Fetch Metadata，不接受 URL 中的会话标识，也不记录 Cookie 或幂等键。
+Success returns `204` and sets a random Cookie of at least 128 bits:
+`Secure; HttpOnly; SameSite=Strict; Path=/api/v1/saves; Max-Age=600`. Only
+after receiving this response does the client generate the
+`Idempotency-Key` and upload, so even if the save response is lost,
+subsequent retries still hold the original session. The session endpoint
+checks Origin/Fetch Metadata, accepts no session identifier in URLs, and
+logs neither cookies nor idempotency keys.
 
-### 6.1 获取模板
+### 6.1 Fetch templates
 
 ```http
 GET /api/v1/templates?jurisdiction=FI&documentType=passport&channel=digital_upload&applicantClass=adult
 If-None-Match: "catalog-version"
 ```
 
-`applicantClass=adult` 先匹配精确类别，再允许 `all` 作为没有类别差异时的回退，重复或矛盾结果是内容发布错误。目录响应包含 schema/catalog 版本、`TemplateRevision`、`TemplatePublication` 和来源并支持 `ETag`。固定版本另有精确端点：
+`applicantClass=adult` first matches the exact class, then allows `all`
+as the fallback when no class difference exists; duplicate or
+contradictory results are content-publishing errors. The catalog response
+includes the schema/catalog version, `TemplateRevision`,
+`TemplatePublication`, and sources, and supports `ETag`. Pinned versions
+have an additional exact endpoint:
 
 ```http
 GET /api/v1/templates/{templateId}/versions/{version}
 ```
 
-客户端终态使用实际选中的不可变版本，不因后台 catalog 更新而漂移；但导出/暂存前必须重新取得 publication。因安全或规则原因 `deprecated/unsupported` 的版本必须阻止新终态操作并返回 `TEMPLATE_UNAVAILABLE`；普通 catalog 新版本发布不影响已固定且仍为 `active` 的版本。
+Client terminal state uses the actually selected immutable version and
+does not drift with background catalog updates; but the publication must be
+re-fetched before export/staging. Versions `deprecated/unsupported` for
+security or rule reasons must block new terminal operations and return
+`TEMPLATE_UNAVAILABLE`; ordinary new catalog versions do not affect a
+pinned version that is still `active`.
 
-### 6.2 暂存成品
+### 6.2 Stage an artifact
 
 ```http
 POST /api/v1/saves
@@ -534,7 +712,7 @@ templateId=fi-police-digital
 templateVersion=3
 ```
 
-推荐响应：
+Recommended response:
 
 ```json
 {
@@ -549,16 +727,50 @@ templateVersion=3
 }
 ```
 
-- `retrievalMode` 只能是已经完成 P0 决策的服务端政策，不能由客户端选择或降级。
-- 模板字段和文件声明都是不可信输入；服务端读取不可变模板版本与当前 publication，独立验证可观察字段，到期时间只由服务端政策决定。
-- 上传前必须已通过 `/save-sessions` 建立随机匿名保存会话 Cookie。原始 secret 仅在该会话内、10 分钟幂等窗口中以加密响应 envelope 暂存；后端长期只存摘要。
-- 服务端在流式读取并验证各 multipart 字段时计算版本化、域隔离 HMAC 请求摘要：输入是长度前缀编码的 `save-v1 + photo bytes + normalized templateId + templateVersion`，不包含随机 multipart boundary、字段顺序、filename 或客户端 MIME。这样浏览器重建 multipart 仍得到同一摘要，又不留下普通内容哈希。同一保存会话、相同 `Idempotency-Key`、相同请求摘要在窗口内重放同一响应，并发重复请求只允许一个创建事务。相同幂等键配不同 payload 返回 409；仅知道幂等键而没有保存会话 Cookie 不得恢复 secret。幂等键和 envelope 不进入日志。
-- `key_only_ephemeral` 响应不返回 `claimSecret`，但必须开启第 9 节的额外控制。
-- 保存接口只接受 canonical 终态 JPEG；客户端源格式不影响服务端白名单。
-- 本契约采用同步语义：只有图片已验证、重编码、写入私有对象存储且记录进入 `active` 后才返回 `201 Created`。客户端取消 fetch 只停止本地等待，不承诺取消服务端；超时后必须用同一幂等请求重试。失败或孤儿 staging 按第 8.2 节清理。
-- 原子提交边界固定为：先把已验证成品写入随机私有对象名（此时仍视为 staging），再生成 KEY/secret 和加密响应；随后在同一数据库事务中完成 `KeyRegistry` 预留/激活、`PhotoRecord(active)` 与 `SaveIdempotencyRecord(completed + encryptedResponseEnvelope)`。事务提交后对象才成为可达终态并返回响应。提交前崩溃只留下无数据库引用的对象，由 15 分钟 orphan sweep 清除；提交后 envelope 必然可用于重放，不存在“照片 active 但凭证不可恢复”的中间状态。
+- `retrievalMode` can only be the server policy that completed the P0
+  decision; the client cannot choose or downgrade it.
+- Template fields and file declarations are untrusted input; the server
+  reads the immutable template version and current publication, verifies
+  observable fields independently, and expiry is decided solely by the
+  server policy.
+- A random anonymous save-session Cookie must be established via
+  `/save-sessions` before upload. The raw secrets live only within that
+  session's encrypted response envelope for the 10-minute idempotency
+  window; the backend stores digests long-term.
+- While streaming and validating multipart fields, the server computes a
+  versioned, domain-isolated HMAC request digest: input is the
+  length-prefixed `save-v1 + photo bytes + normalized templateId +
+  templateVersion`, excluding the random multipart boundary, field order,
+  filename, or client MIME. A browser rebuilding the multipart thus gets
+  the same digest, without leaving a plain content hash. The same save
+  session, same `Idempotency-Key`, and same request digest replay the same
+  response within the window; concurrent duplicate requests allow only one
+  creation transaction. The same idempotency key with a different payload
+  returns 409; knowing only the idempotency key without the save-session
+  Cookie must not recover secrets. Idempotency keys and envelopes never
+  enter logs.
+- `key_only_ephemeral` responses return no `claimSecret` but must enable
+  section 9's additional controls.
+- The save endpoint accepts only canonical final JPEGs; client source
+  formats do not affect the server whitelist.
+- The contract is synchronous: `201 Created` returns only after the image
+  is validated, re-encoded, written to private object storage, and the
+  record enters `active`. A client cancelling fetch only stops its local
+  wait and does not promise server cancellation; after a timeout, the same
+  idempotent request must be retried. Failed or orphaned staging is
+  cleaned per §8.2.
+- The atomic commit boundary is fixed: first write the validated artifact
+  under a random private object name (still staging), then generate the
+  KEY/secret and the encrypted response; then, in one database
+  transaction, complete `KeyRegistry` reserve/activate, `PhotoRecord(active)`,
+  and `SaveIdempotencyRecord(completed + encryptedResponseEnvelope)`. Only
+  after the transaction commits does the object become the reachable
+  terminal state and the response return. A pre-commit crash leaves only
+  database-unreferenced objects cleared by the 15-minute orphan sweep; a
+  post-commit envelope is necessarily replayable - no "photo active but
+  credential unrecoverable" intermediate state exists.
 
-### 6.3 解析取回
+### 6.3 Resolve retrieval
 
 ```http
 POST /api/v1/retrievals/resolve
@@ -571,18 +783,36 @@ Content-Type: application/json
 {"key":"A7C 2F9","claimSecret":"base64url-secret","captchaToken":"challenge-when-required"}
 ```
 
-服务端先按 KEY 找到记录中固定的 `retrievalMode`，再强制执行该模式；不得接受缺少访问密钥的降级请求。确认前两个契约都只是条件化草案，不代表 `key_plus_claim` 已获产品采用。
+The server first finds the record's fixed `retrievalMode` by KEY and
+enforces it; degraded requests missing the access secret are never
+accepted. Until confirmed, both contracts are conditional drafts and do
+not mean `key_plus_claim` is product-adopted.
 
-若最终选择 `key_plus_claim`，P0 分享包必须同时传递 KEY 与 claim。可提供手动双字段、QR，或形如 `/retrieve#v1.<base64url-package>` 的 fragment 链接；fragment 不会发送到服务器，客户端必须在加载任何非必要资源前解析并立即以 `history.replaceState` 清除，再用 POST body 兑换。该页面禁止第三方脚本、分析、会话回放和 Service Worker 缓存；删除密钥不得放入普通取件分享包。
+If `key_plus_claim` is ultimately chosen, the P0 share package must carry
+both the KEY and the claim. Manual dual fields, a QR, or a fragment link
+like `/retrieve#v1.<base64url-package>` are acceptable; the fragment never
+reaches the server, and the client must parse it before loading any
+non-essential resources, clear it immediately with `history.replaceState`,
+and redeem it via a POST body. That page forbids third-party scripts,
+analytics, session replay, and Service Worker caching; delete secrets must
+never go into an ordinary pickup share package.
 
-成功只返回非敏感摘要和一个由 CSPRNG 生成、至少 128 比特、60 秒、单次用途的 opaque 下载 token。服务端存 token 摘要，并把它绑定到 `photoId + purpose + expiresAt + revocationEpoch`；下载时以跨实例原子操作消费，同时重新检查照片仍为 `active` 且未过期。不得转换为无法即时撤销的直接对象存储 presigned URL。下载通过带 Authorization header 的 POST/fetch 返回 Blob，避免把长期 secret 放入 URL：
+Success returns only a non-sensitive summary and an opaque download
+token generated by a CSPRNG with at least 128 bits, a 60-second lifetime,
+and single use. The server stores the token digest bound to `photoId +
+purpose + expiresAt + revocationEpoch`; download consumes it with a
+cross-instance atomic operation while re-checking the photo is still
+`active` and unexpired. It must not be converted to a directly signed
+object-storage presigned URL that cannot be revoked instantly. Download
+returns a Blob via a POST/fetch with an Authorization header, keeping
+long-lived secrets out of URLs:
 
 ```http
 POST /api/v1/retrievals/download
 Authorization: Bearer <one-time-download-token>
 ```
 
-响应头至少包括：
+The response headers include at least:
 
 ```http
 Content-Type: image/jpeg
@@ -593,7 +823,7 @@ X-Content-Type-Options: nosniff
 X-Robots-Tag: noindex, nofollow, noarchive
 ```
 
-### 6.4 删除
+### 6.4 Delete
 
 ```http
 DELETE /api/v1/saves
@@ -602,27 +832,48 @@ Content-Type: application/json
 { "key": "A7C 2F9", "deleteSecret": "base64url-independent-secret" }
 ```
 
-删除必须幂等；`key` 只用于定址，`deleteSecret` 才授权操作。服务端在一个事务内把照片标为 `access-revoked`、递增 `revocationEpoch` 并撤销全部下载能力，再异步物理删除；对外不披露对象先前是否存在。
+Deletion must be idempotent; `key` only addresses and `deleteSecret`
+authorizes. In one transaction the server marks the photo
+`access-revoked`, increments `revocationEpoch`, and revokes all download
+capabilities, then deletes physically asynchronously; whether the object
+existed before is never disclosed.
 
-下载/取回会话不自动获得删除权。只有当前浏览器持有创建时的独立删除密钥时才可调用此端点；KEY、访问密钥和下载 token 都不能替代删除密钥。
+Download/retrieval sessions do not automatically grant delete rights.
+This endpoint is callable only while the current browser holds the
+separate delete secret from creation; KEYs, access secrets, and download
+tokens cannot substitute for the delete secret.
 
-删除密钥关闭页面后不可由服务恢复，保存成功页必须让用户复制或下载删除回执并说明后果。适用隐私法下的人工数据主体请求是独立、可验证的支持流程，不能用猜测 KEY 代替身份核验。
+After closing the page, the delete secret cannot be recovered by the
+service; the save-success page must let the user copy or download the
+delete receipt and explain the consequences. Manual data-subject requests
+under applicable privacy law are a separate, verifiable support process
+and cannot substitute guessed KEYs for identity verification.
 
-### 6.5 统一错误
+### 6.5 Unified errors
 
 ```json
 {
   "error": {
     "code": "PHOTO_UNAVAILABLE",
-    "message": "照片不可用，可能是 KEY/访问凭证无效、已过期或已删除。",
+    "message": "photo unavailable; the KEY/access credential may be invalid, expired, or deleted.",
     "requestId": "opaque-id"
   }
 }
 ```
 
-`POST /retrievals/resolve` 对 KEY 不存在、claim 错误、过期、已删除或未激活一律返回 HTTP `404` 和上面的 `PHOTO_UNAVAILABLE`；`DELETE /saves` 对这些情况一律返回 `204`。公开接口不得使用不同文案或状态区分原因。受控压测中各类别至少 1,000 次请求，端到端延迟中位数差与 p95 差都不得超过 25 ms 或共同基线的 10%（取较大者）；生产还必须依靠限速，时间填充不能代替授权。资源限制、格式错误和模板失效可返回可操作的独立错误，因为它们发生在拥有当前创建会话的保存者路径。
+`POST /retrievals/resolve` returns HTTP `404` with the `PHOTO_UNAVAILABLE`
+above for a missing KEY, wrong claim, expired, deleted, or inactive photo;
+`DELETE /saves` returns `204` for all of these. Public interfaces must not
+distinguish reasons with different copy or status. In controlled load
+tests, at least 1,000 requests per category, median and p95 end-to-end
+latency differences must both stay within 25 ms or 10% of the shared
+baseline (whichever is larger); production must additionally rely on rate
+limiting - timing padding cannot replace authorization. Resource limits,
+format errors, and template invalidity may return actionable, distinct
+errors because they occur on the saver path holding a current creation
+session.
 
-## 7. 服务端数据模型
+## 7. Server data model
 
 ```ts
 interface PhotoRecord {
@@ -634,7 +885,7 @@ interface PhotoRecord {
   claimDigestVersion?: number;
   deleteDigest: string;
   deleteDigestVersion: number;
-  objectKey: string;           // 与 KEY 无关的随机路径
+  objectKey: string;           // random path unrelated to the KEY
   templateId: string;
   templateVersion: number;
   templateRevisionId: string;
@@ -643,7 +894,7 @@ interface PhotoRecord {
   widthPx: number;
   heightPx: number;
   byteLength: number;
-  objectIntegrityMac: string;  // 每对象域隔离 MAC，不用于跨用户去重/确认
+  objectIntegrityMac: string;  // per-object domain-isolated MAC, not for cross-user dedup/confirmation
   status: "validating" | "active" | "access-revoked" | "purging" | "purged";
   revocationEpoch: number;
   createdAt: string;
@@ -658,11 +909,11 @@ interface KeyRegistry {
   keyFingerprint: string;      // PRIMARY KEY: HMAC(namespaceLifetimeKey, normalized KEY)
   state: "reserved" | "active" | "retired";
   issuedAt: string;
-  photoId?: string;            // active 时唯一；retired 时清空
+  photoId?: string;            // unique when active; cleared when retired
 }
 
 interface DownloadGrant {
-  tokenDigest: string;         // PRIMARY KEY，域隔离、版本化 HMAC
+  tokenDigest: string;         // PRIMARY KEY, domain-isolated, versioned HMAC
   tokenDigestVersion: number;
   photoId: string;
   purpose: "download";
@@ -676,219 +927,460 @@ interface SaveIdempotencyRecord {
   idempotencyKeyDigest: string;
   requestDigest?: string;
   status: "processing" | "completed" | "failed";
-  photoId?: string;             // completed 时必填，指向同一事务创建的 PhotoRecord
+  photoId?: string;             // required when completed; points to the PhotoRecord created in the same transaction
   encryptedResponseEnvelope?: string;
   leaseExpiresAt: string;
   createdAt: string;
-  expiresAt: string;           // 最长 10 分钟
+  expiresAt: string;           // at most 10 minutes
 }
 ```
 
-- KEY 生成事务必须先插入唯一 `KeyRegistry`，再建立 `PhotoRecord`；不能用两个各自唯一的表模拟跨表唯一性。删除/到期后把 registry 转为 `retired` 并清空 `photoId`，旧 KEY 永不再分配。
-- registry 的 `retired` 项不包含对象、IP、模板或人物信息；裸 6 位字母数字 KEY 没有可见 namespace/version，因此只要产品仍存在、可能恢复该入口或任何端点仍接受这种 KEY，就必须永久保留 registry，格式迁移也不得删除或重新发行旧字符串。只有产品及所有裸 6 位取回入口不可逆地永久下线、恢复备份也已过期后，才可再保留 30 天并删除。累计发行达到空间 5% 时发出迁移预警并禁止扩大容量，达到 10% 时停止新暂存；正式容量预算可更保守，不能更宽松而不重新威胁评审。
-- `namespaceLifetimeKey` 是用途隔离且不做例行轮换的唯一性登记密钥，必须与 registry 同寿命；在线校验用的 claim/delete/token HMAC 密钥可版本化轮换。若 lifetime key 泄露，必须停发裸 6 位 KEY 并迁移到用户可见的新凭证格式，同时继续保留旧 registry；不能通过换 key 重新开放旧代码。
-- 幂等响应 envelope 使用与主数据分离的密钥加密，仅同一匿名保存会话可重放，10 分钟到期后删除。窗口后响应丢失只能重新发起独立暂存，旧对象按正常 TTL 自动删除。
-- `(anonymousSaveSessionDigest, idempotencyKeyDigest)` 必须唯一；首个请求以短 lease 成为 owner。并发重复请求在完成前返回统一 `409 IDEMPOTENCY_IN_PROGRESS` 与短 `Retry-After`，完成后只有摘要相同才重放；不同摘要为 `409 IDEMPOTENCY_CONFLICT`。owner 崩溃后只能在 lease 到期并清理其 staging 后安全接管。
-- `KeyRegistry`、`PhotoRecord(active)` 和 completed 幂等记录必须按 §6.2 在一个数据库事务中提交；对象存储写入在事务前完成，任何未被已提交 `PhotoRecord` 引用且超过 15 分钟的对象都由 orphan sweep 删除。
-- `DownloadGrant` 以数据库原子条件更新消费；消费时必须同时核对照片状态、`expiresAt` 和 `revocationEpoch`。删除/到期递增 epoch 后，即使 token 尚未消费也立即失效。
-- 禁止跨用户内容去重、相同照片探测或保留普通 SHA-256；`objectIntegrityMac` 只用于对象完整性且随照片记录清除。
-- 反滥用标识与照片记录分表、短期保存；IP 可截断或使用每日轮换 HMAC，避免建立长期行为画像。
-- 临时照片 bucket 不进入长期备份；若基础设施产生副本，必须有不可恢复/密钥销毁与最长 30 天清理策略。
+- The KEY-generation transaction must first insert the unique
+  `KeyRegistry` row, then create the `PhotoRecord`; cross-table uniqueness
+  cannot be simulated with two individually unique tables. After
+deletion/expiry the registry row turns `retired` with `photoId` cleared,
+and the old KEY is never re-issued.
+- Registry `retired` entries contain no object, IP, template, or personal
+  information; a bare 6-character alphanumeric KEY has no visible
+  namespace/version, so as long as the product exists, this entry point
+  might be restored, or any endpoint still accepts such KEYs, the registry
+  must be kept permanently, and format migrations must neither delete nor
+  reissue old strings. Only after the product and all bare-6-character
+  retrieval entry points are irreversibly and permanently offline and
+  backup-recovery windows have expired may the entries be kept for 30 more
+  days and then deleted. At 5% cumulative issuance, raise a migration
+  warning and forbid capacity growth; at 10%, stop new staging; the formal
+  capacity budget may be more conservative but never looser without a new
+  threat review.
+- `namespaceLifetimeKey` is the purpose-isolated uniqueness-registry key
+  that is not routinely rotated and must live as long as the registry;
+  the claim/delete/token HMAC keys used for online verification may rotate
+  with versioning. If the lifetime key leaks, bare-6-character KEY
+  issuance must stop and users must migrate to a visible new credential
+  format while the old registry is kept; old code must not be re-opened by
+  swapping keys.
+- The idempotency response envelope is encrypted with a key separate from
+  the primary data, replayable only within the same anonymous save
+  session, and deleted after the 10-minute expiry. A response lost after
+  the window can only be handled by a new independent stage, with the old
+  object auto-deleted on the normal TTL.
+- `(anonymousSaveSessionDigest, idempotencyKeyDigest)` must be unique;
+  the first request becomes the owner with a short lease. Concurrent
+  duplicates return a unified `409 IDEMPOTENCY_IN_PROGRESS` with a short
+  `Retry-After` until completion, then replay only when digests match;
+  differing digests are `409 IDEMPOTENCY_CONFLICT`. After an owner crash,
+  takeover is safe only once the lease expires and its staging is
+  cleaned.
+- `KeyRegistry`, `PhotoRecord(active)`, and the completed idempotency
+  record must commit in one database transaction per §6.2; the object-
+  storage write happens before the transaction, and any object unreferenced
+  by a committed `PhotoRecord` for over 15 minutes is deleted by the
+  orphan sweep.
+- `DownloadGrant` is consumed with an atomic conditional database
+  update, simultaneously re-checking the photo status, `expiresAt`, and
+  `revocationEpoch`. After deletion/expiry increments the epoch, an
+  unconsumed token is immediately invalid.
+- Cross-user content deduplication, same-photo detection, and retaining
+  plain SHA-256 are forbidden; `objectIntegrityMac` is for object
+  integrity only and is cleared with the photo record.
+- Abuse-mitigation identifiers are stored in separate tables from photo
+  records with short retention; IPs may be truncated or use a daily-
+  rotated HMAC to avoid building long-term behavior profiles.
+- The temporary photo bucket does not enter long-term backups; if
+  infrastructure produces copies, an unrecoverable/key-destruction and
+  max-30-day cleanup policy must exist.
 
-## 8. 图片处理与渲染细节
+## 8. Image processing and rendering details
 
-### 8.1 浏览器端
+### 8.1 Browser side
 
-1. 先读取并验证文件头的类型、尺寸和 orientation；`createImageBitmap(..., { imageOrientation:'from-image' })` 或兼容路径只在预算内解码，不能假设 resize 参数一定避免完整临时解码。
-2. 原始文件 Blob 可留在会话内存；预览/推理使用缩略位图，终态工作位图只保留满足输出和允许缩放所需的分辨率。MVP 同时存活的 RGBA 位图/Canvas 总预算默认 128 MiB、单工作位图≤16 MP，超预算时释放旧表面、降级预览或要求换图，不能尝试后崩溃。
-3. 编辑器只维护矩阵参数；终态才绘制到目标尺寸 Canvas/锁定编码器。任一时刻最多保留源工作位图、一个预览表面和一个终态表面。
-4. 对需要准确打印密度的模板，不依赖 Canvas `toBlob` 的 96 dpi 默认元数据；编码后重新读取 PPI、像素、MIME、颜色空间和文件大小。
-5. 释放不再使用的 Object URL、ImageBitmap、Worker 和大 Canvas；覆盖重新选图、编辑失效、页面离开、`pagehide` 与 BFCache 恢复。
+1. First read and validate the file header's type, dimensions, and
+   orientation; `createImageBitmap(..., { imageOrientation:'from-image' })`
+   or a compatible path decodes only within budget, and resize parameters
+   must not be assumed to avoid a full temporary decode.
+2. The original file Blob may stay in session memory; preview/inference
+   use thumbnail bitmaps, and the final working bitmap keeps only the
+   resolution the output and allowed zoom require. The MVP's total budget
+   for simultaneously alive RGBA bitmaps/canvases defaults to 128 MiB with
+   a single working bitmap ≤16 MP; over budget, release old surfaces,
+   degrade the preview, or ask for another image - never attempt-then-
+   crash.
+3. The editor only maintains matrix parameters; the final pass draws to a
+   target-size Canvas/locked encoder. At any moment at most the source
+   working bitmap, one preview surface, and one final surface are kept.
+4. For templates needing accurate print density, the Canvas `toBlob` 96 dpi
+   default metadata is never relied on; after encoding, PPI, pixels, MIME,
+   color space, and file size are re-read.
+5. Release unused Object URLs, ImageBitmaps, Workers, and large Canvases;
+   covering image reselection, edit invalidation, page leave, `pagehide`,
+   and BFCache restoration.
 
-### 8.2 服务端暂存验证
+### 8.2 Server-side staging validation
 
-- 边缘层在流式读取时限制总字节、multipart 字段数/字段长度、读取时间、并发、排队长度和费用；不得等完整上传或完整解码后才拒绝明显超限请求。
-- 只允许 JPEG canonical blob；忽略上传文件名，验证声明 MIME、magic bytes、完整且单图的实际解码结果，拒绝 polyglot、尾随数据和多图容器。
-- 默认最大 15 MB、24 MP、边长 8,000 px，并叠加模板级像素/字节限制；图片处理限制 CPU、内存、墙钟时间且有成本熔断。
-- 在无网络、低权限沙箱中解码，转换到 sRGB 后用锁定编码器重新编码；移除原 ICC、EXIF、GPS、未知元数据、脚本和嵌入缩略图。`physical_raster` 模板由服务端写入同一模板规定的 PPI，不信任上传元数据。
-- 重新编码后再次验证目标模板精确像素（`ranged_pixels` 模板为范围 + 宽高比 + 可选白名单校验，并回传解码得到的实际尺寸写入记录与响应）、颜色、打印密度（若适用）和文件大小；不满足则不进入 `active`。
-- 对象使用私有 ACL、服务端/KMS envelope encryption；API 权限不允许列表整个 bucket。
-- staging、解码临时文件、失败/中止上传和拒绝的恶意输入使用随机名称、加密且不进入备份；请求结束立即删除，并以 15 分钟硬 TTL 的分钟级兜底任务清理崩溃残留。用户 filename 不得用于路径、日志或对象 metadata；默认不保留恶意样本。
-- 不做跨用户内容去重、普通内容哈希索引或“相同照片存在”查询。
-- 不把用户上传内容提交给公共恶意文件扫描或 AI 服务，除非隐私政策、处理协议和合法基础已单独批准。
+- The edge layer limits total bytes, multipart field count/length, read
+  time, concurrency, queue length, and cost while streaming; clearly
+  over-limit requests must not wait for a complete upload or full decode
+  before rejection.
+- Only canonical JPEG blobs are allowed; the upload filename is ignored,
+  and the declared MIME, magic bytes, and the actual decode result being
+  complete and single-image are verified, rejecting polyglots, trailing
+  data, and multi-image containers.
+- Defaults: max 15 MB, 24 MP, 8,000 px per edge, layered with template-
+  level pixel/byte limits; image processing is bounded in CPU, memory, and
+  wall-clock time with a cost circuit breaker.
+- Decode in a no-network, low-privilege sandbox, convert to sRGB, and
+  re-encode with a locked encoder; strip original ICC, EXIF, GPS, unknown
+  metadata, scripts, and embedded thumbnails. `physical_raster` templates
+  get the same mandated PPI written by the server; upload metadata is
+  never trusted.
+- After re-encoding, re-verify the target template's exact pixels
+  (`ranged_pixels` verifies range + aspect + optional whitelist, reporting
+  the actual decoded dimensions into the record and response), color,
+  print density (if applicable), and file size; without passing, the photo
+  never enters `active`.
+- Objects use private ACLs and server-side/KMS envelope encryption; API
+  permissions never allow listing the whole bucket.
+- Staging, decode temp files, failed/aborted uploads, and rejected
+  malicious inputs use random names, are encrypted, and never enter
+  backups; they are deleted immediately when the request ends, with a
+  minute-level backstop task clearing crash residue at a 15-minute hard
+  TTL. User filenames never enter paths, logs, or object metadata;
+  malicious samples are not retained by default.
+- No cross-user content deduplication, plain content-hash indexing, or
+  "same photo exists" queries.
+- User uploads are never submitted to public malware scanners or AI
+  services unless the privacy policy, processing agreement, and legal
+  basis are separately approved.
 
-## 9. 隐私与安全要求
+## 9. Privacy and security requirements
 
-### 9.1 数据分类和目的
+### 9.1 Data classification and purposes
 
-- 肖像照片按敏感个人数据处理，即使仅做构图指导通常不构成以唯一识别为目的的特殊类别生物识别。
-- 本产品禁止身份匹配、人脸搜索、活体认证、训练 embedding、广告画像和模型训练等二次用途。
-- 若未来增加唯一识别用途，必须重新评估 GDPR Article 9 条件和 DPIA，不能沿用本规格的风险结论。
-- “点击暂存”是产品确认动作，不自动等同 GDPR consent；上线前的隐私评估必须确定各处理目的的法律基础。若依赖 consent，需提供可撤回机制与证明记录，且撤回不得比给予更困难。
-- 模板支持儿童/婴儿时必须单独评估未成年人规则、适用年龄和监护人授权文案；不得从照片推断年龄或亲属关系。
+- Portrait photos are processed as sensitive personal data; even when
+  used only for composition guidance they usually do not constitute
+  special-category biometrics for unique identification.
+- This product forbids secondary uses such as identity matching, face
+  search, liveness authentication, embedding training, advertising
+  profiling, and model training.
+- If a unique-identification purpose is ever added, GDPR Article 9
+  conditions and a DPIA must be re-assessed; this spec's risk conclusions
+  must not be reused.
+- "Click stage" is a product-confirmation action and does not
+  automatically equal GDPR consent; the pre-launch privacy assessment must
+  determine each processing purpose's legal basis. If consent is relied
+  on, a withdrawal mechanism with proof records is required, and
+  withdrawal must be no harder than giving consent.
+- Templates supporting child/infant must separately assess minor rules,
+  applicable ages, and guardian-authorization copy; age or kinship must
+  never be inferred from photos.
 
-### 9.2 生命周期
+### 9.2 Lifecycle
 
-| 数据 | 保存位置 | 保留期 |
+| Data | Location | Retention |
 | --- | --- | --- |
-| 摄像头流、分析帧、landmarks、角度 | 浏览器会话内存 | 离开步骤立即释放 |
-| 上传原图和编辑状态 | 浏览器会话内存 | 离开/刷新即清除；默认不写持久浏览器存储 |
-| FinalArtifact、Canvas、Object URL、Worker | 浏览器会话内存 | 源图/模板/变换变化或离开创建会话时释放；导出/暂存本身不使仍可复用的终态工件失效；覆盖 `pagehide`/BFCache 清理 |
-| 上传 staging、失败/中止/拒绝输入 | 隔离临时存储 | 请求结束立即删除，绝对上限 15 分钟；不进备份 |
-| 暂存终态照片 | 私有对象存储 | 30 天（§1.2.1 产品确认）；`expiresAt` 起 API 同步拒绝，≤60 分钟删除主对象所有版本、主复制件和临时副本 |
-| 照片元数据、访问/删除摘要 | 元数据数据库 | 访问撤销后仅保留到物理清除确认；随后删除关联字段/记录，非关联删除审计最长 30 天 |
-| Key Registry retired 项 | 元数据数据库 | 产品或任何裸 6 位取回入口仍存在时永久保留；全部不可逆下线且备份恢复期结束后再保留 30 天；不关联照片/用户 |
-| 一次性下载 token | 短期共享存储 | 最长 60 秒或首次原子消费后立即删除 |
-| 幂等响应 envelope | 隔离短期存储 | 最长 10 分钟，仅同一匿名保存会话可重放 |
-| 限速计数/短期 KEY 指纹 | 共享计数存储 | 窗口结束后最多 24 小时；使用独立每日轮换 HMAC |
-| 安全日志 | 日志系统 | 默认 30 天；不含照片、KEY 的完整或部分值、token 或人脸数据 |
-| CDN/基础设施副本 | 敏感 API 禁止缓存；照片 bucket 默认关闭版本控制、回收站和备份 | 若仍有应用不可恢复的灾备副本，隐私通知必须单列披露，并在≤30 天销毁或完成不可恢复的密钥销毁 |
+| Camera stream, analysis frames, landmarks, angles | Browser session memory | Released immediately on leaving the step |
+| Uploaded source and edit state | Browser session memory | Cleared on leave/refresh; no persistent browser storage by default |
+| FinalArtifact, Canvas, Object URLs, Workers | Browser session memory | Released on source/template/transform change or leaving the creation session; export/staging themselves do not invalidate a still-reusable artifact; `pagehide`/BFCache cleanup covered |
+| Upload staging, failed/aborted/rejected inputs | Isolated temp storage | Deleted immediately at request end, hard cap 15 minutes; never backed up |
+| Staged final photos | Private object storage | 30 days (§1.2.1 product-confirmed); API synchronously denies from `expiresAt`, deleting all versions, primary copies, and temp copies of the primary object within ≤60 minutes |
+| Photo metadata, access/delete digests | Metadata database | Kept only until physical-clear confirmation after access revocation; associated fields/records then deleted; unassociated deletion audit at most 30 days |
+| Key Registry retired entries | Metadata database | Kept permanently while the product or any bare-6-character retrieval entry exists; after full irreversible takedown and the backup-recovery window, kept 30 more days; never linked to photos/users |
+| One-time download tokens | Short-lived shared storage | At most 60 seconds or deleted immediately after first atomic consumption |
+| Idempotency response envelope | Isolated short-lived storage | At most 10 minutes, replayable only in the same anonymous save session |
+| Rate-limit counts / short-lived KEY fingerprints | Shared counter storage | At most 24 hours after the window ends; separate daily-rotated HMAC |
+| Security logs | Logging system | Default 30 days; no photos, full or partial KEY values, tokens, or face data |
+| CDN/infrastructure copies | Sensitive APIs forbid caching; the photo bucket defaults to versioning, recycle-bin, and backups off | If application-unrecoverable DR copies still exist, the privacy notice must disclose them separately and destroy them within ≤30 days or complete unrecoverable key destruction |
 
-任何可能由脸部分析 SDK 在拍摄阶段产生的厂商指标，必须在模型初始化前单独披露。保存前的简明通知至少说明：控制者、目的、法律基础、权威留存时长、处理商和区域、跨境安排、访问/删除/投诉方式，以及不用于训练/识别/广告；保存成功后显示服务端权威绝对 `expiresAt`。
+Any vendor metrics the face-analysis SDK might produce during capture
+must be disclosed separately before model initialization. The pre-save
+concise notice states at least: controller, purpose, legal basis,
+authoritative retention, processors and region, cross-border
+arrangements, access/delete/complaint channels, and no use for
+training/identification/ads; after a successful save the server-
+authoritative absolute `expiresAt` is shown.
 
-### 9.3 KEY-only 额外控制
+### 9.3 KEY-only additional controls
 
-`key_only_ephemeral` 已按 §1.2.1 选定启用，以下全部为 MUST：
+`key_only_ephemeral` is enabled per the §1.2.1 decision; all of the
+following are MUST:
 
-- 默认且硬上限 30 天，不提供静默续期。
-- 随机单次命中任意照片的概率约为 `activePhotos / 36^6`。威胁评审必须据此明确并签署：最大同时有效照片数、每分钟/每日全局 resolve 尝试预算、IPv4 与 IPv6 聚合策略、累计已发 KEY 预算和自动关闭阈值；任何一项未配置都不得公开上线 KEY-only。
-- 达到 active/发行/resolve 任一风险预算后自动停止新暂存或关闭取回，而非降低安全规则。CAPTCHA 和单 IP 限速只是纵深防御，不是认证替代品。
-- 同一 KEY 指纹+客户端 15 分钟最多 5 次失败；同一 IP 每小时最多 30 次；IPv4 `/24` 每小时最多 300 次，数值可按攻击数据收紧。
-- IPv6 必须采用经真实流量验证的前缀聚合和设备/客户端维度，不能把每个 IPv6 地址视为独立可信来源。
-- 第 3 次失败后 CAPTCHA，配合指数退避；边缘和应用层都限速，计数跨实例原子共享。CAPTCHA 在 MVP 暂缓（接口保留 `captchaToken` 字段），指数退避与多层限速照常实现。
-- 监测跨 KEY、跨 IP 分布式枚举和异常下载带宽；阈值告警可临时关闭取回入口。
-- 不允许攻击者通过失败请求永久锁死某个合法 KEY。
-- Public Beta 前必须完成独立威胁评审并记录剩余风险接受人。正式威胁评审流程已按 §1.2.1 产品决策取消；§9.3 其余工程控制照常生效，剩余风险接受记录见 §1.2.1。
+- Default and hard cap of 30 days, no silent renewal.
+- The random single-hit probability for any photo is approximately
+  `activePhotos / 36^6`. The threat review must accordingly define and
+  sign: the max simultaneously valid photo count, per-minute/per-day
+  global resolve-attempt budget, IPv4 and IPv6 aggregation strategy,
+  cumulative issued-KEY budget, and auto-shutdown thresholds; KEY-only may
+  not launch publicly with any of these unconfigured.
+- Reaching any active/issued/resolve risk budget automatically stops new
+  staging or shuts down retrieval rather than relaxing security rules.
+  CAPTCHA and per-IP rate limiting are defense in depth, not
+  authentication substitutes.
+- Max 5 failures per 15 minutes per KEY fingerprint+client; max 30 per
+  hour per IP; IPv4 `/24` max 300 per hour; values may tighten with attack
+  data.
+- IPv6 must use real-traffic-verified prefix aggregation with device/
+  client dimensions; every IPv6 address must not be treated as an
+  independent trusted source.
+- CAPTCHA after the 3rd failure, combined with exponential backoff; rate
+  limiting at both edge and application layers with atomically shared
+  cross-instance counters. CAPTCHA is deferred in the MVP (the
+  `captchaToken` field stays for interface compatibility); exponential
+  backoff and multi-layer rate limiting ship as specified.
+- Monitor cross-KEY, cross-IP distributed enumeration and abnormal
+  download bandwidth; threshold alerts may temporarily disable the
+  retrieval entry.
+- Attackers must not be able to permanently lock out a legitimate KEY via
+  failed requests.
+- An independent threat review must be completed before Public Beta with
+  the residual-risk acceptor recorded. The formal threat-review process is
+  cancelled per the §1.2.1 product decision; the rest of §9.3's
+  engineering controls remain in force, with the residual-risk acceptance
+  recorded in §1.2.1.
 
-### 9.4 Web 安全基线
+### 9.4 Web security baseline
 
-- 全站 HTTPS、HSTS、严格 CSP；创建和取回路由不得加载广告、分析、会话重放或其他第三方脚本，模型、WASM、Worker 与运行资产必须同源自托管。若风险触发后加载第三方 CAPTCHA，必须隔离到不含照片/secret 的步骤并纳入处理商披露。
-- CSP 至少限制 `worker-src 'self'`；锁定 WASM 构建确有需要时只增加 `script-src 'wasm-unsafe-eval'`，不得放宽到 `'unsafe-eval'`。CI 必须实际加载 Worker/WASM 并验证策略。
-- `Permissions-Policy: camera=(self), microphone=()`；若嵌入 iframe，必须显式、最小化授权。
-- 照片与取回响应 `Cache-Control:no-store`、`Referrer-Policy:no-referrer`、`nosniff`。
-- 日志管道、APM、错误追踪和反向代理必须使用严格字段白名单：只允许路由模板、状态类别、延迟、粗粒度字节档位和随机 `requestId`。不得记录原始 path/query/body/response、Cookie、KEY 的完整或部分值、幂等键、普通内容 SHA、访问/删除密钥、Authorization、下载 token、multipart body/文件名、对象 ID/路径/URL、DOM 或截图。
-- 限速需要识别 KEY 时，只能使用专用每日轮换 HMAC 生成短期指纹，不得复用长期 Key Registry digest。
-- 有状态 Cookie/敏感 POST 除 `SameSite` 外还必须校验同源 Origin、CORS/CSRF token 和 Fetch Metadata；跨站请求默认拒绝。
-- KMS/对象存储权限最小化；管理员读取需审计和告警。
-- 上传、存储、图像处理与下载均有速率、字节、CPU/内存和费用预算。
-- 依赖锁定版本、自动漏洞扫描；图片解码器和模型升级需回归测试。
+- Site-wide HTTPS, HSTS, and a strict CSP; create and retrieve routes
+  must not load ads, analytics, session replay, or other third-party
+  scripts, and models, WASM, Workers, and runtime assets must be
+  same-origin self-hosted. If a third-party CAPTCHA loads on risk
+  trigger, it must be isolated to a step without photos/secrets and
+  included in the processor disclosure.
+- The CSP at minimum restricts `worker-src 'self'`; the locked WASM build
+  may add only `script-src 'wasm-unsafe-eval'` when genuinely needed,
+  never widening to `'unsafe-eval'`. CI must actually load the
+  Worker/WASM and verify the policy.
+- `Permissions-Policy: camera=(self), microphone=()`; if embedded in an
+  iframe, authorization must be explicit and minimal.
+- Photo and retrieval responses: `Cache-Control:no-store`,
+  `Referrer-Policy:no-referrer`, `nosniff`.
+- Logging pipelines, APM, error tracking, and reverse proxies must use a
+  strict field whitelist: only route templates, status categories,
+  latency, coarse byte bands, and random `requestId`s. Raw
+  path/query/body/response, cookies, full or partial KEY values,
+  idempotency keys, plain content SHAs, access/delete secrets,
+  Authorization, download tokens, multipart bodies/filenames, object
+  IDs/paths/URLs, DOM, or screenshots must never be logged.
+- When rate limiting needs to identify a KEY, only a dedicated
+  daily-rotated HMAC may produce short-lived fingerprints; the long-lived
+  Key Registry digest must not be reused.
+- Stateful cookies/sensitive POSTs must additionally verify same-origin
+  Origin, CORS/CSRF tokens, and Fetch Metadata beyond `SameSite`;
+  cross-site requests are denied by default.
+- KMS/object-storage permissions are minimized; administrative reads are
+  audited and alerted.
+- Uploads, storage, image processing, and downloads all have rate, byte,
+  CPU/memory, and cost budgets.
+- Dependencies are version-locked with automated vulnerability scanning;
+  image-decoder and model upgrades require regression tests.
 
-## 10. 非功能需求
+## 10. Non-functional requirements
 
-### 10.1 性能预算
+### 10.1 Performance budgets
 
-- 首次页面交互不应等待脸部模型；只在进入拍摄指导时懒加载模型。
-- 在支持的一般近三年移动设备上，指导目标 8–15 FPS；主线程长任务 p95 <100 ms。
-- 编辑拖移/缩放目标接近显示刷新率；大图预览允许进一步降级，但终态必须从满足模板输出和缩放约束的最高预算工作位图渲染，不能从屏幕预览截图导出。
-- 12 MP 源图的本地终态渲染工作目标 p95 ≤3 秒，不含文件选择/网络。
-- Save API 的服务端验证处理工作目标 p95 ≤2 秒（不含用户上行网络）；客户端可取消本地等待，但服务端是否完成由幂等协议决定，UI 不得把取消 fetch 描述为已撤回服务器保存。
+- First page interaction must not wait for the face model; the model
+  lazy-loads only when entering capture guidance.
+- On supported typical near-3-year-old mobile devices, guidance targets
+  8–15 FPS; main-thread long tasks p95 <100 ms.
+- Edit drag/zoom targets near display refresh rate; large-image previews
+  may degrade further, but the final state must render from the highest-
+  budget working bitmap satisfying the template output and zoom
+  constraints, never from a screen-preview screenshot.
+- Local final rendering of a 12 MP source targets p95 ≤3 s, excluding
+  file selection/network.
+- Save API server-side validation processing targets p95 ≤2 s (excluding
+  the user's upstream network); the client may cancel its local wait, but
+  whether the server completes is decided by the idempotency protocol, and
+  the UI must not describe cancelling fetch as withdrawing the server
+  save.
 
-### 10.2 兼容性
+### 10.2 Compatibility
 
-- 一级：当前稳定版及前一个大版本的 Chrome Android/桌面、Safari iOS/macOS。
-- Edge 独立 QA；Firefox、内置 WebView 和旧浏览器至少保证上传、手动编辑和导出。
-- `getUserMedia`、Worker、Face Landmarker、`requestVideoFrameCallback`、OffscreenCanvas 和 ImageCapture 全部做能力检测；增强失败不影响基线。
-- iOS 视频元素使用 `autoplay muted playsinline`。
+- Tier 1: current stable and previous major versions of Chrome Android/
+  desktop and Safari iOS/macOS.
+- Edge gets separate QA; Firefox, embedded WebViews, and older browsers
+  guarantee at least upload, manual editing, and export.
+- `getUserMedia`, Workers, Face Landmarker,
+  `requestVideoFrameCallback`, OffscreenCanvas, and ImageCapture all get
+  capability detection; enhancement failures do not affect the baseline.
+- iOS video elements use `autoplay muted playsinline`.
 
-### 10.3 可访问性
+### 10.3 Accessibility
 
-- 目标 WCAG 2.2 AA。
-- 状态不只用颜色；主要变化通过 `role=status` / `aria-live=polite` 低频播报。
-- 全部按钮、滑杆、裁剪替代操作可键盘使用，焦点可见且顺序合理。
-- 触控目标建议至少 44×44 CSS px。
-- 语音、震动和自动倒计时均可关闭；不得把自动拍照设为唯一入口。
-- 对不能保持标准姿态的用户，允许手动继续并说明签发机关可能提供医疗/残障例外。
+- Target WCAG 2.2 AA.
+- Status is never color-only; major changes are announced at low
+  frequency via `role=status` / `aria-live=polite`.
+- All buttons, sliders, and crop alternatives are keyboard-usable with
+  visible, sensibly ordered focus.
+- Touch targets recommended at least 44×44 CSS px.
+- Voice, vibration, and the auto-countdown are all disableable; auto-
+  capture must never be the only entry.
+- Users who cannot hold the standard pose may continue manually, with a
+  note that issuing authorities may offer medical/disability exceptions.
 
-### 10.4 可靠性和可观察性
+### 10.4 Reliability and observability
 
-- Save/Retrieve API 月度可用性工作目标 ≥99.9%，模板静态读取可缓存但必须尊重停用版本。
-- 生命周期 worker 至少每分钟运行；持续监控 backlog、最老待清理年龄和 60 分钟 SLO，另做每日 canary。对象在到期后仍可读属于 P0 告警。
-- 指标只记录模板 ID/版本、能力是否可用、结果类别和时延；不记录原图、关键点、完整 KEY 或细粒度人脸测量。
-- 客户端错误上报先过滤 Blob、Object URL、媒体轨道标签及用户输入。
+- Save/Retrieve API monthly availability targets ≥99.9%; template static
+  reads may be cached but must respect taken-down versions.
+- The lifecycle worker runs at least every minute; backlog, oldest
+  pending age, and the 60-minute SLO are continuously monitored, plus a
+  daily canary. An object still readable after expiry is a P0 alert.
+- Metrics record only template ID/version, capability availability,
+  result categories, and latency; never source images, landmarks, full
+  KEYs, or fine-grained face measurements.
+- Client error reporting filters Blobs, Object URLs, media-track labels,
+  and user input first.
 
-## 11. 错误与恢复
+## 11. Errors and recovery
 
-| 场景 | 用户行为 | 系统行为 |
+| Scenario | User behavior | System behavior |
 | --- | --- | --- |
-| 相机权限一直 pending | 可取消或改用上传 | 页面不阻塞其他导航；不反复弹权限 |
-| `NotAllowedError` | 查看设置提示或上传 | 区分用户/系统/iframe policy 的可操作说明 |
-| `NotFoundError` / `NotReadableError` | 重试、关闭占用应用或上传 | 停止残余 tracks，保留模板选择 |
-| 推理模型加载失败 | 手动拍摄 | 隐藏自动角度状态，保留蒙版和文字规则 |
-| 源图分辨率不足 | 换图或继续查看风险 | 不伪造分辨率，不默认插值后称为合规 |
-| 无法压到模板字节上限 | 换源图/降低复杂度 | 不改变规定像素；不生成错误文件 |
-| 保存网络中断 | 在同一匿名保存会话重试 | 使用相同幂等键和请求摘要，不生成第二个照片/KEY |
-| 保存成功但客户端未收到响应 | 10 分钟内由同一保存会话重放同一请求 | 返回加密幂等 envelope 中的同一 KEY/密钥；不同会话不能只凭幂等键查询 |
-| KEY 无效/过期/删除 | 重新检查输入 | 统一 `PHOTO_UNAVAILABLE`，不泄露状态 |
-| 生命周期任务失败 | 用户仍不可访问过期图 | 告警并重试物理删除；同步授权不依赖 worker |
+| Camera permission pending forever | Cancel or switch to upload | The page does not block other navigation and does not re-prompt repeatedly |
+| `NotAllowedError` | Check settings hints or upload | Actionable explanation distinguishing user/system/iframe policy |
+| `NotFoundError` / `NotReadableError` | Retry, close the occupying app, or upload | Stop residual tracks and keep the template selection |
+| Inference model load failure | Manual capture | Hide automatic angle status, keep masks and text rules |
+| Source resolution insufficient | Change the image or continue viewing the risk | Never fabricate resolution; never call interpolated output compliant by default |
+| Cannot fit the template byte cap | Change the source/reduce complexity | Never change mandated pixels; never produce a wrong file |
+| Save network interrupted | Retry in the same anonymous save session | Use the same idempotency key and request digest; no second photo/KEY |
+| Save succeeded but the client missed the response | Replay the same request in the same save session within 10 minutes | Return the same KEY/secrets from the encrypted idempotency envelope; other sessions cannot query by idempotency key alone |
+| KEY invalid/expired/deleted | Re-check the input | Unified `PHOTO_UNAVAILABLE`; state never leaked |
+| Lifecycle task failure | Users still cannot access the expired photo | Alert and retry physical deletion; synchronous authorization does not depend on the worker |
 
-## 12. 验证与测试计划
+## 12. Verification and test plan
 
-### 12.1 单元与属性测试
+### 12.1 Unit and property tests
 
-- 变换矩阵、cover 下限、旋转/镜像组合、预览与导出坐标一致性。
-- EXIF 1–8 方向、横竖屏、透明 PNG、超大尺寸和异常解码。
-- 精确输出宽高、JPEG 大小搜索、sRGB、元数据移除、打印密度。
-- `FinalArtifact` 内存 manifest schema、失效规则和六参数仿射矩阵金色向量；服务端重编码不得旋转、缩放或重新裁剪。
-- 模板 JSON Schema 的判别联合、无效组合拒绝、不可变 revision、可变 publication、固定版本与撤销。
-- KEY 生成器使用可注入 RNG 测试 36 字符无偏覆盖、拒绝采样边界、任意字母/数字配比、碰撞重试和并发唯一；输入测试覆盖全字母、全数字、混合、前导零、小写及非法 Unicode；永不重用以事务/数据库测试证明。大样本随机性健康检查为离线非阻断任务，不能让 CI 因概率偶发失败。
-- 到期毫秒边界、删除幂等、下载 token 单次原子消费、revocation epoch 和版本化 secret 摘要验证。
-- 保存幂等覆盖并发重复、相同 key 不同 body、响应丢失、会话 Cookie 缺失、10 分钟窗口边界和失败 staging 清理。
+- Transform matrices, cover floor, rotation/mirror combinations, and
+  preview/export coordinate consistency.
+- EXIF orientations 1–8, portrait/landscape, transparent PNGs, oversized
+  dimensions, and abnormal decoding.
+- Exact output width/height, JPEG size search, sRGB, metadata removal,
+  and print density.
+- `FinalArtifact` in-memory manifest schema, invalidation rules, and
+  six-parameter affine-matrix golden vectors; server re-encoding must not
+  rotate, scale, or re-crop.
+- Template JSON Schema discriminated unions, invalid-combination
+  rejection, immutable revisions, mutable publications, pinned versions,
+  and takedowns.
+- The KEY generator is tested with an injectable RNG for unbiased
+  36-character coverage, rejection-sampling boundaries, any letter/digit
+  mix, collision retries, and concurrent uniqueness; input tests cover
+  all-letter, all-digit, mixed, leading-zero, lowercase, and illegal
+  Unicode; never-reuse is proven with transaction/database tests.
+  Large-sample randomness health checks are offline non-blocking tasks;
+  CI must never fail on probabilistic flukes.
+- Expiry millisecond boundaries, idempotent deletion, single-use atomic
+  download-token consumption, revocation epoch, and versioned secret
+  digest verification.
+- Save idempotency covering concurrent duplicates, same-key-different-
+  body, lost responses, missing session cookies, 10-minute window
+  boundaries, and failed-staging cleanup.
 
-### 12.2 浏览器与设备测试
+### 12.2 Browser and device tests
 
-- Chromium 使用 fake media 做权限、迟到 Promise、前后设备切换、session token 和 track 关闭自动化；Safari iOS/macOS 在一级真实设备上手工验证允许/拒绝/撤销与前后切换。
-- Firefox/不支持增强 API 时的上传和手动路径。
-- 自拍预览镜像但默认导出非镜像；左右姿态指令方向正确。
-- 上传静态照片也执行 yaw/pitch/roll 分析；同一帧的上传与摄像头复核结果在校准容差内一致。
-- 低端设备、横竖屏切换、后台恢复、内存压力和相机被占用。
+- Chromium uses fake media to automate permission, late Promises,
+  front/rear device switching, session tokens, and track closing; Safari
+  iOS/macOS manually verifies allow/deny/revoke and front/rear switching
+  on tier-1 real devices.
+- Upload and manual paths on Firefox/without enhanced APIs.
+- Selfie preview mirrors but default export is unmirrored; left/right
+  pose-instruction directions are correct.
+- Uploaded static photos also get yaw/pitch/roll analysis; upload and
+  camera recheck results for the same frame agree within calibrated
+  tolerance.
+- Low-end devices, portrait/landscape switching, background restoration,
+  memory pressure, and camera-in-use.
 
-### 12.3 模型 QA
+### 12.3 Model QA
 
-- 每个锁定模型、运行时和 delegate 使用不少于 500 个有许可/合成的固定标注样本，覆盖正面、左右转、抬低头、侧倾、不同距离和多脸；每个预先声明 QA 切片不少于 50 个样本。
-- 覆盖不同肤色、年龄、眼镜、面部毛发、宗教头饰、辅助设备、弱光、背光和不同相机畸变；这些标签只存在于离线 QA 数据集，不从生产用户推断。
-- 记录误报/漏报，但不保存生产用户照片；只使用有许可的测试素材或合成素材。
-- 初始发布门：yaw/pitch/roll 各自 MAE≤3°、绝对误差 p95≤7°；被错误标为“可拍摄”的帧≤1%，任一 QA 切片不高于总体两倍且不超过 3%；满足条件后的稳定触发延迟 p95≤1.5 秒。阈值不满足时关闭自动拍摄而非降低验收门。
-- 在明确定义的参考设备/OS、模型版本、CPU/GPU delegate 上验证 matrix 行列顺序、坐标系、镜像映射、阈值迟滞和 8–15 FPS；任何版本或 delegate 升级必须重跑并保存基线。
-- 曝光/清晰度质量配置用固定许可样本校准并独立版本化；记录正常图误警告率和坏图漏警告率，阈值变化须重跑，不把启发式结果称为官方检查。
+- Each locked model, runtime, and delegate uses no fewer than 500
+  licensed/synthetic fixed labeled samples covering frontal, left/right
+  turns, up/down tilts, leans, varied distances, and multiple faces; each
+  pre-declared QA slice has no fewer than 50 samples.
+- Coverage across skin tones, ages, glasses, facial hair, religious head
+  coverings, assistive devices, low light, backlight, and varied camera
+  distortion; these labels exist only in the offline QA dataset and are
+  never inferred from production users.
+- False positives/negatives are recorded without saving production user
+  photos; only licensed or synthetic test material is used.
+- Initial release gates: per-axis MAE≤3° for yaw/pitch/roll with absolute-
+  error p95≤7°; frames wrongly labeled "shootable" ≤1%, and no QA slice
+  above twice the overall rate nor above 3%; stable-trigger latency after
+  the condition is met at p95≤1.5 s. If thresholds are unmet, automatic
+  capture is disabled rather than lowering the acceptance gate.
+- On well-defined reference devices/OS, model versions, and CPU/GPU
+  delegates, verify matrix row/column order, coordinate systems, mirror
+  mapping, threshold hysteresis, and 8–15 FPS; any version or delegate
+  upgrade must rerun and preserve baselines.
+- Exposure/sharpness quality configs are calibrated on fixed licensed
+  samples and versioned independently; false-warning rates on good images
+  and missed-warning rates on bad images are recorded, threshold changes
+  require reruns, and heuristic results are never called official
+  checks.
 
-### 12.4 安全测试
+### 12.4 Security tests
 
-- MIME/扩展伪装、polyglot、截断 JPEG、像素炸弹、资源耗尽、恶意 metadata、公开 ACL。
-- 单 IP、跨 IP、跨 KEY 枚举；错误正文/状态/时延差异；限速并发竞态。
-- IPv6 前缀轮换、最大 active 容量、全局 resolve 预算和自动关闭阈值。
-- KEY/secret 是否泄露到 URL、访问日志、CDN、APM、分析、浏览器历史、referrer 和缓存。
-- 对象级授权、到期同步拒绝、撤销下载 token、删除后读取和备份恢复测试。
-- 分钟级清理 worker、积压告警、主对象所有版本/临时副本清除和 60 分钟 purge SLO。
-- CSP、Permissions Policy、HSTS、依赖/解码器漏洞和管理访问审计。
+- MIME/extension masquerading, polyglots, truncated JPEGs, pixel bombs,
+  resource exhaustion, malicious metadata, public ACLs.
+- Single-IP, cross-IP, cross-KEY enumeration; error-body/status/latency
+  differences; rate-limit concurrency races.
+- IPv6 prefix rotation, max active capacity, global resolve budget, and
+  auto-shutdown thresholds.
+- Whether KEYs/secrets leak into URLs, access logs, CDNs, APM, analytics,
+  browser history, referrers, and caches.
+- Object-level authorization, synchronous expiry denial, download-token
+  revocation, post-delete reads, and backup-recovery tests.
+- Minute-level cleanup workers, backlog alerts, primary-object all-
+  versions/temp-copy clearing, and the 60-minute purge SLO.
+- CSP, Permissions Policy, HSTS, dependency/decoder vulnerabilities, and
+  administrative-access audit.
 
-### 12.5 内容验收
+### 12.5 Content acceptance
 
-- 两人复核每个 `active` 官方模板的尺寸、渠道、适用人群、编辑政策、来源和日期。
-- Public Beta 必须逐项通过 §5.2 的硬最低 release manifest：通用 1200×1200 肖像，以及成人美国护照纸质、DS-160/DS-1648 数字签证、芬兰数字证件、中国具体馆站 354×472 数字签证、日本护照纸质。DV 仅在具体年度/窗口已发布时加入；美国与日本纸质模板还须通过 PPI 编码和校准打印测试。
-- 用已知模板样例验证蒙版几何；物理单位由校准打印测量。
-- 通用肖像模板验证允许镜像；英国纸质和日本护照模板验证镜像不能获得“检查通过”；日本模板另验证左右脸边距≥2 mm 和禁止改变外貌的修饰。
-- 同一 `FinalArtifact` 先本地导出，再暂存并在新浏览器取回；浏览器端确认两次操作输入的是同一 Blob，服务器重编码后比较宽高、方向和构图，解码像素须达到预先校准的 SSIM 阈值（建议起点 ≥0.99），不要求字节相同。
-- 同一保存会话与幂等请求始终返回同一 KEY；独立重复保存可以生成不同 KEY，不做基于照片内容的全局去重。
-- 自动链接检查不能替代人工读规则；规则冲突必须记录并选择保守状态。
-- 应用内所有“通过”文案均经检查，确保没有官方认可或百分百获批暗示。
+- Two people review every `active` official template's size, channel,
+  applicant class, editing policy, sources, and dates.
+- Public Beta must pass §5.2's hard-minimum release manifest item by item:
+  the generic 1200×1200 portrait, plus adult US passport paper, DS-160/
+  DS-1648 digital visa, Finnish digital document, China's concrete-mission
+  354×472 digital visa, and Japan passport paper. DV joins only when the
+  specific year/window is published; US and Japan paper templates must
+  additionally pass PPI encoding and calibrated-print tests.
+- Mask geometry is verified with known template samples; physical units
+  are measured via calibrated printing.
+- The generic portrait template verifies mirroring is allowed; UK paper
+  and Japan passport templates verify mirroring cannot earn a "passed"
+  check; Japan additionally verifies ≥2 mm left/right face margins and
+  appearance-altering retouch being forbidden.
+- The same `FinalArtifact` is first exported locally, then staged and
+  retrieved in a new browser; the browser confirms both operations take
+  the same Blob, and after server re-encoding width/height, orientation,
+  and composition are compared, with decoded pixels meeting a pre-
+  calibrated SSIM threshold (suggested starting point ≥0.99); bytes need
+  not match.
+- The same save session and idempotent request always return the same KEY;
+  independent repeated saves may produce different KEYs, with no content-
+  based global deduplication.
+- Automated link checks cannot replace human rule reading; rule conflicts
+  must be recorded and a conservative status chosen.
+- All in-app "passed" copy is reviewed to ensure no official-endorsement
+  or 100%-approval implication.
 
-## 13. 原始需求追踪
+## 13. Original requirement traceability
 
-| 原需求 | 覆盖位置 |
+| Original requirement | Covered by |
 | --- | --- |
-| 1. Web App 创建个人肖像照片 | 第 1–3 节、4.6 |
-| 2. 上传和设备摄像头自动拍照 | 4.2、4.3 |
-| 3. 指导调整脸部角度 | 4.4 |
-| 4. 简单裁剪等基础编辑 | 4.5 |
-| 5. 预设尺寸指导选择区域、缩放、旋转、镜像 | 4.5、5 |
-| 6. 导出模板裁剪照片 | 4.6、8.1 |
-| 7. 护照、签证等常见模板 | 5.2 |
-| 8. 暂存生成唯一 6 位大写字母或数字 KEY，一 KEY 一照片 | 1.2、4.7、7 |
-| 9. 按 KEY 取回；保存与导出是同一终态的两个分支 | 2、3.2、4.6、6 |
+| 1. Web app creates personal portrait photos | Sections 1–3, 4.6 |
+| 2. Upload and device-camera auto capture | 4.2, 4.3 |
+| 3. Guide facial-angle adjustment | 4.4 |
+| 4. Basic editing such as simple cropping | 4.5 |
+| 5. Preset sizes guide region selection, zoom, rotation, mirror | 4.5, 5 |
+| 6. Export the template-cropped photo | 4.6, 8.1 |
+| 7. Common templates such as passports and visas | 5.2 |
+| 8. Stage generating a unique 6-character uppercase-alphanumeric KEY, one KEY per photo | 1.2, 4.7, 7 |
+| 9. Retrieve by KEY; save and export are two branches of the same terminal state | 2, 3.2, 4.6, 6 |
 
-## 14. 主要资料来源
+## 14. Primary sources
 
-### 14.1 浏览器与图像处理
+### 14.1 Browser and image processing
 
 - [MDN: getUserMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
 - [MDN: Media constraints](https://developer.mozilla.org/en-US/docs/Web/API/Media_Capture_and_Streams_API/Constraints)
@@ -905,24 +1397,24 @@ interface SaveIdempotencyRecord {
 - [W3C CSP: WebAssembly integration](https://www.w3.org/TR/CSP/#wasm-integration)
 - [WCAG 2.2: Dragging Movements](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements)
 
-### 14.2 安全与隐私
+### 14.2 Security and privacy
 
 - [OWASP File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html)
 - [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 - [OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)
 - [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)
 - [OWASP API4:2023 Unrestricted Resource Consumption](https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/)
-- [GDPR Article 4](https://eur-lex.europa.eu/eli/reg/2016/679/art_4/oj)、[Article 5](https://eur-lex.europa.eu/eli/reg/2016/679/art_5/oj)、[Article 6](https://eur-lex.europa.eu/eli/reg/2016/679/art_6/oj)、[Article 7](https://eur-lex.europa.eu/eli/reg/2016/679/art_7/oj)、[Article 9](https://eur-lex.europa.eu/eli/reg/2016/679/art_9/oj)、[Article 25](https://eur-lex.europa.eu/eli/reg/2016/679/art_25/oj)、[Article 32](https://eur-lex.europa.eu/eli/reg/2016/679/art_32/oj)
+- [GDPR Article 4](https://eur-lex.europa.eu/eli/reg/2016/679/art_4/oj), [Article 5](https://eur-lex.europa.eu/eli/reg/2016/679/art_5/oj), [Article 6](https://eur-lex.europa.eu/eli/reg/2016/679/art_6/oj), [Article 7](https://eur-lex.europa.eu/eli/reg/2016/679/art_7/oj), [Article 9](https://eur-lex.europa.eu/eli/reg/2016/679/art_9/oj), [Article 25](https://eur-lex.europa.eu/eli/reg/2016/679/art_25/oj), [Article 32](https://eur-lex.europa.eu/eli/reg/2016/679/art_32/oj)
 - [EDPB Guidelines 4/2019: Data Protection by Design and by Default](https://www.edpb.europa.eu/documents/guideline/guidelines-42019-on-article-25-data-protection-by-design-and-by-default_en)
 
-### 14.3 官方照片规则
+### 14.3 Official photo rules
 
 - [ICAO Doc 9303](https://www.icao.int/publications/doc-series/doc-9303)
-- 美国：[护照纸照](https://travel.state.gov/en/passports/apply/help/photos.html)、[护照在线照片](https://travel.state.gov/en/passports/renew-replace/online/upload-digital-photo.html)、[签证照片（含 DV 额外要求）](https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos.html)、[数字签证照片](https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/digital-image-requirements.html)、[官方构图模板](https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/photo-composition-template.html)、[DV 年度说明入口](https://travel.state.gov/content/travel/en/us-visas/immigrate/diversity-visa-program-entry/diversity-visa-instructions.html)
-- 英国：[数字照片](https://www.gov.uk/photos-for-passports)、[纸质照片](https://www.gov.uk/photos-for-passports/photo-requirements)、[当前照片标准](https://www.gov.uk/government/publications/photographic-standards/photo-standards-accessible)
-- [加拿大护照照片](https://www.canada.ca/en/immigration-refugees-citizenship/services/canadian-passports/photos.html)
-- Schengen：[欧委会申请入口](https://home-affairs.ec.europa.eu/policies/schengen/visa-policy/applying-schengen-visa_en)、[Visa Code](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02009R0810-20240628)、[欧委会托管的 ICAO 照片指南](https://home-affairs.ec.europa.eu/document/download/5bb16566-c8c2-4afb-b038-530f488cb72a_en?filename=icao_photograph_guidelines_en.pdf)
-- 芬兰：[警方照片说明 PDF](https://poliisi.fi/documents/25235045/31329600/Passport-photograph-instructions-by-the-police-2020-EN-fixed.pdf)、[当前提交说明](https://poliisi.fi/en/submitting-passport-photographs)、[现行法令 1168/2016](https://www.finlex.fi/fi/lainsaadanto/2016/1168)
-- 中国（馆站范围）：[芝加哥总领馆护照说明](https://chicago.china-consulate.gov.cn/lsfw/zj/hzlxz/202605/t20260501_11903971.htm)、[驻摩洛哥使馆签证照片规格](https://ma.china-embassy.gov.cn/lsfw/lszj/fhqz/cjwd/202504/t20250427_11605605.htm)、[驻委内瑞拉使馆差异示例](https://ve.china-embassy.gov.cn/lsyw/1002A/fuhuaqianzheng/202401/t20240106_11219314.htm)
-- 日本：[护照照片](https://www.mofa.go.jp/mofaj/toko/passport/ic_photo.html)、[现行照片说明 PDF](https://www.mofa.go.jp/mofaj/files/100171389.pdf)、[在线文件](https://www.mofa.go.jp/mofaj/toko/passport/page24_002222.html)、[中央签证入口](https://www.mofa.go.jp/j_info/visit/visa/index.html)、[中央签证表](https://www.mofa.go.jp/files/000124525.pdf)、[驻美馆站差异示例](https://www.us.emb-japan.go.jp/itpr_en/visa-short-term-visit.html)
-- 印度：[Global Passport Seva 上传要求](https://mportal.passportindia.gov.in/gpsp/MainNavigation/UploadPhoto)、[驻奥克兰总领馆照片规格](https://www.cgiauckland.gov.in/page/specifications-for-the-passport-photos/)、[regular visa 当前页](https://www.indianvisaonline.gov.in/visa/instruction.html)、[regular visa 旧规格 PDF](https://indianvisaonline.gov.in/visa/VSS_IMAGE.pdf)、[eVisa](https://indianvisaonline.gov.in/evisa/tvoa.html)
+- United States: [passport paper photos](https://travel.state.gov/en/passports/apply/help/photos.html), [passport online photos](https://travel.state.gov/en/passports/renew-replace/online/upload-digital-photo.html), [visa photos (incl. DV extras)](https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos.html), [digital visa photos](https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/digital-image-requirements.html), [official composition template](https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/photo-composition-template.html), [DV program-year instructions entry](https://travel.state.gov/content/travel/en/us-visas/immigrate/diversity-visa-program-entry/diversity-visa-instructions.html)
+- United Kingdom: [digital photos](https://www.gov.uk/photos-for-passports), [paper photos](https://www.gov.uk/photos-for-passports/photo-requirements), [current photo standards](https://www.gov.uk/government/publications/photographic-standards/photo-standards-accessible)
+- [Canadian passport photos](https://www.canada.ca/en/immigration-refugees-citizenship/services/canadian-passports/photos.html)
+- Schengen: [European Commission application entry](https://home-affairs.ec.europa.eu/policies/schengen/visa-policy/applying-schengen-visa_en), [Visa Code](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02009R0810-20240628), [Commission-hosted ICAO photo guidelines](https://home-affairs.ec.europa.eu/document/download/5bb16566-c8c2-4afb-b038-530f488cb72a_en?filename=icao_photograph_guidelines_en.pdf)
+- Finland: [police photo instructions PDF](https://poliisi.fi/documents/25235045/31329600/Passport-photograph-instructions-by-the-police-2020-EN-fixed.pdf), [current submission instructions](https://poliisi.fi/en/submitting-passport-photographs), [current decree 1168/2016](https://www.finlex.fi/fi/lainsaadanto/2016/1168)
+- China (mission scope): [Chicago consulate passport instructions](https://chicago.china-consulate.gov.cn/lsfw/zj/hzlxz/202605/t20260501_11903971.htm), [Embassy in Morocco visa photo specifications](https://ma.china-embassy.gov.cn/lsfw/lszj/fhqz/cjwd/202504/t20250427_11605605.htm), [Embassy in Venezuela difference example](https://ve.china-embassy.gov.cn/lsyw/1002A/fuhuaqianzheng/202401/t20240106_11219314.htm)
+- Japan: [passport photos](https://www.mofa.go.jp/mofaj/toko/passport/ic_photo.html), [current photo instructions PDF](https://www.mofa.go.jp/mofaj/files/100171389.pdf), [online files](https://www.mofa.go.jp/mofaj/toko/passport/page24_002222.html), [central visa entry](https://www.mofa.go.jp/j_info/visit/visa/index.html), [central visa table](https://www.mofa.go.jp/files/000124525.pdf), [US mission difference example](https://www.us.emb-japan.go.jp/itpr_en/visa-short-term-visit.html)
+- India: [Global Passport Seva upload requirements](https://mportal.passportindia.gov.in/gpsp/MainNavigation/UploadPhoto), [Auckland consulate photo specifications](https://www.cgiauckland.gov.in/page/specifications-for-the-passport-photos/), [regular visa current page](https://www.indianvisaonline.gov.in/visa/instruction.html), [regular visa legacy spec PDF](https://indianvisaonline.gov.in/visa/VSS_IMAGE.pdf), [eVisa](https://indianvisaonline.gov.in/evisa/tvoa.html)
