@@ -36,5 +36,6 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
-      # 内容门：坏引用与漂移的 contentHash 在运行期只表现为「蒙版静默不画」
+      # Content gate: bad references and drifted contentHash would only show
+      # up at runtime as "mask silently not drawn"
       - run: uv run python -m app.template_tools validate

@@ -2,11 +2,13 @@ services:
   app:
     build: .
     ports:
-      # 只绑本机：Secure Cookie 需要 HTTPS，对外必须经过一层 TLS 终止
+      # Bind to localhost only: Secure cookies require HTTPS, so anything
+      # exposed must sit behind a TLS-terminating layer
       - "127.0.0.1:8000:8000"
     environment:
-      # 缺失时让 compose 直接失败，而不是把空串传进去换来一个随机密钥
-      - PORTRAIT_SECRET_KEY_BASE=${PORTRAIT_SECRET_KEY_BASE:?必须提供持久根密钥，见 .env.example}
+      # Fail compose outright when missing, instead of passing an empty string
+      # that would silently trade in a random key
+      - PORTRAIT_SECRET_KEY_BASE=${PORTRAIT_SECRET_KEY_BASE:?a persistent root secret is required; see .env.example}
     volumes:
       - portrait-data:/app/data
     restart: unless-stopped

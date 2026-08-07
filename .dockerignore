@@ -1,5 +1,7 @@
-# O3：Dockerfile 第 5 行 npm ci 先装依赖，第 6 行 COPY frontend/ 不得用开发机
-# 的 node_modules/dist 覆盖构建产物——「构建期从 node_modules 同步资产」在镜像里才有意义
+# O3: Dockerfile line 5 runs npm ci to install dependencies first; line 6's
+# COPY frontend/ must not let the dev machine's node_modules/dist override the
+# build output — "syncing assets from node_modules at build time" only makes
+# sense inside the image
 .git
 frontend/node_modules
 frontend/dist

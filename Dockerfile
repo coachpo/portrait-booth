@@ -1,4 +1,4 @@
-# 单容器：前端构建 → FastAPI 托管 + SQLite + 磁盘对象存储
+# Single container: frontend build → FastAPI hosting + SQLite + on-disk object storage
 FROM node:22-alpine AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -18,7 +18,8 @@ ENV PORTRAIT_FRONTEND_DIST=/app/frontend/dist \
     PORTRAIT_STORAGE_DIR=/app/data/objects \
     PYTHONUNBUFFERED=1
 
-# 以非 root 运行：容器内的任意代码执行不该直接等于对镜像的写权限
+# Run as non-root: arbitrary code execution inside the container should not
+# directly equal write access to the image
 RUN useradd --system --uid 10001 --home-dir /app portrait \
     && mkdir -p /app/data \
     && chown -R portrait:portrait /app
@@ -27,16 +28,22 @@ USER portrait
 VOLUME ["/app/data"]
 EXPOSE 8000
 
-# /api/v1/health 一直存在却没人用；编排器需要它来判断容器是否真的可服务
+# /api/v1/health has always existed but nothing uses it; orchestrators need
+# it to tell whether the container is actually serving
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).status == 200 else 1)"
 
-# 绝对不要加 --forwarded-allow-ips "*"。
-# 那会让 uvicorn 信任任意直连客户端的 X-Forwarded-For，request.client.host 变成
-# 攻击者可控的字符串，§9.3 的单 IP 限速随之失效：每次换一个伪造 IP 就换一个新的
-# 限速桶，30 次/小时的限额永远不触发，6 位取回码可以被无限速枚举——而取回码是
-# key_only_ephemeral 模式下取回照片的唯一凭证。
-# uvicorn 默认只信任 127.0.0.1。反代不在本机时，用 FORWARDED_ALLOW_IPS 环境变量
-# 写出那台反代的具体地址或 CIDR，不要用通配符；同时确保反代**覆写**而不是追加
-# X-Forwarded-For（nginx 的 $proxy_add_x_forwarded_for 是追加，最左值仍来自客户端）。
+# Never add --forwarded-allow-ips "*".
+# It makes uvicorn trust X-Forwarded-For from any directly connected client,
+# turning request.client.host into an attacker-controlled string and silently
+# defeating §9.3's per-IP rate limit: each forged IP gets a fresh rate-limit
+# bucket, the 30/hour cap never triggers, and the 6-character retrieval code
+# space can be enumerated without limit - and the retrieval code is the only
+# credential for retrieving a photo in key_only_ephemeral mode.
+# uvicorn only trusts 127.0.0.1 by default. When the reverse proxy is not on
+# the same host, use the FORWARDED_ALLOW_IPS environment variable to write the
+# proxy's concrete address or CIDR instead of a wildcard; also make sure the
+# proxy **overwrites** rather than appends X-Forwarded-For (nginx's
+# $proxy_add_x_forwarded_for appends, so the leftmost value still comes from
+# the client).
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
