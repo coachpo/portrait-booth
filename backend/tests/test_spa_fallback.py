@@ -1,8 +1,10 @@
-"""单容器部署下的静态托管契约（A2）。
+"""Static hosting contract for single-container deployments (A2).
 
-两条缺陷同时存在于旧实现：
-1. `candidate = _DIST / path` 没有归属校验，%2e%2e%2f 编码穿越可读取容器内任意文件；
-2. 所有未匹配 GET 都回 index.html 200，写错或未实现的 API 路径被伪装成成功响应。
+Two defects existed simultaneously in the old implementation:
+1. `candidate = _DIST / path` had no containment check, so %2e%2e%2f encoded
+   traversal could read any file inside the container;
+2. every unmatched GET returned index.html 200, masking misspelled or
+   unimplemented API paths as successful responses.
 """
 
 import importlib
@@ -20,7 +22,8 @@ def dist(tmp_path):
     (root / "assets").mkdir(parents=True)
     (root / "index.html").write_text("<!doctype html>app", encoding="utf-8")
     (root / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
-    # dist 之外的敏感文件：Docker 布局里数据卷是 dist 的兄弟目录
+    # Sensitive file outside dist: in the Docker layout the data volume is a
+    # sibling directory of dist
     (tmp_path / "portrait.db").write_bytes(b"SQLite format 3\x00SECRET")
     return root
 
@@ -85,11 +88,12 @@ class TestMountedApp:
 
 
 class TestMalformedPaths:
-    """越界一律 None——包括那些会让底层调用直接抛异常的路径。"""
+    """Out of bounds always returns None - including paths that would make the
+    underlying calls raise directly."""
 
     def test_rejects_a_path_containing_a_nul_byte(self, dist):
-        # uvicorn 会把 %00 解码进 path，而 os.path.realpath 对它抛 ValueError，
-        # 任何未认证 GET 都能把它变成 500
+        # uvicorn decodes %00 into the path and os.path.realpath throws
+        # ValueError on it; any unauthenticated GET could turn it into a 500
         assert resolve_static_target(dist, "\x00") is None
         assert resolve_static_target(dist, "assets/\x00app.js") is None
 

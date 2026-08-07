@@ -1,10 +1,13 @@
-"""域隔离、版本化 HMAC（§6.2/§7/§9.3）。
-密钥指纹、secret 摘要、幂等键摘要、下载 token 摘要与对象 MAC 全部使用独立命名空间，
-不产生可跨域关联的普通内容哈希。
+"""Domain-isolated, versioned HMAC (§6.2/§7/§9.3).
+Key fingerprints, secret digests, idempotency-key digests, download-token
+digests, and object MACs each use an independent namespace, so no plain
+content hash can be correlated across domains.
 
-全部子密钥由单一根密钥 PORTRAIT_SECRET_KEY_BASE 经 HKDF-SHA256 派生。
-根密钥缺失即拒绝启动：进程随机密钥会让重启前发出的每个 KEY 与删除密钥同时失效，
-而照片仍按 TTL 留存，用户既取不回也删不掉。
+All subkeys are derived from the single root key PORTRAIT_SECRET_KEY_BASE via
+HKDF-SHA256.
+A missing root key means refusing to start: a per-process random key would
+invalidate every previously issued KEY and delete secret on restart while
+photos stay for the TTL, leaving users unable to retrieve or delete them.
 """
 
 import base64
@@ -29,7 +32,8 @@ _GENERATE_HINT = (
     'print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"'
 )
 
-# 按根密钥原文缓存派生结果：根密钥变化（测试隔离、轮换）时整体失效。
+# Cache derivation results keyed by the root key's raw text: the whole cache
+# is invalidated when the root key changes (test isolation, rotation).
 _derived: dict[str, bytes] = {}
 _derived_for: str | None = None
 
@@ -40,23 +44,25 @@ def _decode_key_base(raw: str) -> bytes:
         return base64.urlsafe_b64decode(padded)
     except (binascii.Error, ValueError):
         raise ConfigError(
-            f"{SECRET_KEY_BASE_ENV} 不是合法的 base64url。生成方式：{_GENERATE_HINT}"
+            f"{SECRET_KEY_BASE_ENV} is not valid base64url. Generate with: {_GENERATE_HINT}"
         ) from None
 
 
 def require_secret_key_base() -> bytes:
-    """校验根密钥并返回其字节。缺失或过短时抛 ConfigError，供启动期 fail-fast。"""
+    """Validate the root key and return its bytes. Raises ConfigError when
+    missing or too short; used for startup fail-fast."""
     raw = os.environ.get(SECRET_KEY_BASE_ENV, "").strip()
     if not raw:
         raise ConfigError(
-            f"缺少 {SECRET_KEY_BASE_ENV}：没有持久根密钥时，重启会让此前发出的全部 KEY "
-            f"与删除密钥失效，而照片仍按 TTL 留存。生成方式：{_GENERATE_HINT}"
+            f"{SECRET_KEY_BASE_ENV} is missing: without a persistent root key, a restart "
+            f"invalidates every previously issued KEY and delete secret while photos stay "
+            f"for the TTL. Generate with: {_GENERATE_HINT}"
         )
     key = _decode_key_base(raw)
     if len(key) < MIN_KEY_BASE_BYTES:
         raise ConfigError(
-            f"{SECRET_KEY_BASE_ENV} 解码后为 {len(key)} 字节，"
-            f"至少需要 {MIN_KEY_BASE_BYTES} 字节。生成方式：{_GENERATE_HINT}"
+            f"{SECRET_KEY_BASE_ENV} decodes to {len(key)} bytes, "
+            f"at least {MIN_KEY_BASE_BYTES} bytes are required. Generate with: {_GENERATE_HINT}"
         )
     return key
 
@@ -80,7 +86,8 @@ def _subkey(label: str) -> bytes:
 
 
 def envelope_key() -> bytes:
-    """幂等响应 envelope 的 Fernet 密钥（urlsafe base64 的 32 字节）。"""
+    """Fernet key for the idempotency response envelope (urlsafe base64 of 32
+    bytes)."""
     return base64.urlsafe_b64encode(_subkey("envelope"))
 
 
@@ -109,21 +116,24 @@ def token_digest(token: str) -> str:
 
 
 def object_integrity_mac(object_name: str, byte_length: int, content_sha256: str) -> str:
-    """对象完整性 MAC（§8.2）：绑定对象名、字节长度与内容摘要。
+    """Object integrity MAC (§8.2): binds object name, byte length, and content
+    digest.
 
-    只绑定名字与长度时，同长度的任意字节替换都不会被发现。
+    Binding only name and length would leave any equal-length byte swap
+    undetected.
     """
     payload = f"{object_name}\x00{byte_length}\x00{content_sha256}".encode()
     return _hmac(_subkey("object"), "object-integrity-v2", payload).hex()
 
 
 def rate_fingerprint(scope: str, value: str) -> str:
-    """限速用短期指纹（§9.3）：独立每日轮换密钥，不复用 Key Registry digest。"""
+    """Short-lived fingerprint for rate limiting (§9.3): independent
+    daily-rotated key, not reusing the Key Registry digest."""
     return _hmac(_subkey("rate"), f"rate-{scope}-v1", value.encode("utf-8")).hex()
 
 
 def request_digest(photo_bytes: bytes, template_id: str, template_version: int) -> str:
-    """§6.2 请求摘要：长度前缀编码，不包含 boundary/filename/MIME。"""
+    """§6.2 request digest: length-prefixed encoding, no boundary/filename/MIME."""
     parts = [
         b"save-v1",
         len(photo_bytes).to_bytes(8, "big"),

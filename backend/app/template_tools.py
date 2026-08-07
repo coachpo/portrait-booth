@@ -1,13 +1,18 @@
-"""模板内容工具链（SPEC §5.3）。
+"""Template content toolchain (SPEC §5.3).
 
-用法：
-    python -m app.template_tools validate    # schema + 发布规则 + 引用完整性 + 内容哈希
-    python -m app.template_tools rehash      # 把当前 revision 哈希写回 publications.json
-    python -m app.template_tools report      # 列出状态、复核日期与距 SLA 的天数
-    python -m app.template_tools new --id x --jurisdiction US ...   # 生成 revision 骨架
+Usage:
+    python -m app.template_tools validate    # schema + publication rules + reference
+                                             # integrity + content hashes
+    python -m app.template_tools rehash      # write current revision hashes back to
+                                             # publications.json
+    python -m app.template_tools report      # list status, review dates, and days left
+                                             # to SLA
+    python -m app.template_tools new --id x --jurisdiction US ...  # generate a revision
+                                                                   # skeleton
 
-validate 是 CI 的内容门：坏引用与漂移的 contentHash 在运行期只会表现为
-「蒙版静默不画」或「模板被就地改了数字却没人发现」。
+validate is CI's content gate: broken references and drifted contentHash only
+show up at runtime as "mask silently not drawn" or "a template was edited in
+place without anyone noticing".
 """
 
 from __future__ import annotations
@@ -42,8 +47,8 @@ def _write(path: Path, data: dict) -> None:
 def cmd_validate(_args: argparse.Namespace) -> int:
     try:
         entries = load_template_catalog()
-    except Exception as exc:  # 输出可读定位，不打印堆栈
-        print(f"模板校验失败：{exc}", file=sys.stderr)
+    except Exception as exc:  # Readable location without a stack trace
+        print(f"template validation failed: {exc}", file=sys.stderr)
         return 1
 
     missing_hash = [
@@ -51,13 +56,13 @@ def cmd_validate(_args: argparse.Namespace) -> int:
     ]
     if missing_hash:
         print(
-            "以下 publication 缺少 contentHash，revision 可被就地修改而不被发现："
-            + ", ".join(sorted(missing_hash)),
+            "the following publications lack contentHash; revisions could be edited in place "
+            "without being noticed: " + ", ".join(sorted(missing_hash)),
             file=sys.stderr,
         )
         return 1
 
-    print(f"模板校验通过：{len(entries)} 个 revision")
+    print(f"template validation passed: {len(entries)} revisions")
     return 0
 
 
@@ -72,13 +77,13 @@ def cmd_rehash(_args: argparse.Namespace) -> int:
     for pub in pubs["publications"]:
         expected = hashes.get(pub["revisionId"])
         if expected is None:
-            print(f"publication {pub['revisionId']} 没有对应的 revision 文件", file=sys.stderr)
+            print(f"publication {pub['revisionId']} has no matching revision file", file=sys.stderr)
             return 1
         if pub.get("contentHash") != expected:
             pub["contentHash"] = expected
             changed += 1
     _write(_PUBLICATIONS_FILE, pubs)
-    print(f"已更新 {changed} 条 contentHash")
+    print(f"updated {changed} contentHash entries")
     return 0
 
 
@@ -99,15 +104,18 @@ def cmd_report(_args: argparse.Namespace) -> int:
             )
         )
     width = max(len(r[0]) for r in rows)
-    print(f"{'revisionId'.ljust(width)}  status          verifiedAt   reviewDueAt  剩余天数")
+    print(f"{'revisionId'.ljust(width)}  status          verifiedAt   reviewDueAt  days left")
     for revision_id, status, verified, due, days in rows:
-        flag = "  ← 已逾期" if days < 0 else ""
+        flag = "  <- overdue" if days < 0 else ""
         print(
             f"{revision_id.ljust(width)}  {status.ljust(15)} {verified}   {due}   {days:>6}{flag}"
         )
     overdue = [r for r in rows if r[4] < 0]
     if overdue:
-        print(f"\n{len(overdue)} 个模板已过复核期（SLA {REVIEW_SLA_DAYS} 天）", file=sys.stderr)
+        print(
+            f"\n{len(overdue)} templates past their review date (SLA {REVIEW_SLA_DAYS} days)",
+            file=sys.stderr,
+        )
         return 1
     return 0
 
@@ -116,7 +124,7 @@ def cmd_new(args: argparse.Namespace) -> int:
     revision_id = f"{args.id}@{args.version}"
     path = _REVISIONS_DIR / f"{revision_id}.json"
     if path.exists():
-        print(f"{path.name} 已存在", file=sys.stderr)
+        print(f"{path.name} already exists", file=sys.stderr)
         return 1
 
     today = dt.date.today().isoformat()
@@ -125,7 +133,7 @@ def cmd_new(args: argparse.Namespace) -> int:
         "id": args.id,
         "version": args.version,
         "schemaVersion": 1,
-        "label": {"zh": args.label, "en": args.label},
+        "label": {"en": args.label},
         "jurisdiction": args.jurisdiction,
         "documentType": args.document_type,
         "submissionChannel": args.channel,
@@ -134,8 +142,8 @@ def cmd_new(args: argparse.Namespace) -> int:
             {
                 "id": "official-source",
                 "url": "https://example.invalid/replace-me",
-                "title": "官方来源标题",
-                "authority": "签发机关",
+                "title": "Official source title",
+                "authority": "Issuing authority",
                 "sourceUpdatedAt": today,
                 "accessedAt": today,
             }
@@ -154,7 +162,7 @@ def cmd_new(args: argparse.Namespace) -> int:
             "requiresOriginalCameraFile": False,
             "requiresProfessionalPhotographer": False,
         },
-        "sourceNotes": {"zh": ["待补充"], "en": ["To be filled in"]},
+        "sourceNotes": {"en": ["To be filled in"]},
     }
     _write(path, skeleton)
 
@@ -162,11 +170,13 @@ def cmd_new(args: argparse.Namespace) -> int:
     pubs["publications"].append(
         {
             "revisionId": revision_id,
-            # 新模板一律 reference_only：没有复核记录之前不得用于产出成品
+            # New templates are always reference_only: until a review record
+            # exists they must not produce artifacts
             "status": "reference_only",
-            "statusReason": "新建骨架，尚未完成来源核对与复核。",
-            "owner": "Portrait Booth 内容维护",
-            "reviewer": "Portrait Booth 内容复核",
+            "statusReason": "Newly created skeleton; source verification and review "
+            "not yet complete.",
+            "owner": "Portrait Booth content maintainer",
+            "reviewer": "Portrait Booth content reviewer",
             "verifiedAt": today,
             "reviewDueAt": (dt.date.today() + dt.timedelta(days=REVIEW_SLA_DAYS)).isoformat(),
             "effectiveAt": today,
@@ -174,7 +184,7 @@ def cmd_new(args: argparse.Namespace) -> int:
         }
     )
     _write(_PUBLICATIONS_FILE, pubs)
-    print(f"已生成 {path.name}，随后运行 rehash 写入 contentHash")
+    print(f"generated {path.name}; run rehash afterwards to write the contentHash")
     return 0
 
 
@@ -211,11 +221,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="template_tools", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("validate", help="校验全部模板内容").set_defaults(func=cmd_validate)
-    sub.add_parser("rehash", help="写回 contentHash").set_defaults(func=cmd_rehash)
-    sub.add_parser("report", help="复核状态报表").set_defaults(func=cmd_report)
+    sub.add_parser("validate", help="validate all template content").set_defaults(func=cmd_validate)
+    sub.add_parser("rehash", help="write back contentHash").set_defaults(func=cmd_rehash)
+    sub.add_parser("report", help="review status report").set_defaults(func=cmd_report)
 
-    new = sub.add_parser("new", help="生成 revision 骨架")
+    new = sub.add_parser("new", help="generate a revision skeleton")
     new.add_argument("--id", required=True)
     new.add_argument("--version", type=int, default=1)
     new.add_argument("--label", required=True)

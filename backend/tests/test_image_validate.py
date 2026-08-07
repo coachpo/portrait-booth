@@ -1,6 +1,8 @@
-"""image_validate 单元回归（P9）：全局上传上限与模板 maxBytes 取交集。
+"""image_validate unit regressions (P9): the global upload cap intersects
+with template maxBytes.
 
-不经过 HTTP、不需要 DB：直接调用 validate_and_reencode 注入 Settings。
+No HTTP, no DB: validate_and_reencode is called directly with injected
+Settings.
 """
 
 import io
@@ -19,7 +21,8 @@ from app.image_validate import (
 
 def make_jpeg(width=500, height=653, quality=92, noise=False) -> bytes:
     if noise:
-        # 噪声图拉开「输入 vs q92 产物」的字节窗口：复检门独立可测
+        # The noise image widens the byte window between "input" and the
+        # "q92 artifact": the recheck gate becomes independently testable
         rng = random.Random(42)
         img = Image.new("RGB", (width, height))
         img.putdata(
@@ -49,22 +52,27 @@ def encode(photo, *, width=500, height=653, max_bytes=None, settings=None) -> by
 
 class TestEffectiveByteLimit:
     def test_global_limit_caps_template_max_bytes(self):
-        """回归：模板 maxBytes 曾整体压过全局上限，写多大都拦不住。"""
+        """Regression: template maxBytes used to override the global cap
+        entirely; no declared value could stop it."""
         photo = make_jpeg()
-        # 模板声明 64 MB，全局只剩 1024 字节——有效上限必须是 min = 1024
+        # Template declares 64 MB while the global cap is 1024 bytes - the
+        # effective cap must be min = 1024
         with pytest.raises(ImageValidationError) as excinfo:
             encode(photo, max_bytes=64 * 1024 * 1024, settings=Settings(max_upload_bytes=1024))
         assert excinfo.value.code == "PHOTO_TOO_LARGE"
 
     def test_template_stricter_than_global_still_rejects(self):
-        """反向钉死：模板值更小时必须仍按模板值拒绝，不得退化成只看全局。"""
+        """Reverse pin: a smaller template value must still reject per the
+        template value and must not degenerate to global-only."""
         photo = make_jpeg()
         with pytest.raises(ImageValidationError) as excinfo:
             encode(photo, max_bytes=1024, settings=Settings())
         assert excinfo.value.code == "PHOTO_TOO_LARGE"
 
     def test_reencoded_size_is_checked_unconditionally(self):
-        """复检门：入站放行、降到下界 40 仍超限也必须拒（A2 后语义），且用 message 区分两个门。"""
+        """Recheck gate: after the inbound release, still over at the lower
+        bound 40 must reject (post-A2 semantics), and the message distinguishes
+        the two gates."""
         rng = random.Random(42)
         img = Image.new("RGB", (1200, 1200))
         img.putdata(
@@ -76,10 +84,12 @@ class TestEffectiveByteLimit:
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=20)
         photo = buf.getvalue()
-        # 复检门语义（A2 后）：入站刚放行、降到下界 40 仍超限就必须拒。
-        # 服务端会先做 sRGB profileToProfile，直编尺寸与搜索产物不一致，
-        # 所以上限不按直编推算，直接用「入参长度 + 1」——q40 产物（约 45 万字节）
-        # 必然超限，只有复检门能拦。
+        # Recheck-gate semantics (post-A2): inbound just released, still over at
+        # the lower bound 40 must reject. The server runs sRGB
+        # profileToProfile first, so the direct-encode size differs from the
+        # search artifact; the cap is therefore not derived from a direct
+        # encode but set to "input length + 1" - the q40 artifact (~450KB)
+        # is always over, only the recheck gate can catch it.
         tight = len(photo) + 1
         with pytest.raises(ImageValidationError) as excinfo:
             encode(
@@ -90,4 +100,4 @@ class TestEffectiveByteLimit:
                 settings=Settings(max_upload_bytes=tight),
             )
         assert excinfo.value.code == "PHOTO_TOO_LARGE"
-        assert "重编码后仍超过文件上限" in str(excinfo.value)
+        assert "still exceeds the file limit after re-encoding" in str(excinfo.value)

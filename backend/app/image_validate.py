@@ -1,6 +1,8 @@
-"""服务端暂存验证（SPEC §8.2 / SAV-002）。
-只接受 canonical 单图 JPEG；忽略上传文件名；解码验证后重编码 sRGB；
-physical_raster 模板写入规定 PPI；结果不满足则拒绝。"""
+"""Server-side staging validation (SPEC §8.2 / SAV-002).
+Only canonical single-image JPEGs are accepted; the upload filename is
+ignored; after decode-validation the image is re-encoded to sRGB;
+physical_raster templates get the specified PPI written; results that do not
+meet the constraints are rejected."""
 
 import io
 from dataclasses import dataclass
@@ -11,15 +13,18 @@ from .config import Settings, get_settings
 
 SRGB_PROFILE = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB"))
 
-# A2：与前端 frontend/src/render/final-artifact.ts:82-85 的 MIN_QUALITY/MAX_QUALITY
-# （0.4–0.95，PIL 换算成整数 40–95）共享同一质量区间。带体积上限模板的
-# 成品由两端各按实际字节搜一次，区间两端改动必须同步。
+# A2: shares the same quality range as the frontend's
+# frontend/src/render/final-artifact.ts:82-85 MIN_QUALITY/MAX_QUALITY
+# (0.4–0.95, converted to integers 40–95 for PIL). Size-capped templates'
+# artifacts are searched once per side by actual bytes; changing either end of
+# the range requires updating both sides.
 MAX_REENCODE_QUALITY = 92
 MIN_REENCODE_QUALITY = 40
 
 
 def _encode_at(img: Image.Image, quality: int) -> bytes:
-    """按给定质量重编码为 sRGB JPEG；ICC profile 固定开销必须计入候选长度。"""
+    """Re-encode as sRGB JPEG at the given quality; the ICC profile fixed
+    overhead must be counted in candidate lengths."""
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=quality, icc_profile=SRGB_PROFILE.tobytes())
     return out.getvalue()
@@ -27,11 +32,11 @@ def _encode_at(img: Image.Image, quality: int) -> bytes:
 
 @dataclass(frozen=True)
 class SizeConstraint:
-    """模板输出尺寸约束（P6）：exact 与 bounds 二选一。
+    """Template output size constraint (P6): exact or bounds, one of the two.
 
-    exact: exact_pixels / physical_raster 的精确尺寸。
-    bounds: (min_w, min_h, max_w, max_h) + aspect 宽高比 + allowed 白名单，
-    ranged_pixels 用；allowed 为 None 时不校验白名单。
+    exact: exact_pixels / physical_raster exact dimensions.
+    bounds: (min_w, min_h, max_w, max_h) + aspect ratio + allowed whitelist,
+    used by ranged_pixels; when allowed is None the whitelist is not checked.
     """
 
     exact: tuple[int, int] | None
@@ -56,33 +61,36 @@ def validate_and_reencode(
     target_ppi: int | None,
     settings: Settings | None = None,
 ) -> tuple[bytes, int, int]:
-    """验证 → sRGB 重编码 → PPI 写入；返回 (字节, 实际宽, 实际高)。"""
+    """Validate → sRGB re-encode → PPI write; returns (bytes, actual width, actual height)."""
     cfg = settings or get_settings()
-    # §8.2：模板 maxBytes 与全局上限取交集——模板只是候选之一，不能再抬高全局值
+    # §8.2: template maxBytes and the global cap intersect - the template is only
+    # a candidate and can no longer raise the global value
     effective_max = (
         cfg.max_upload_bytes if max_bytes is None else min(max_bytes, cfg.max_upload_bytes)
     )
     if len(data) > effective_max:
-        raise ImageValidationError("PHOTO_TOO_LARGE", "文件超过上传上限")
+        raise ImageValidationError("PHOTO_TOO_LARGE", "file exceeds the upload limit")
 
     try:
         img = Image.open(io.BytesIO(data))
         img.verify()
-        img = Image.open(io.BytesIO(data))  # verify 后需重开
+        img = Image.open(io.BytesIO(data))  # must reopen after verify
     except Exception as e:
-        raise ImageValidationError("PHOTO_INVALID", "无法解码图片") from e
+        raise ImageValidationError("PHOTO_INVALID", "image cannot be decoded") from e
 
     if img.format != "JPEG" or getattr(img, "n_frames", 1) != 1:
-        raise ImageValidationError("PHOTO_INVALID", "仅接受单图 JPEG")
+        raise ImageValidationError("PHOTO_INVALID", "only single-image JPEG is accepted")
 
     width, height = img.size
     if width * height > max_pixels:
-        raise ImageValidationError("PHOTO_TOO_LARGE", "像素超过上限")
+        raise ImageValidationError("PHOTO_TOO_LARGE", "pixel count exceeds the limit")
     if max(width, height) > max_edge_px:
-        raise ImageValidationError("PHOTO_TOO_LARGE", "边长超过上限")
+        raise ImageValidationError("PHOTO_TOO_LARGE", "edge length exceeds the limit")
 
-    # 方向写入实际像素（OUT-004 服务端镜像要求）：剥离 EXIF 后应用方向，
-    # 尺寸校验必须发生在转置之后（旋转图存储尺寸 ≠ 实际方向尺寸）
+    # Orientation is written into actual pixels (OUT-004 server-side mirror
+    # requirement): strip EXIF and apply orientation; size validation must
+    # happen after transposition (a rotated image's stored size ≠ its actual
+    # oriented size)
     img = ImageOps.exif_transpose(img)
     width, height = img.size
 
@@ -90,29 +98,31 @@ def validate_and_reencode(
         if (width, height) != constraint.exact:
             raise ImageValidationError(
                 "PHOTO_SIZE_MISMATCH",
-                f"像素尺寸 {width}×{height} 与模板不符",
+                f"pixel size {width}x{height} does not match the template",
             )
     else:
-        # ranged_pixels：范围 + 宽高比 + 白名单（allowed 为空时跳过）
+        # ranged_pixels: range + aspect ratio + whitelist (skipped when allowed is empty)
         min_w, min_h, max_w, max_h = constraint.bounds
         if not (min_w <= width <= max_w and min_h <= height <= max_h):
             raise ImageValidationError(
                 "PHOTO_SIZE_MISMATCH",
-                f"像素尺寸 {width}×{height} 不在模板允许范围 {min_w}×{min_h}–{max_w}×{max_h} 内",
+                f"pixel size {width}x{height} is outside the template's allowed "
+                f"range {min_w}x{min_h}-{max_w}x{max_h}",
             )
         aspect_w, aspect_h = constraint.aspect
         if width * aspect_h != height * aspect_w:
             raise ImageValidationError(
                 "PHOTO_SIZE_MISMATCH",
-                f"像素尺寸 {width}×{height} 不符合模板宽高比 {aspect_w}:{aspect_h}",
+                f"pixel size {width}x{height} does not match the template "
+                f"aspect ratio {aspect_w}:{aspect_h}",
             )
         if constraint.allowed is not None and (width, height) not in constraint.allowed:
             raise ImageValidationError(
                 "PHOTO_SIZE_MISMATCH",
-                f"像素尺寸 {width}×{height} 不在模板可选尺寸内",
+                f"pixel size {width}x{height} is not among the template's selectable sizes",
             )
 
-    # sRGB 归一化
+    # sRGB normalization
     if img.mode not in ("RGB", "RGBA", "L"):
         img = img.convert("RGB")
     img = ImageCms.profileToProfile(img, SRGB_PROFILE, SRGB_PROFILE, outputMode="RGB")
@@ -127,12 +137,14 @@ def _encode_within(
     effective_max: int | None,
     target_ppi: int | None,
 ) -> bytes:
-    """重编码；必要时向下搜索质量档以满足体积上限（A2）。
+    """Re-encode; when needed, search quality downward to satisfy the size cap
+    (A2).
 
-    与前端 searchQuality 同一契约：判据一律是实际编码出来的字节长度，
-    不用体积模型估算；从 92 起每次 -4（逼近下界改 -1）下行，直到不超限
-    或降到下界 40。max_bytes 为 None（无体积上限模板）时保持固定 92 的
-    既有行为不变。
+    Same contract as the frontend searchQuality: judged strictly by the actual
+    encoded byte length, never by a size model; steps down from 92 by -4
+    (switching to -1 near the lower bound) until within limit or at the lower
+    bound 40. When max_bytes is None (uncapped template) the existing fixed-92
+    behavior is unchanged.
     """
     if effective_max is None:
         encoded = _encode_at(img, MAX_REENCODE_QUALITY)
@@ -146,7 +158,9 @@ def _encode_within(
             )
             encoded = _encode_at(img, quality)
         if len(encoded) > effective_max:
-            raise ImageValidationError("PHOTO_TOO_LARGE", "重编码后仍超过文件上限")
+            raise ImageValidationError(
+                "PHOTO_TOO_LARGE", "still exceeds the file limit after re-encoding"
+            )
 
     if target_ppi is not None:
         encoded = _write_jfif_density(encoded, target_ppi)
@@ -154,9 +168,10 @@ def _encode_within(
 
 
 def _write_jfif_density(data: bytes, ppi: int) -> bytes:
-    """改写 JFIF APP0 density（OUT-006 服务端路径：不信任上传元数据）。"""
+    """Rewrite the JFIF APP0 density (OUT-006 server-side path: upload metadata
+    is not trusted)."""
     if len(data) < 4 or data[:2] != b"\xff\xd8":
-        raise ImageValidationError("PHOTO_INVALID", "JPEG 头损坏")
+        raise ImageValidationError("PHOTO_INVALID", "corrupt JPEG header")
     off = 2
     while off + 4 <= len(data):
         if data[off] != 0xFF:
@@ -175,4 +190,6 @@ def _write_jfif_density(data: bytes, ppi: int) -> bytes:
             out[p + 10 : p + 12] = ppi.to_bytes(2, "big")
             return bytes(out)
         off += 2 + seg_len
-    raise ImageValidationError("PHOTO_INVALID", "JPEG 缺少 JFIF APP0，无法写入打印密度")
+    raise ImageValidationError(
+        "PHOTO_INVALID", "JPEG has no JFIF APP0; print density cannot be written"
+    )

@@ -1,8 +1,9 @@
-"""统一错误契约与同源校验（SPEC §6.5/§9.4）。
+"""Unified error contract and same-origin enforcement (SPEC §6.5/§9.4).
 
-错误响应的形状在整个 API 里必须一致：客户端按 error.code 分支，
-按 requestId 报障。之前 requestId 恒为空串，422 与模板 404 还会漏出
-FastAPI 原生的 {"detail": ...}，客户端拿到两种互不兼容的形状。
+The shape of error responses must be identical across the whole API: clients
+branch on error.code and file issues by requestId. Previously requestId was
+always empty and 422/template-404 leaked FastAPI's native {"detail": ...},
+leaving clients with two incompatible shapes.
 """
 
 from __future__ import annotations
@@ -35,7 +36,8 @@ def error_response(
         status_code=status,
         content=error_body(code, message, request_id or new_request_id()),
     )
-    # 错误响应绝不能被缓存：它们常常携带限速与可用性状态
+    # Error responses must never be cached: they often carry rate-limit and
+    # availability state
     resp.headers["Cache-Control"] = "no-store, private"
     if retry_after is not None:
         resp.headers["Retry-After"] = str(retry_after)
@@ -43,14 +45,16 @@ def error_response(
 
 
 def same_origin_violation(request: Request) -> JSONResponse | None:
-    """状态改变请求的同源校验（§9.4）。
+    """Same-origin enforcement for state-changing requests (§9.4).
 
-    两条独立信号：
-    - Origin：存在就必须与 Host 相同；
-    - Sec-Fetch-Site：浏览器一定会带（识别标志是 Sec-Fetch-Mode），
-      因此对浏览器请求可以强制要求 same-origin，而不影响 curl 一类没有这些头的客户端。
+    Two independent signals:
+    - Origin: when present, must equal Host;
+    - Sec-Fetch-Site: browsers always send it (identified by Sec-Fetch-Mode),
+      so browser requests can be strictly required to be same-origin without
+      affecting clients like curl that lack these headers.
 
-    只看 Origin 是不够的：同站导航式的跨站提交可以完全不带 Origin。
+    Origin alone is not enough: same-site-navigation-style cross-site
+    submissions can omit Origin entirely.
     """
     if not get_settings().require_same_origin:
         return None
@@ -58,10 +62,10 @@ def same_origin_violation(request: Request) -> JSONResponse | None:
     origin = request.headers.get("origin")
     host = request.headers.get("host", "")
     if origin and urlparse(origin).netloc != host:
-        return error_response("CROSS_ORIGIN_REJECTED", "跨站请求被拒绝", 403)
+        return error_response("CROSS_ORIGIN_REJECTED", "cross-site request rejected", 403)
 
     fetch_site = request.headers.get("sec-fetch-site")
     is_browser = request.headers.get("sec-fetch-mode") is not None
     if is_browser and fetch_site not in (None, "same-origin", "none"):
-        return error_response("CROSS_ORIGIN_REJECTED", "跨站请求被拒绝", 403)
+        return error_response("CROSS_ORIGIN_REJECTED", "cross-site request rejected", 403)
     return None

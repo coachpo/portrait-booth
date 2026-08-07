@@ -1,8 +1,11 @@
-"""后端测试的公共隔离：每个用例独立根密钥、DB 与对象目录。
+"""Common isolation for backend tests: each test case gets its own root
+secret, DB, and object directory.
 
-Settings 与 HMAC 子密钥都在调用时读取环境变量，所以 monkeypatch 足以隔离。
-一旦它们回退成 import 期常量，本文件的隔离会静默失效——
-test_config.py 中的回归用例负责让这种回退直接失败。
+Settings and HMAC subkeys are read from environment variables at call time,
+so monkeypatch is enough for isolation.
+If they ever regress to import-time constants, the isolation in this file
+silently stops working - the regressions in test_config.py are responsible for
+making that regression fail directly.
 """
 
 import base64

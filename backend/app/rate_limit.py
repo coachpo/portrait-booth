@@ -1,4 +1,5 @@
-"""限速（§9.3）：计数存 SQLite，窗口与桶由服务端 HMAC 短期指纹决定。"""
+"""Rate limiting (§9.3): counts live in SQLite; windows and buckets are
+determined by server-side HMAC short-lived fingerprints."""
 
 import sqlite3
 import time
@@ -25,14 +26,15 @@ class RateLimiter:
         return int(row["count"])
 
     def check(self, scope: str, bucket: str, window_seconds: int, limit: int) -> bool:
-        """记录一次尝试并返回是否仍在限额内。"""
+        """Record one attempt and return whether it is still within the limit."""
         now = int(time.time())
         window_start = now - (now % window_seconds)
         count = self._record(scope, bucket, window_start)
         return count <= limit
 
     def peek(self, scope: str, bucket: str, window_seconds: int) -> int:
-        """只读当前窗口计数：不自增、不提交，供成功路径做签发闸门。"""
+        """Read-only count of the current window: no increment, no commit; used
+        as the issuance gate on the success path."""
         now = int(time.time())
         window_start = now - (now % window_seconds)
         fp = rate_fingerprint(scope, bucket)

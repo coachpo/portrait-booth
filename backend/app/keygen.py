@@ -1,4 +1,4 @@
-"""KEY 与 secret 生成（SAV-003/006）与 KEY 归一化（SAV-004）。"""
+"""KEY and secret generation (SAV-003/006) and KEY normalization (SAV-004)."""
 
 import base64
 import os
@@ -14,7 +14,8 @@ KEY_RE = re.compile(r"^[A-Z0-9]{6}$")
 
 
 def normalize_key(raw: str) -> str:
-    """SAV-004：去空格/ASCII 连字符、字母转大写；保留前导 0；非法字符不静默映射。"""
+    """SAV-004: strip spaces/ASCII hyphens, uppercase letters; keep leading
+    zeros; never silently map illegal characters."""
     cleaned = re.sub(r"[\s-]", "", raw).upper()
     if not KEY_RE.match(cleaned):
         raise ValueError("invalid key format")
@@ -22,12 +23,13 @@ def normalize_key(raw: str) -> str:
 
 
 def generate_key(rng: Rng | None = None, settings: Settings | None = None) -> str:
-    """SAV-003：CSPRNG 拒绝采样，无模偏差；每位置独立取值，不强制字母/数字配比。"""
+    """SAV-003: CSPRNG rejection sampling without modulo bias; each position is
+    drawn independently with no forced letter/digit mix."""
     cfg = settings or get_settings()
     charset = cfg.key_charset
     n = len(charset)
     r = rng or secrets.randbelow
-    # 拒绝采样：拒绝 randbelow(2^k) >= n 的样本
+    # Rejection sampling: reject samples where randbelow(2^k) >= n
     k = n.bit_length()
     limit = (1 << k) - (1 << k) % n
     chars: list[str] = []
@@ -41,7 +43,7 @@ def generate_key(rng: Rng | None = None, settings: Settings | None = None) -> st
 
 
 def generate_secret(rng: Rng | None = None, settings: Settings | None = None) -> str:
-    """SAV-006：独立 ≥128 比特删除密钥，base64url 编码。"""
+    """SAV-006: independent ≥128-bit delete secret, base64url encoded."""
     cfg = settings or get_settings()
     raw = bytearray()
     for _ in range(cfg.secret_bytes):
@@ -50,24 +52,24 @@ def generate_secret(rng: Rng | None = None, settings: Settings | None = None) ->
 
 
 def key_display(key: str) -> str:
-    """显示分组 `A7C 2F9`；规范值仍是 `A7C2F9`（SAV-004）。"""
+    """Display grouping `A7C 2F9`; the canonical value stays `A7C2F9` (SAV-004)."""
     return f"{key[:3]} {key[3:]}"
 
 
 def random_session_id(rng: Rng | None = None) -> str:
-    """保存会话 ID（≥128 比特随机）。"""
+    """Save session ID (≥128 bits of randomness)."""
     return secrets.token_hex(16) if rng is None else f"{rng(1 << 128):032x}"
 
 
 def random_object_name(rng: Rng | None = None) -> str:
-    """对象存储随机路径名，与 KEY 无关（SPEC §8.2）。"""
+    """Random path name for object storage, unrelated to KEY (SPEC §8.2)."""
     return secrets.token_hex(16) if rng is None else f"{rng(1 << 128):032x}"
 
 
 def random_token(rng: Rng | None = None) -> str:
-    """下载 token（≥128 比特，单次用途）。"""
+    """Download token (≥128 bits, single use)."""
     return secrets.token_urlsafe(16) if rng is None else f"tok-{rng(1 << 128):032x}"
 
 
-if os.environ.get("PORTRAIT_DEV_RNG") == "1":  # pragma: no cover - 测试直接注入
+if os.environ.get("PORTRAIT_DEV_RNG") == "1":  # pragma: no cover - tests inject directly
     pass

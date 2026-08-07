@@ -1,7 +1,9 @@
-"""暂存服务（SPEC §6.2/§7）。
-原子提交边界：对象写入（staging）→ KEY/secret 生成 → 单事务内完成
-KeyRegistry + PhotoRecord(active) + SaveIdempotencyRecord(completed + 加密 envelope)。
-envelope 用服务端密钥 AES-GCM 加密；仅同一匿名会话 + 幂等键可重放。"""
+"""Staging service (SPEC §6.2/§7).
+Atomic commit boundary: object write (staging) → KEY/secret generation → within a
+single transaction: KeyRegistry + PhotoRecord(active) + SaveIdempotencyRecord
+(completed + encrypted envelope).
+The envelope is AES-GCM encrypted with a server key; only the same anonymous
+session + idempotency key can replay it."""
 
 import calendar
 import contextlib
@@ -33,7 +35,8 @@ from .template_store import load_template_catalog
 
 
 def _envelope_fernet() -> Fernet:
-    """envelope 密钥由根密钥派生：不再每进程随机，重启后旧 envelope 仍可解密。"""
+    """The envelope key is derived from the root secret: no per-process randomness,
+    and old envelopes stay decryptable after a restart."""
     return Fernet(hmac_utils.envelope_key())
 
 
@@ -99,20 +102,23 @@ def save_photo(
             catalog=catalog,
         )
     except BaseException:
-        # 租约必须释放，否则同一幂等键会被锁到租约到期，重试全部撞 409
+        # The lease must be released, otherwise the same idempotency key stays
+        # locked until the lease expires and every retry hits 409
         _mark_failed(conn, session_d, idem_d, now_ts)
         raise
 
 
 def _decrypt_envelope(encrypted: str | None) -> SaveResult:
     if not encrypted:
-        raise SaveError("IDEMPOTENCY_UNAVAILABLE", "响应 envelope 缺失", 409)
+        raise SaveError("IDEMPOTENCY_UNAVAILABLE", "response envelope missing", 409)
     try:
         return _save_result_from_envelope(
             json.loads(_envelope_fernet().decrypt(encrypted.encode()))
         )
     except InvalidToken:
-        raise SaveError("IDEMPOTENCY_UNAVAILABLE", "响应 envelope 不可解密", 409) from None
+        raise SaveError(
+            "IDEMPOTENCY_UNAVAILABLE", "response envelope cannot be decrypted", 409
+        ) from None
 
 
 def _do_save(
@@ -130,7 +136,8 @@ def _do_save(
     now_ts: float,
     catalog,
 ) -> SaveResult:
-    # 模板：固定不可变版本 + 当前 publication 必须 active（TMP-004 / §6.1）
+    # Template: pinned immutable version + current publication must be active
+    # (TMP-004 / §6.1)
     catalog = catalog or load_template_catalog()
     entry = next(
         (
@@ -141,9 +148,11 @@ def _do_save(
         None,
     )
     if entry is None:
-        raise SaveError("TEMPLATE_UNAVAILABLE", "模板版本不存在或不可用", 404)
+        raise SaveError(
+            "TEMPLATE_UNAVAILABLE", "template version does not exist or is unavailable", 404
+        )
     if entry.publication["status"] != "active":
-        raise SaveError("TEMPLATE_UNAVAILABLE", "模板版本未激活", 404)
+        raise SaveError("TEMPLATE_UNAVAILABLE", "template version is not active", 404)
     rev = entry.revision
 
     target_ppi = rev["output"]["printPpi"] if rev["output"]["kind"] == "physical_raster" else None
@@ -163,7 +172,8 @@ def _do_save(
     except ImageValidationError as e:
         raise SaveError(e.code, str(e), 422) from e
 
-    # 写入 staging 对象（事务前；崩溃残留由 orphan sweep 清理）
+    # Write the staging object (before the transaction; crash leftovers are
+    # cleaned by the orphan sweep)
     object_name = storage.write(encoded)
 
     try:
@@ -224,10 +234,11 @@ def _do_save(
             "UPDATE key_registry SET state='active', photo_id=? WHERE key_fingerprint=?",
             (photo_id, fingerprint),
         )
-        # 租约在 _acquire_lease 里已经写好了，这里把它推进到 completed。
-        # upsert（O5）：后台清理可能已把租约行删掉（created_at 不刷新），普通
-        # UPDATE 会匹配 0 行——完成的保存必须留下可重放的 completed 记录，
-        # 否则同键重试会再建一张照片和一个 KEY。
+        # The lease was already written by _acquire_lease; move it to completed
+        # here. upsert (O5): background cleanup may have deleted the lease row
+        # (created_at is not refreshed), so a plain UPDATE would match 0 rows - a
+        # completed save must leave a replayable completed record, otherwise a
+        # same-key retry would create another photo and KEY.
         conn.execute(
             "INSERT INTO save_idempotency_records("
             "anonymous_save_session_digest, idempotency_key_digest, request_digest, "
@@ -260,12 +271,14 @@ def _acquire_lease(
     now_ts: float,
     cfg: Settings,
 ) -> None:
-    """占住这次保存（§6.2/§11）。
+    """Hold this save (§6.2/§11).
 
-    先 SELECT 再决定要不要写，是典型的 check-then-act：
-    两个并发请求都会读到「没有记录」，然后各自跑完整个保存流程，
-    结果是两份照片、两个 KEY，第二次提交撞主键后返回 500。
-    这里改成先用主键 INSERT 抢占，由数据库裁决谁赢。
+    SELECT-then-decide is the classic check-then-act: two concurrent requests
+    both read "no record", then both run the full save flow, producing two
+    photos and two KEYs; the second commit then hits the primary key and
+    returns 500.
+    This instead grabs the slot with a primary-key INSERT first, letting the
+    database decide who wins.
     """
     now_iso = _iso(now_ts)
     try:
@@ -286,11 +299,15 @@ def _acquire_lease(
         "idempotency_key_digest=?",
         (session_d, idem_d),
     ).fetchone()
-    if row is None:  # 极窄的竞态：记录刚被清理掉，重试即可
-        raise SaveError("SAVE_PROCESSING", "保存仍在处理中，请重试", 409, retry_after=1)
+    if row is None:  # Narrow race: the record was just cleaned up; retry
+        raise SaveError(
+            "SAVE_PROCESSING", "save still in progress, please retry", 409, retry_after=1
+        )
 
     if row["request_digest"] is not None and row["request_digest"] != req_d:
-        raise SaveError("IDEMPOTENCY_CONFLICT", "同一幂等键携带了不同内容", 409)
+        raise SaveError(
+            "IDEMPOTENCY_CONFLICT", "same idempotency key carried different content", 409
+        )
 
     if row["status"] == "completed":
         raise _ReplayCompleted(row["encrypted_response_envelope"])
@@ -300,12 +317,13 @@ def _acquire_lease(
         if held_for < cfg.idempotency_lease_seconds:
             raise SaveError(
                 "IDEMPOTENCY_IN_PROGRESS",
-                "同一幂等键的上一次保存仍在处理中，请稍后重试",
+                "the previous save with this idempotency key is still in progress, "
+                "please retry later",
                 409,
                 retry_after=max(1, int(cfg.idempotency_lease_seconds - held_for)),
             )
 
-    # failed 或租约过期：接管这次保存
+    # failed or lease expired: take over this save
     conn.execute(
         "UPDATE save_idempotency_records SET status='processing', request_digest=?, updated_at=? "
         "WHERE anonymous_save_session_digest=? AND idempotency_key_digest=?",
@@ -315,7 +333,7 @@ def _acquire_lease(
 
 
 class _ReplayCompleted(Exception):
-    """内部信号：这次请求命中了已完成的幂等记录。"""
+    """Internal signal: this request hit a completed idempotency record."""
 
     def __init__(self, envelope: str | None):
         super().__init__("replay")
@@ -323,18 +341,21 @@ class _ReplayCompleted(Exception):
 
 
 def _parse_iso(value: str) -> float:
-    """时间戳一律按 UTC 解析。
+    """Timestamps are always parsed as UTC.
 
-    用 mktime 减 time.timezone 在有夏令时的时区会差整整一小时，
-    结果是每个租约看起来都已经过期——并发保护形同虚设，重复提交会各建一张照片。
+    mktime minus time.timezone is off by a full hour in DST zones, making every
+    lease look already expired - concurrency protection becomes meaningless and
+    duplicate submissions each create a photo.
     """
     return calendar.timegm(time.strptime(value, "%Y-%m-%dT%H:%M:%SZ"))
 
 
 def _mark_failed(conn: sqlite3.Connection, session_d: str, idem_d: str, now_ts: float) -> None:
-    """让失败的租约立刻可被重试，而不是把幂等键锁死到租约到期。"""
+    """Make a failed lease immediately retryable instead of locking the
+    idempotency key until the lease expires."""
     with contextlib.suppress(sqlite3.Error):
-        # 失败路径可能留下未提交的写，先回滚再改租约状态
+        # The failure path may leave uncommitted writes; roll back first, then
+        # flip the lease state
         conn.rollback()
         conn.execute(
             "UPDATE save_idempotency_records SET status='failed', updated_at=? "
@@ -346,9 +367,10 @@ def _mark_failed(conn: sqlite3.Connection, session_d: str, idem_d: str, now_ts: 
 
 
 def purge_expired_idempotency(conn: sqlite3.Connection, now_ts: float, window: int) -> int:
-    """清理过期的幂等记录（§6.2）。
+    """Clean up expired idempotency records (§6.2).
 
-    envelope 里是明文 KEY 与删除密钥的密文，长期保留等于让它们无限期可重放。
+    The envelope holds the plaintext KEY and the delete-secret ciphertext;
+    keeping it forever equals making them replayable indefinitely.
     """
     cutoff = _iso(now_ts - window)
     cursor = conn.execute(
@@ -360,7 +382,8 @@ def purge_expired_idempotency(conn: sqlite3.Connection, now_ts: float, window: i
 
 
 def _reserve_key(conn: sqlite3.Connection, rng=None, settings: Settings | None = None) -> str:
-    """SAV-003/005：分配与建图同一事务；碰撞时重新采样。"""
+    """SAV-003/005: allocation and mapping in the same transaction; resample on
+    collision."""
     cfg = settings or get_settings()
     for _ in range(50):
         key = generate_key(rng=rng, settings=cfg)
@@ -373,11 +396,11 @@ def _reserve_key(conn: sqlite3.Connection, rng=None, settings: Settings | None =
             return key
         except sqlite3.IntegrityError:
             continue
-    raise SaveError("KEY_EXHAUSTED", "KEY 分配失败，请重试", 503)
+    raise SaveError("KEY_EXHAUSTED", "KEY allocation failed, please retry", 503)
 
 
 def _size_constraint(rev) -> SizeConstraint:
-    """模板输出尺寸约束（P6）：exact 与 ranged 两族。"""
+    """Template output size constraint (P6): the exact and ranged families."""
     out = rev["output"]
     if out["kind"] == "ranged_pixels":
         allowed = out.get("allowedSizes")
@@ -399,7 +422,7 @@ def _size_constraint(rev) -> SizeConstraint:
             aspect=None,
             allowed=None,
         )
-    raise SaveError("TEMPLATE_UNAVAILABLE", "模板无本地渲染尺寸", 404)
+    raise SaveError("TEMPLATE_UNAVAILABLE", "template has no local render size", 404)
 
 
 def _save_result_from_envelope(envelope: dict) -> SaveResult:
@@ -420,4 +443,4 @@ def normalize_key_or_raise(raw: str) -> str:
     try:
         return normalize_key(raw)
     except ValueError:
-        raise SaveError("PHOTO_UNAVAILABLE", "照片不可用", 404) from None
+        raise SaveError("PHOTO_UNAVAILABLE", "photo unavailable", 404) from None

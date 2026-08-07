@@ -46,7 +46,8 @@ def test_get_template_by_revision_id():
 
 
 def test_get_template_unknown_returns_404():
-    """回归：这里曾漏出 FastAPI 原生的 {"detail": ...}，与本 API 的 error envelope 不兼容。"""
+    """Regression: this used to leak FastAPI's native {"detail": ...},
+    incompatible with this API's error envelope."""
     resp = client.get("/api/v1/templates/nope@9")
     assert resp.status_code == 404
     body = resp.json()
@@ -56,7 +57,8 @@ def test_get_template_unknown_returns_404():
 
 
 class TestConditionalRequests:
-    """C12：只做全等比较时，经 CDN 改写成弱 ETag 后条件请求永远不命中。"""
+    """C12: with only exact comparison, a CDN-rewritten weak ETag makes
+    conditional requests never match."""
 
     def test_strong_etag_still_matches(self):
         etag = client.get("/api/v1/templates").headers["ETag"].strip('"')
@@ -83,7 +85,8 @@ class TestConditionalRequests:
         assert resp.status_code == 200
 
     def test_catalog_forces_revalidation(self):
-        """没有 must-revalidate，中间缓存可以在 300 秒里继续供应已停用的模板。"""
+        """Without must-revalidate, an intermediate cache can keep serving a
+        taken-down template for 300 seconds."""
         cache_control = client.get("/api/v1/templates").headers["Cache-Control"]
         assert "must-revalidate" in cache_control
 

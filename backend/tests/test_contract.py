@@ -1,4 +1,4 @@
-"""API 契约硬化（B1/B2/B5/B6）。"""
+"""API contract hardening (B1/B2/B5/B6)."""
 
 import io
 import json
@@ -44,7 +44,8 @@ def post_save(client, cookie: str, idem: str, photo: bytes | None = None):
 
 
 def save_once(client, idem="contract-key-000000001", cookie: str | None = None) -> dict:
-    """幂等作用域是（匿名会话 × 幂等键）：重放必须用同一个会话 cookie。"""
+    """The idempotency scope is (anonymous session × idempotency key): replays
+    must use the same session cookie."""
     resp = post_save(client, cookie or new_session(client), idem)
     assert resp.status_code == 201, resp.text
     return resp.json()
@@ -52,8 +53,9 @@ def save_once(client, idem="contract-key-000000001", cookie: str | None = None) 
 
 class TestDownloadTokenIsAtomic:
     def test_concurrent_downloads_consume_the_token_once(self, client):
-        """回归：先 SELECT 再无条件 UPDATE 是 check-then-act，
-        两个并发请求都能通过检查，单次凭证事实上可重复使用。"""
+        """Regression: SELECT-then-unconditional-UPDATE is check-then-act; both
+        concurrent requests pass the check and the single-use credential
+        becomes effectively reusable."""
         body = save_once(client)
         token = client.post("/api/v1/retrievals/resolve", json={"key": body["key"]}).json()[
             "downloadToken"
@@ -75,7 +77,9 @@ class TestDownloadTokenIsAtomic:
         for t in threads:
             t.join()
 
-        assert results.count(200) == 1, f"单次凭证被消费了 {results.count(200)} 次"
+        assert results.count(200) == 1, (
+            f"the single-use credential was consumed {results.count(200)} times"
+        )
         assert results.count(404) == len(results) - 1
 
     def test_sequential_second_download_is_rejected(self, client):
@@ -96,11 +100,13 @@ class TestIdempotencyLease:
         assert first == second
 
     def test_in_progress_lease_answers_409_with_retry_after(self, client):
-        """并发保存必须是 409 + Retry-After，而不是跑完两遍再撞主键返回 500。"""
+        """A concurrent save must be 409 + Retry-After, not two full runs
+        colliding on the primary key and returning 500."""
         cookie = new_session(client)
         assert save_once(client, "lease-key-00000000002", cookie)["key"]
 
-        # 手工把租约改回 processing，模拟另一个请求正持有它
+        # Manually flip the lease back to processing to simulate another
+        # request holding it
         conn = connect(get_settings().db_path)
         try:
             conn.execute(
@@ -117,7 +123,8 @@ class TestIdempotencyLease:
         assert int(resp.headers["Retry-After"]) >= 1
 
     def test_a_failed_attempt_releases_the_lease(self, client):
-        """失败必须释放租约，否则用户在租约到期前连重试都做不到。"""
+        """A failure must release the lease, otherwise the user cannot even
+        retry before the lease expires."""
         cookie = new_session(client)
         bad_photo = make_jpeg(100, 100)
         first = post_save(client, cookie, "lease-key-00000000003", bad_photo)
@@ -128,15 +135,19 @@ class TestIdempotencyLease:
             row = conn.execute("SELECT status FROM save_idempotency_records").fetchone()
         finally:
             conn.close()
-        assert row["status"] == "failed", "失败的租约留在 processing 会把幂等键锁死"
+        assert row["status"] == "failed", (
+            "a failed lease left in processing would lock the idempotency key"
+        )
 
-        # 同一份内容重试：拿到的是真实原因，而不是 409 IDEMPOTENCY_IN_PROGRESS
+        # Retry with the same content: the real reason comes back instead of
+        # 409 IDEMPOTENCY_IN_PROGRESS
         retry = post_save(client, cookie, "lease-key-00000000003", bad_photo)
         assert retry.status_code == 422
         assert retry.json()["error"]["code"] == "PHOTO_SIZE_MISMATCH"
 
     def test_changing_the_payload_under_one_key_is_a_conflict(self, client):
-        """幂等键绑定内容：换了照片就不再是同一次保存。"""
+        """The idempotency key binds content: changing the photo is no longer
+        the same save."""
         cookie = new_session(client)
         assert post_save(client, cookie, "lease-key-00000000006").status_code == 201
         resp = post_save(client, cookie, "lease-key-00000000006", make_jpeg(quality=60))
@@ -160,13 +171,13 @@ class TestIdempotencyLease:
         for t in threads:
             t.join()
 
-        assert 500 not in statuses, f"并发重复提交不应产生 500：{statuses}"
+        assert 500 not in statuses, f"concurrent duplicate submits must not produce 500: {statuses}"
         conn = connect(get_settings().db_path)
         try:
             count = conn.execute("SELECT COUNT(*) AS n FROM photo_records").fetchone()["n"]
         finally:
             conn.close()
-        assert count == 1, f"同一幂等键只应产生一张照片，实际 {count}"
+        assert count == 1, f"the same idempotency key must produce exactly one photo, got {count}"
 
     def test_expired_records_are_purged(self, client):
         from app.save_service import purge_expired_idempotency
@@ -174,7 +185,8 @@ class TestIdempotencyLease:
         save_once(client, "lease-key-00000000005")
         conn = connect(get_settings().db_path)
         try:
-            # envelope 里是 KEY 与删除密钥的密文，长期保留等于让它们无限期可重放
+            # The envelope holds the plaintext KEY and the delete-secret
+            # ciphertext; keeping it forever equals replaying it indefinitely
             removed = purge_expired_idempotency(conn, now_ts=2_000_000_000, window=600)
             assert removed == 1
             left = conn.execute("SELECT COUNT(*) AS n FROM save_idempotency_records").fetchone()
@@ -183,14 +195,16 @@ class TestIdempotencyLease:
             conn.close()
 
     def test_lease_row_purged_mid_save_still_replays_once(self, client, monkeypatch):
-        """O5：租约行被后台清理删掉后，完成的保存仍留下可重放的 completed 记录。"""
+        """O5: after a background cleanup deletes the lease row, a completed
+        save still leaves a replayable completed record."""
         import app.save_service as save_service
 
         real = save_service.validate_and_reencode
 
         def hook(data, **kwargs):
             result = real(data, **kwargs)
-            # 模拟保存进行中（_acquire_lease 已提交）租约行被清理循环删除
+            # Simulate the cleanup loop deleting the lease row while the save
+            # is in progress (_acquire_lease already committed)
             conn = connect(get_settings().db_path)
             conn.execute("DELETE FROM save_idempotency_records")
             conn.commit()
@@ -211,7 +225,7 @@ class TestIdempotencyLease:
             ).fetchone()["n"]
         finally:
             conn.close()
-        assert count == 1, "同键重放不应再建第二张照片"
+        assert count == 1, "same-key replay must not create a second photo"
         assert completed == 1
 
 
@@ -225,7 +239,8 @@ class TestSameOrigin:
         assert resp.json()["error"]["code"] == "CROSS_ORIGIN_REJECTED"
 
     def test_rejects_a_cross_site_browser_request_without_origin(self, client):
-        """只看 Origin 不够：同站导航式的跨站提交可以完全不带 Origin。"""
+        """Origin alone is not enough: same-site-navigation-style cross-site
+        submissions can omit Origin entirely."""
         resp = client.post(
             "/api/v1/retrievals/resolve",
             json={"key": "ZZZZZZ"},
@@ -242,7 +257,7 @@ class TestSameOrigin:
         assert resp.status_code == 204
 
     def test_allows_non_browser_clients(self, client):
-        # curl 一类客户端没有 Sec-Fetch-*，不应被误伤
+        # Clients like curl have no Sec-Fetch-* and must not be collateral damage
         assert client.post("/api/v1/save-sessions").status_code == 204
 
 
@@ -278,7 +293,8 @@ class TestErrorContract:
 
 class TestObjectIntegrity:
     def test_download_rejects_bytes_that_do_not_match_the_record(self, client):
-        """回归：objectIntegrityMac 只绑定名字与长度，且写入后从未被校验。"""
+        """Regression: objectIntegrityMac bound only name and length and was
+        never verified after writing."""
         body = save_once(client, "contract-key-000000010")
         conn = connect(get_settings().db_path)
         try:
@@ -289,7 +305,7 @@ class TestObjectIntegrity:
         storage = Storage()
         original = storage.read(row["object_key"])
         assert original is not None
-        # 等长替换：长度检查完全看不出来
+        # Equal-length swap: the length check cannot see it
         (storage.base / row["object_key"]).write_bytes(b"\x00" * len(original))
 
         token = client.post("/api/v1/retrievals/resolve", json={"key": body["key"]}).json()[
@@ -303,9 +319,12 @@ class TestObjectIntegrity:
 
 
 class TestDeleteReportsFailureHonestly:
-    """回归：整个 delete_save 被一个 except Exception 兜成 204。
+    """Regression: the whole delete_save was swallowed into a 204 by
+    except Exception.
 
-    撤销事务没提交时接口也报成功：UI 说「已删除」，照片却仍是 active、仍可取回。
+    When the revocation transaction did not commit, the endpoint still
+    reported success: the UI said "deleted" while the photo stayed active and
+    retrievable.
     """
 
     @staticmethod
@@ -326,7 +345,7 @@ class TestDeleteReportsFailureHonestly:
         real_db = saves_router._db
 
         class LockedConn:
-            """模拟撤销那条 UPDATE 撞上写锁。"""
+            """Simulate the revocation UPDATE hitting a write lock."""
 
             def __init__(self, inner):
                 self._inner = inner
@@ -339,22 +358,24 @@ class TestDeleteReportsFailureHonestly:
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
-        # 用 context 而不是 undo()：conftest 的环境隔离用的是同一个 monkeypatch
-        # 实例，undo() 会把根密钥一起撤销掉
+        # Use context instead of undo(): the conftest environment isolation
+        # shares the same monkeypatch instance, and undo() would also revoke
+        # the root secret key
         with monkeypatch.context() as m:
             m.setattr(saves_router, "_db", lambda: LockedConn(real_db()))
             resp = self._delete(client, body)
         assert resp.status_code == 503
         assert resp.json()["error"]["code"] == "DELETE_UNAVAILABLE"
 
-        # 照片确实还在——所以接口报失败是对的
+        # The photo really is still there - so reporting failure is correct
         assert (
             client.post("/api/v1/retrievals/resolve", json={"key": body["key"]}).status_code == 200
         )
 
     def test_a_failed_byte_purge_still_counts_as_deleted(self, client, monkeypatch):
-        """撤销已经提交后，物理删除失败不该把「已删除」收回——
-        照片此时已经取不回，worker 的 purge_due 会补上字节清理。"""
+        """After the revocation has committed, a physical-delete failure must
+        not take back "deleted" - the photo is already unretrievable, and the
+        worker's purge_due completes the byte cleanup."""
         from app.routers import saves as saves_router
 
         body = save_once(client, "contract-key-000000012")

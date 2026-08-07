@@ -1,4 +1,5 @@
-"""SQLite 元数据存储（SPEC §7）。WAL、每请求短连接、同步端点走线程池。"""
+"""SQLite metadata storage (SPEC §7). WAL, short-lived per-request connections,
+and synchronous endpoints go through a thread pool."""
 
 import sqlite3
 from pathlib import Path

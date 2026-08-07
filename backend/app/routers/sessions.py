@@ -1,4 +1,4 @@
-"""SPEC §6.0：服务政策与保存会话。"""
+"""SPEC §6.0: service policy and save sessions."""
 
 import secrets
 
@@ -23,7 +23,8 @@ def get_service_policy() -> dict:
 
 @router.post("/save-sessions", status_code=204)
 def create_save_session(request: Request):
-    """§6.0/§9.4：同源校验；设置 Secure; HttpOnly; SameSite=Strict; 会话 Cookie。"""
+    """§6.0/§9.4: same-origin enforcement; sets a Secure; HttpOnly;
+    SameSite=Strict session cookie."""
     rejected = same_origin_violation(request)
     if rejected is not None:
         return rejected
@@ -39,6 +40,6 @@ def create_save_session(request: Request):
         samesite="strict",
         path="/api/v1/saves",
     )
-    # 会话 ID 只出现在 Cookie 中，不进入 URL/日志
+    # The session ID appears only in the cookie, never in URLs or logs
     resp.headers["Cache-Control"] = "no-store, private"
     return resp

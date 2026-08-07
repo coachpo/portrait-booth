@@ -1,8 +1,9 @@
-"""生命周期 worker 的调度契约（A13/B3）。
+"""Lifecycle worker scheduling contract (A13/B3).
 
-回归背景：清理逻辑写在 worker.py 里，但 Dockerfile 的 CMD 只有 uvicorn、
-compose 也没有第二个服务，`if __name__ == "__main__"` 永远不会被触发——
-到期照片不撤销、不清除，用户点了删除也只是标记。
+Regression background: cleanup logic lived in worker.py, but the Dockerfile
+CMD ran only uvicorn and compose had no second service, so
+`if __name__ == "__main__"` never fired - expired photos were never revoked
+or cleared, and clicking delete only marked them.
 """
 
 import asyncio
@@ -36,7 +37,7 @@ class TestLifecycleWorker:
                 await asyncio.sleep(0.05)
 
         asyncio.run(scenario())
-        assert calls, "清理循环必须在应用启动后真正跑起来"
+        assert calls, "the cleanup loop must actually run once the app is up"
 
     def test_does_nothing_when_disabled(self, monkeypatch):
         calls: list[int] = []
@@ -55,7 +56,7 @@ class TestLifecycleWorker:
 
         def boom():
             calls.append(1)
-            raise RuntimeError("磁盘暂时不可用")
+            raise RuntimeError("disk temporarily unavailable")
 
         monkeypatch.setattr(worker, "run_once", boom)
 
@@ -63,7 +64,7 @@ class TestLifecycleWorker:
             async with worker.lifecycle_worker():
                 await asyncio.sleep(0.05)
 
-        asyncio.run(scenario())  # 不应抛出
+        asyncio.run(scenario())  # must not raise
         assert calls
 
     def test_stops_when_the_app_shuts_down(self, monkeypatch):
@@ -80,7 +81,8 @@ class TestLifecycleWorker:
 
 
 class TestRunOnceCleanup:
-    """第一次端到端执行 run_once()：三类记录随清理循环删除（O5）。"""
+    """First end-to-end execution of run_once(): the three record classes are
+    deleted by the cleanup loop (O5)."""
 
     def test_run_once_purges_expired_idempotency_records(self):
         init_schema(get_settings().db_path)
@@ -123,7 +125,7 @@ class TestRunOnceCleanup:
         init_schema(get_settings().db_path)
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         conn = connect(get_settings().db_path)
-        # A 已消费；B 未消费但已过期；C 未消费且未过期
+        # A consumed; B unconsumed but expired; C unconsumed and unexpired
         for token, consumed, expires in (
             ("token-a", now, now),
             ("token-b", None, "2020-01-01T00:00:00Z"),
@@ -149,14 +151,16 @@ class TestRunOnceCleanup:
     def test_run_once_purges_purged_photo_records_but_keeps_revoked(self):
         init_schema(get_settings().db_path)
         conn = connect(get_settings().db_path)
-        # purged 行：key_registry 已退役（photo_id=NULL），purged_at 非空
+        # purged row: key_registry already retired (photo_id=NULL), purged_at
+        # non-null
         conn.execute(
             "INSERT INTO key_registry(key_fingerprint, state, issued_at, photo_id) "
             "VALUES (?,?,?,?)",
             ("fp-purged", "retired", "2026-01-01T00:00:00Z", None),
         )
-        # access-revoked 行：expires_at 在将来、purge_due_at 留空，
-        # 否则排在前面的 purge_expired/purge_due 会先把它推进成 purged
+        # access-revoked row: expires_at in the future and purge_due_at empty,
+        # otherwise the purge_expired/purge_due steps above would advance it to
+        # purged first
         conn.execute(
             "INSERT INTO key_registry(key_fingerprint, state, issued_at, photo_id) "
             "VALUES (?,?,?,?)",

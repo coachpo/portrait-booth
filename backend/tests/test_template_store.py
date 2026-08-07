@@ -16,7 +16,7 @@ MINIMAL_REVISION = {
     "id": "test",
     "version": 1,
     "schemaVersion": 1,
-    "label": {"zh": "测试模板"},
+    "label": {"en": "test template"},
     "jurisdiction": "XX",
     "documentType": "portrait",
     "submissionChannel": "digital_upload",
@@ -25,8 +25,8 @@ MINIMAL_REVISION = {
         {
             "id": "s1",
             "url": "https://example.com/spec",
-            "title": "官方规格",
-            "authority": "测试机构",
+            "title": "Official specification",
+            "authority": "Test authority",
             "accessedAt": "2026-08-06",
         }
     ],
@@ -55,15 +55,15 @@ MINIMAL_REVISION = {
         "requiresOriginalCameraFile": False,
         "requiresProfessionalPhotographer": False,
     },
-    "sourceNotes": {"zh": []},
+    "sourceNotes": {"en": []},
 }
 
 MINIMAL_PUBLICATION = {
     "revisionId": "test@1",
     "status": "active",
-    "statusReason": "测试",
-    "owner": "测试维护",
-    "reviewer": "测试复核",
+    "statusReason": "test",
+    "owner": "test maintainer",
+    "reviewer": "test reviewer",
     "verifiedAt": "2026-08-06",
     "reviewDueAt": "2026-11-04",
     "effectiveAt": "2026-08-06",
@@ -118,7 +118,7 @@ def test_catalog_etag_changes_with_revision_and_publication(tmp_path):
     assert catalog_etag(entries) != first
 
     new_rev = copy.deepcopy(MINIMAL_REVISION)
-    new_rev["label"] = {"zh": "改了"}
+    new_rev["label"] = {"en": "changed"}
     tmp = write_catalog(tmp_path=tmp, revisions=[new_rev], publications=[MINIMAL_PUBLICATION])
     entries = load_template_catalog(tmp / "revisions", tmp / "publications.json")
     assert catalog_etag(entries) != first
@@ -147,7 +147,7 @@ def test_rejects_revision_id_mismatch(tmp_path):
 
 def test_rejects_missing_publication(tmp_path):
     tmp = write_catalog(tmp_path, revisions=[MINIMAL_REVISION], publications=[])
-    with pytest.raises(ValueError, match="缺少 publication"):
+    with pytest.raises(ValueError, match="missing publication"):
         load_template_catalog(tmp / "revisions", tmp / "publications.json")
 
 
@@ -173,7 +173,7 @@ def test_rejects_active_portal_source(tmp_path):
     bad["output"] = {"kind": "portal_source", "officialPortalPerformsCrop": True}
     del bad["outputFile"]
     tmp = write_catalog(tmp_path, revisions=[bad], publications=[MINIMAL_PUBLICATION])
-    with pytest.raises(ValueError, match="active 模板不得使用 portal_source"):
+    with pytest.raises(ValueError, match="active template must not use portal_source"):
         load_template_catalog(tmp / "revisions", tmp / "publications.json")
 
 
@@ -181,7 +181,7 @@ def test_rejects_active_without_output_file(tmp_path):
     bad = copy.deepcopy(MINIMAL_REVISION)
     del bad["outputFile"]
     tmp = write_catalog(tmp_path, revisions=[bad], publications=[MINIMAL_PUBLICATION])
-    with pytest.raises(ValueError, match="active 模板必须具有 outputFile"):
+    with pytest.raises(ValueError, match="active template must have an outputFile"):
         load_template_catalog(tmp / "revisions", tmp / "publications.json")
 
 
@@ -190,7 +190,7 @@ def test_rejects_unresolved_size_limit_on_non_portrait(tmp_path):
     bad["documentType"] = "visa"
     bad["outputFile"] = {
         "mime": ["image/jpeg"],
-        "sizeLimit": {"sourceLiteral": "未知", "normalization": "unresolved"},
+        "sizeLimit": {"sourceLiteral": "unknown", "normalization": "unresolved"},
     }
     tmp = write_catalog(tmp_path, revisions=[bad], publications=[MINIMAL_PUBLICATION])
     with pytest.raises(ValueError, match="unresolved"):

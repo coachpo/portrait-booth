@@ -1,4 +1,4 @@
-"""暂存/取回/删除端到端（SPEC §6.2~§6.5）。"""
+"""Staging/retrieval/delete end-to-end (SPEC §6.2~§6.5)."""
 
 import io
 import json
@@ -18,7 +18,8 @@ from app.image_validate import (
 )
 from app.worker import purge_expired, sweep_orphans
 
-# DB、对象目录与根密钥由 conftest.py 的 isolated_runtime fixture 逐用例隔离
+# DB, object dir, and root secret are isolated per test case by conftest.py's
+# isolated_runtime fixture
 
 
 @pytest.fixture()
@@ -36,7 +37,8 @@ def make_jpeg(width=500, height=653, quality=92) -> bytes:
 
 
 def textured_jpeg(width=600, height=600, seed=7) -> bytes:
-    """轻微纹理图：比纯色图更接近真实照片的量级，但仍可被压缩进 240 KB。"""
+    """Lightly textured image: closer to a real photo's scale than a solid
+    color, but still compressible into 240 KB."""
     rng = random.Random(seed)
     img = Image.new("RGB", (width, height))
     img.putdata(
@@ -50,12 +52,13 @@ def textured_jpeg(width=600, height=600, seed=7) -> bytes:
         ]
     )
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=60)  # 输入字节本身必须 ≤ 上限（入参门）
+    img.save(buf, format="JPEG", quality=60)  # input bytes themselves must be ≤ cap (inbound gate)
     return buf.getvalue()
 
 
 def save_us_visa(client, photo: bytes, key: str):
-    """us-visa-digital 专用保存（P6）：save_flow 硬编码 fi 模板，不可复用。"""
+    """us-visa-digital-specific save (P6): save_flow hard-codes the fi
+    template and cannot be reused."""
     session = client.post("/api/v1/save-sessions")
     assert session.status_code == 204
     cookie = session.cookies["pb_save_session"]
@@ -69,7 +72,8 @@ def save_us_visa(client, photo: bytes, key: str):
 
 
 def noise_image(width=600, height=600) -> Image.Image:
-    """每像素独立均匀随机 RGB 噪声（固定种子，保证可重复）。"""
+    """Per-pixel independent uniform random RGB noise (fixed seed for
+    reproducibility)."""
     rng = random.Random(20260805)
     img = Image.new("RGB", (width, height))
     img.putdata(
@@ -82,10 +86,11 @@ def noise_image(width=600, height=600) -> Image.Image:
 
 
 def search_quality_bytes(img: Image.Image, max_bytes: int) -> bytes:
-    """镜像前端 searchQuality（final-artifact.ts:208-241）：二分取最大可行 q。
+    """Mirror of the frontend searchQuality (final-artifact.ts:208-241):
+    binary search for the max feasible q.
 
-    lo=0.40 / hi=0.95 / 10 步 / eps=0.005；浏览器 toBlob 不写 ICC，故不带
-    icc_profile；全不可行时补试一次 q=40。
+    lo=0.40 / hi=0.95 / 10 steps / eps=0.005; the browser toBlob does not
+    write ICC, so no icc_profile; when nothing is feasible, try q=40 once.
     """
     lo, hi = 0.40, 0.95
     best, best_q = None, -1.0
@@ -110,7 +115,7 @@ def search_quality_bytes(img: Image.Image, max_bytes: int) -> bytes:
 
 
 def save_flow(client) -> dict:
-    """建会话 → 保存 → 返回响应 JSON。"""
+    """Create session → save → return the response JSON."""
     session = client.post("/api/v1/save-sessions")
     assert session.status_code == 204
     cookie = session.cookies["pb_save_session"]
@@ -135,7 +140,8 @@ class TestSaveFlow:
         assert body["photo"]["mime"] == "image/jpeg"
 
     def test_save_accepts_client_searched_photo_within_limit(self, client):
-        """A2 正向：客户端已按体积搜索压到上限内的成品，服务端不得以固定 q92 拒收。"""
+        """A2 positive: once the client searched its artifact under the size
+        cap, the server must not reject it with a fixed q92."""
         img = noise_image()
         client_blob = search_quality_bytes(img, 240000)
         assert len(client_blob) <= 240000
@@ -152,7 +158,7 @@ class TestSaveFlow:
         )
         assert resp.status_code == 201, resp.text
 
-        # 落库字节仍在上限内（走 test_contract.py 的 DB 直读模式）
+        # Stored bytes still within the cap (via test_contract.py's DB-direct mode)
         conn = connect(get_settings().db_path)
         try:
             row = conn.execute("SELECT byte_length FROM photo_records").fetchone()
@@ -161,13 +167,14 @@ class TestSaveFlow:
         assert row is not None and row["byte_length"] <= 240000
 
     def test_reencode_rejects_when_below_floor_still_over_limit(self, client):
-        """A2 反向：直调 validate_and_reencode，降到下界 40 仍超限必须拒绝。"""
+        """A2 negative: direct validate_and_reencode must reject when even the
+        lower bound 40 is still over."""
         img = noise_image()
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=20)  # 高熵但远低于下界的入参
+        img.save(buf, format="JPEG", quality=20)  # high entropy but well below the floor
         data = buf.getvalue()
         settings = get_settings()
-        assert len(data) <= 90000  # 入参长度门（image_validate.py:33-34）不被触发
+        assert len(data) <= 90000  # the inbound length gate (image_validate.py:33-34) is not hit
 
         with pytest.raises(ImageValidationError) as exc:
             validate_and_reencode(
@@ -182,7 +189,8 @@ class TestSaveFlow:
         assert exc.value.code == "PHOTO_TOO_LARGE"
 
     def test_us_visa_accepts_1200x1200_within_limit(self, client):
-        """P6：ranged 模板的高档位可保存，响应回传实际尺寸 1200。"""
+        """P6: the ranged template's upper band can be saved; the response
+        reports the actual size 1200."""
         resp = save_us_visa(client, textured_jpeg(1200, 1200), "test-idem-key-p6-1200")
         assert resp.status_code == 201, resp.text
         body = resp.json()
@@ -190,19 +198,20 @@ class TestSaveFlow:
         assert body["photo"]["height"] == 1200
 
     def test_us_visa_accepts_default_600x600(self, client):
-        """P6：默认档行为不变。"""
+        """P6: default band behavior unchanged."""
         resp = save_us_visa(client, textured_jpeg(600, 600), "test-idem-key-p6-0600")
         assert resp.status_code == 201, resp.text
         assert resp.json()["photo"]["width"] == 600
 
     def test_us_visa_rejects_out_of_range_1300(self, client):
-        """P6：越出模板范围的高档位必须 422，且入参不是过大（1300² 未超像素门）。"""
+        """P6: a band outside the template's range must 422, and the input is
+        not oversized (1300² is under the pixel gate)."""
         resp = save_us_visa(client, textured_jpeg(1300, 1300), "test-idem-key-p6-1300")
         assert resp.status_code == 422, resp.text
         assert resp.json()["error"]["code"] == "PHOTO_SIZE_MISMATCH"
 
     def test_us_visa_rejects_off_aspect_1200x600(self, client):
-        """P6：破坏 1:1 宽高比的尺寸必须 422。"""
+        """P6: a size breaking the 1:1 aspect ratio must 422."""
         resp = save_us_visa(client, textured_jpeg(1200, 600), "test-idem-key-p6-1206")
         assert resp.status_code == 422, resp.text
         assert resp.json()["error"]["code"] == "PHOTO_SIZE_MISMATCH"
@@ -228,7 +237,8 @@ class TestSaveFlow:
         assert resp.status_code == 400
 
     def test_global_upload_limit_caps_template_max_bytes(self, client, monkeypatch):
-        """回归：模板 maxBytes 曾整体压过全局上限，调小全局值后上传仍被拒。"""
+        """Regression: template maxBytes used to override the global cap
+        entirely; lowering the global value must still reject the upload."""
         photo = make_jpeg()
         monkeypatch.setenv("PORTRAIT_MAX_UPLOAD_BYTES", str(len(photo) - 1))
         session = client.post("/api/v1/save-sessions")
@@ -315,7 +325,9 @@ class TestSaveFlow:
         assert resp.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
 
     def test_new_session_same_idempotency_key_is_a_new_save(self, client):
-        """不变量：会话摘要参与幂等主键，换会话即换命名空间，同幂等键也是全新保存。"""
+        """Invariant: the session digest participates in the idempotency primary
+        key; switching sessions switches namespaces, so the same idempotency key
+        is a brand-new save."""
         session_a = client.post("/api/v1/save-sessions")
         cookie_a = session_a.cookies["pb_save_session"]
         first = client.post(
@@ -358,7 +370,7 @@ class TestRetrieveFlow:
         assert download.headers["Cache-Control"] == "no-store, private"
         assert download.headers["X-Robots-Tag"].startswith("noindex")
 
-        # token 单次用途：二次消费 404
+        # token is single-use: second consumption is 404
         again = client.post(
             "/api/v1/retrievals/download", headers={"Authorization": f"Bearer {token}"}
         )
@@ -397,7 +409,7 @@ class TestDeleteFlow:
             headers={"Content-Type": "application/json"},
         )
         assert resp.status_code == 204
-        # 重复删除同样 204
+        # Repeated delete is also 204
         again = client.request(
             "DELETE",
             "/api/v1/saves",
@@ -415,7 +427,7 @@ class TestDeleteFlow:
             headers={"Content-Type": "application/json"},
         )
         assert resp.status_code == 204
-        # 照片仍可解析
+        # The photo is still resolvable
         resolved = client.post("/api/v1/retrievals/resolve", json={"key": body["key"]})
         assert resolved.status_code == 200
 
@@ -439,7 +451,7 @@ class TestWorker:
             assert row is not None
             assert storage.read(row["object_key"]) is not None
 
-            # 强制到期后 purge
+            # Force expiry then purge
             conn.execute(
                 "UPDATE photo_records SET expires_at='2000-01-01T00:00:00Z' WHERE id=?",
                 (row["id"],),
@@ -451,12 +463,13 @@ class TestWorker:
             state = conn.execute(
                 "SELECT state FROM key_registry WHERE photo_id IS NULL AND state='retired'"
             ).fetchone()
-            assert state is not None  # retired 项永久保留
+            assert state is not None  # retired items are kept forever
         finally:
             conn.close()
 
     def test_orphan_sweep_spares_objects_younger_than_the_age_gate(self, client):
-        """回归：没有年龄门限时，这一趟清理会删掉进行中请求刚写下的字节。"""
+        """Regression: without the age gate this sweep deletes bytes just
+        written by an in-flight request."""
         import os
 
         from app import db
@@ -472,7 +485,7 @@ class TestWorker:
             assert sweep_orphans(conn, storage) == 0
             assert storage.read(fresh) is not None
 
-            # 把它改老到超过门限，再扫一次
+            # Age it past the gate, then sweep again
             old = time.time() - cfg.orphan_min_age_seconds - 60
             os.utime(storage.base / fresh, (old, old))
             assert sweep_orphans(conn, storage) == 1
@@ -494,7 +507,7 @@ class TestWorker:
                 "SELECT object_key FROM photo_records WHERE status='active'"
             ).fetchone()
             assert row is not None
-            # 引用中的对象无论多老都不能被扫掉
+            # Referenced objects must not be swept no matter how old
             assert sweep_orphans(conn, storage, min_age_seconds=0) == 0
             assert storage.read(row["object_key"]) is not None
             assert body["key"]
@@ -502,7 +515,8 @@ class TestWorker:
             conn.close()
 
     def test_user_delete_removes_the_bytes_immediately(self, client):
-        """回归：删除曾只标记状态，照片原件继续留到 30 天 TTL 结束。"""
+        """Regression: delete used to only mark status, leaving the original
+        bytes on disk until the 30-day TTL."""
         from app import db
         from app.config import get_settings
         from app.storage import Storage
@@ -545,7 +559,9 @@ class TestWorker:
 
 class TestRateLimit:
     def test_resolve_failures_are_rate_limited(self, client):
-        """未知 KEY 的每次失败都写失败桶（回归：旧断言恒真，删掉自增也不会红）。"""
+        """Every failure of an unknown KEY writes the failure bucket
+        (regression: the old assertion was tautological and would stay green if
+        the increment were deleted)."""
         for _ in range(3):
             resp = client.post("/api/v1/retrievals/resolve", json={"key": "ZZZZZZ"})
             assert resp.status_code == 404
@@ -564,7 +580,8 @@ class TestRateLimit:
         assert row["total"] == 3
 
     def test_successful_resolves_do_not_burn_the_failure_budget(self, client):
-        """回归：同一合法 KEY 在窗口内可反复取回，成功路径一次都不写 resolve-fail 桶。"""
+        """Regression: a legitimate KEY can be retrieved repeatedly within the
+        window; the success path never writes the resolve-fail bucket."""
         key = save_flow(client)["key"]
         for _ in range(6):
             resp = client.post("/api/v1/retrievals/resolve", json={"key": key})
@@ -585,7 +602,9 @@ class TestRateLimit:
         assert row["total"] == 0
 
     def test_resolve_fail_budget_gates_issuance_after_limit(self, client, monkeypatch):
-        """闸门：同一 KEY 指纹本窗口失败满额后，记录恢复有效也拒绝签发（指纹/窗口对齐）。"""
+        """Gate: once the same KEY fingerprint has failed up to the limit in
+        this window, issuance is refused even after the record is restored
+        (fingerprint/window alignment)."""
         monkeypatch.setenv("PORTRAIT_RESOLVE_FAIL_LIMIT", "2")
         key = save_flow(client)["key"]
 
@@ -595,7 +614,7 @@ class TestRateLimit:
 
         conn = connect(get_settings().db_path)
         try:
-            # 先让记录过期，制造失败结局
+            # First expire the record to manufacture failure outcomes
             conn.execute(
                 "UPDATE photo_records SET expires_at='2000-01-01T00:00:00Z' "
                 "WHERE id IN (SELECT photo_id FROM key_registry WHERE key_fingerprint=?)",
@@ -611,7 +630,8 @@ class TestRateLimit:
 
         conn = connect(get_settings().db_path)
         try:
-            # 恢复有效；失败额度已耗尽，闸门必须仍然拒绝签发
+            # Restore validity; the failure budget is exhausted, so the gate
+            # must still refuse issuance
             conn.execute(
                 "UPDATE photo_records SET expires_at='2099-01-01T00:00:00Z' "
                 "WHERE id IN (SELECT photo_id FROM key_registry WHERE key_fingerprint=?)",

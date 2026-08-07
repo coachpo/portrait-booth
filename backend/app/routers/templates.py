@@ -1,4 +1,5 @@
-"""模板目录路由：目录 + ETag 条件请求；按 revisionId 获取固定版本。"""
+"""Template catalog routes: catalog + ETag conditional requests; pinned
+version fetch by revisionId."""
 
 from __future__ import annotations
 
@@ -17,13 +18,15 @@ from app.template_store import (
 
 router = APIRouter(prefix="/api/v1/templates", tags=["templates"])
 
-# must-revalidate 是紧急停用信号能生效的前提：没有它，
-# 中间缓存可以在整整 300 秒里继续供应一个已被停用的模板（§5.3）。
+# must-revalidate is what makes the emergency-takedown signal effective:
+# without it, an intermediate cache can keep serving a taken-down template
+# for a full 300 seconds (§5.3).
 _CACHE_CONTROL = "public, max-age=300, must-revalidate"
 
 
 def _content_key() -> tuple[int, int]:
-    """模板文件的修改时间。内容改了就换缓存键——否则紧急停用要等进程重启。"""
+    """Template file modification times. When content changes the cache key
+    changes - otherwise an emergency takedown would wait for a process restart."""
     revisions = [p.stat().st_mtime_ns for p in _REVISIONS_DIR.glob("*.json")]
     return (_PUBLICATIONS_FILE.stat().st_mtime_ns, max(revisions, default=0))
 
@@ -43,10 +46,11 @@ def _json(payload: dict) -> str:
 
 
 def etag_matches(header: str | None, etag: str) -> bool:
-    """按 RFC 9110 解析 If-None-Match。
+    """Parse If-None-Match per RFC 9110.
 
-    只做全等字符串比较是不够的：经 CDN 或反代改写成弱形式（W/"..."）之后，
-    条件请求会永远不命中，304 退化成每次返回全量 catalog。
+    Exact string comparison is not enough: once a CDN or reverse proxy
+    rewrites to the weak form (W/"..."), conditional requests never match and
+    304 degrades to full-catalog responses every time.
     """
     if not header:
         return False
@@ -91,7 +95,7 @@ def _template_response(entry: TemplateEntry) -> Response:
 
 @router.get("/{template_id}/versions/{version}")
 def get_template_version(template_id: str, version: int) -> Response:
-    """§6.1 规定的固定版本端点。"""
+    """The pinned version endpoint required by §6.1."""
     entries, _ = _catalog()
     for entry in entries:
         if entry.revision["id"] == template_id and entry.revision["version"] == version:
@@ -101,7 +105,7 @@ def get_template_version(template_id: str, version: int) -> Response:
 
 @router.get("/{revision_id}")
 def get_template(revision_id: str) -> Response:
-    """按 revisionId 取固定版本（保留为兼容别名）。"""
+    """Fetch the pinned version by revisionId (kept as a compatibility alias)."""
     entries, _ = _catalog()
     for entry in entries:
         if entry.revision["revisionId"] == revision_id:

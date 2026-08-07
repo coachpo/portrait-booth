@@ -1,4 +1,5 @@
-"""SPEC §6.3：解析取回与下载。统一 PHOTO_UNAVAILABLE 404；下载 token 原子消费。"""
+"""SPEC §6.3: resolve retrieval and download. Unified PHOTO_UNAVAILABLE 404;
+download tokens consumed atomically."""
 
 import hmac
 import sqlite3
@@ -34,7 +35,8 @@ def _unavailable(request_id: str) -> JSONResponse:
         content={
             "error": {
                 "code": "PHOTO_UNAVAILABLE",
-                "message": "照片不可用，可能是 KEY/访问凭证无效、已过期或已删除。",
+                "message": "photo unavailable; the KEY/access credential may be "
+                "invalid, expired, or deleted.",
                 "requestId": request_id,
             }
         },
@@ -45,7 +47,8 @@ def _unavailable(request_id: str) -> JSONResponse:
 
 @router.post("/resolve")
 def resolve(request: Request, body: dict) -> JSONResponse:
-    """§6.5：KEY 不存在/过期/已删/未激活一律 404 PHOTO_UNAVAILABLE；限速（§9.3）。"""
+    """§6.5: KEY missing/expired/deleted/inactive all yield 404 PHOTO_UNAVAILABLE;
+    rate limited (§9.3)."""
     rejected = same_origin_violation(request)
     if rejected is not None:
         return rejected
@@ -64,7 +67,8 @@ def resolve(request: Request, body: dict) -> JSONResponse:
     try:
         normalized = normalize_key(raw_key)
     except ValueError:
-        # 非法格式同样按不可用处理，并计失败限速
+        # Invalid format is also treated as unavailable and counted against the
+        # failure rate limit
         limiter.check(
             "resolve-fail",
             hmac_utils.rate_fingerprint("k", raw_key[:8]),
@@ -85,11 +89,12 @@ def resolve(request: Request, body: dict) -> JSONResponse:
     now = time.gmtime()
     now_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", now)
     if row is None or row["status"] != "active" or row["expires_at"] <= now_str:
-        # 失败结局才消耗失败限速额度：记录不存在 / 非 active / 已过期
+        # Failure outcomes consume the failure quota: record missing / not active / expired
         limiter.check("resolve-fail", fp, cfg.resolve_fail_window_seconds, cfg.resolve_fail_limit)
         return _unavailable(request_id)
 
-    # 闸门：本窗口内同一 KEY 指纹失败满额则拒绝签发；成功路径不写失败桶
+    # Gate: refuse issuance once the same KEY fingerprint has failed up to the
+    # limit in this window; the success path never writes the failure bucket
     if limiter.peek("resolve-fail", fp, cfg.resolve_fail_window_seconds) >= cfg.resolve_fail_limit:
         return _unavailable(request_id)
 
@@ -112,7 +117,8 @@ def resolve(request: Request, body: dict) -> JSONResponse:
 
     resp = JSONResponse(
         content={
-            # 摘要必须给出真实尺寸：取回页要在下载前告诉用户这是哪一张照片
+            # The digest must report the real size: the retrieve page needs to
+            # tell the user which photo this is before downloading
             "photo": {
                 "width": row["width_px"],
                 "height": row["height_px"],
@@ -131,7 +137,8 @@ def resolve(request: Request, body: dict) -> JSONResponse:
 
 @router.post("/download")
 def download(request: Request, authorization: str | None = Header(default=None)) -> Response:
-    """§6.3：Bearer token 原子消费；重新检查照片 active 且未过期、revocationEpoch 一致。"""
+    """§6.3: Bearer token consumed atomically; re-check the photo is active,
+    unexpired, and revocationEpoch matches."""
     conn = _db()
     if not authorization or not authorization.startswith("Bearer "):
         return _unavailable(_request_id())
@@ -160,9 +167,11 @@ def download(request: Request, authorization: str | None = Header(default=None))
     ):
         return _unavailable(_request_id())
 
-    # 原子消费：把「未消费」写进 WHERE，由数据库裁决谁赢。
-    # 先 SELECT 再无条件 UPDATE 是 check-then-act：两个并发请求都能通过上面的检查，
-    # 然后都拿到同一张照片，单次用途的凭证事实上变成可重复使用。
+    # Atomic consumption: put "unconsumed" in the WHERE clause and let the
+    # database decide who wins.
+    # SELECT-then-unconditional-UPDATE is check-then-act: two concurrent
+    # requests both pass the checks above and both get the same photo, making
+    # the single-use credential effectively reusable.
     cursor = conn.execute(
         "UPDATE download_grants SET consumed_at=? WHERE token_digest=? AND consumed_at IS NULL",
         (now, digest),
@@ -175,8 +184,10 @@ def download(request: Request, authorization: str | None = Header(default=None))
     if data is None or len(data) != photo["byte_length"]:
         return _unavailable(_request_id())
 
-    # §8.2 对象完整性：MAC 写入后必须真的被校验，否则这层保护形同虚设。
-    # 只比对象名与长度也不够——等长替换完全看不出来，所以 MAC 绑定内容摘要。
+    # §8.2 object integrity: the MAC must actually be verified after writing,
+    # otherwise this layer of protection is meaningless.
+    # Comparing only the object name and length is also insufficient - an
+    # equal-length swap is invisible, so the MAC binds the content digest.
     expected_mac = hmac_utils.object_integrity_mac(
         photo["object_key"], len(data), hmac_utils.sha256_hex(data)
     )

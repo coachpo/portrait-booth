@@ -1,7 +1,9 @@
-"""服务政策与运行配置（SPEC §6.0）。到期时间只由服务端政策决定。
+"""Service policy and runtime configuration (SPEC §6.0). Expiry times are
+decided solely by the server-side policy.
 
-配置在每次 get_settings() 调用时读取环境变量，不在 import 期冻结：
-部署侧重启即换配置，测试侧 monkeypatch 可做到逐用例隔离。
+Config reads environment variables on every get_settings() call and is not
+frozen at import time: deployments switch config on restart, and tests can
+monkeypatch per test case for isolation.
 """
 
 import os
@@ -15,7 +17,8 @@ DEFAULT_STORAGE_DIR = "data/objects"
 
 
 class ConfigError(RuntimeError):
-    """配置缺失或不合法。启动期抛出，不进入运行态。"""
+    """Missing or invalid configuration. Raised at startup; never enters the
+    running state."""
 
 
 def _env_int(name: str, default: int) -> int:
@@ -25,9 +28,9 @@ def _env_int(name: str, default: int) -> int:
     try:
         value = int(raw)
     except ValueError:
-        raise ConfigError(f"{name} 需要整数，收到 {raw!r}") from None
+        raise ConfigError(f"{name} requires an integer, got {raw!r}") from None
     if value <= 0:
-        raise ConfigError(f"{name} 需要正整数，收到 {value}")
+        raise ConfigError(f"{name} requires a positive integer, got {value}")
     return value
 
 
@@ -37,7 +40,7 @@ def _env_str(name: str, default: str) -> str:
 
 @dataclass(frozen=True)
 class Settings:
-    temporary_storage_ttl_seconds: int = 30 * 24 * 3600  # §1.2.1 产品确认 30 天
+    temporary_storage_ttl_seconds: int = 30 * 24 * 3600  # §1.2.1 product decision: 30 days
     max_upload_bytes: int = 15 * 1024 * 1024
     max_pixels: int = 24_000_000
     max_edge_px: int = 8000
@@ -46,15 +49,17 @@ class Settings:
 
     save_session_cookie_max_age: int = 600
     idempotency_window_seconds: int = 600
-    # 一次保存的处理租约：超过它仍是 processing 就认为上一次请求已经死掉，可以接管
+    # One save's processing lease: still processing past this means the previous
+    # request is dead and the lease can be taken over
     idempotency_lease_seconds: int = 60
     download_token_ttl_seconds: int = 60
 
     key_length: int = 6
     key_charset: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    secret_bytes: int = 16  # >= 128 比特
+    secret_bytes: int = 16  # >= 128 bits
 
-    # 限速（§9.3）：同 KEY 指纹 15 分钟 5 次失败；同 IP 每小时 30 次
+    # Rate limits (§9.3): 5 failures per 15 min per KEY fingerprint; 30 per
+    # hour per IP
     resolve_fail_window_seconds: int = 900
     resolve_fail_limit: int = 5
     resolve_ip_window_seconds: int = 3600
@@ -65,11 +70,12 @@ class Settings:
     storage_dir: str = DEFAULT_STORAGE_DIR
     purge_interval_seconds: int = 300
 
-    # staging 对象在被 orphan sweep 回收前的最小存活时间（§8.2）：
-    # 保存请求先写对象再提交事务，门限过短会删掉进行中请求刚写入的对象。
+    # Minimum age before a staging object can be reclaimed by the orphan sweep
+    # (§8.2): a save writes the object before committing the transaction, so a
+    # too-short gate would delete objects just written by in-flight requests.
     orphan_min_age_seconds: int = 900
 
-    # 取回响应的目标恒定处理时间（§6.5 / SAV-008）
+    # Target constant processing time for retrieval responses (§6.5 / SAV-008)
     resolve_constant_time_ms: int = 120
 
     require_same_origin: bool = True

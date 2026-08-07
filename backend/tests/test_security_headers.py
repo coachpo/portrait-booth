@@ -1,4 +1,5 @@
-"""安全响应头（B4/§9.4）。CI 跑 pytest，因此这就是「CSP 的 CI 验证」。"""
+"""Security response headers (B4/§9.4). CI runs pytest, so this is the "CI
+verification of CSP"."""
 
 from pathlib import Path
 
@@ -17,12 +18,14 @@ def client():
 
 class TestContentSecurityPolicy:
     def test_every_response_carries_a_policy(self, client):
-        # 回归：全站曾只返回 referrer-policy 与 permissions-policy
+        # Regression: the whole site used to send only referrer-policy and
+        # permissions-policy
         resp = client.get("/api/v1/health")
         assert resp.headers["Content-Security-Policy"] == CONTENT_SECURITY_POLICY
 
     def test_allows_wasm_but_not_the_whole_eval_family(self, client):
-        """MediaPipe 需要 instantiateStreaming；放宽到 'unsafe-eval' 会把 eval 一起打开。"""
+        """MediaPipe needs instantiateStreaming; widening to 'unsafe-eval'
+        would open the whole eval family."""
         policy = client.get("/api/v1/health").headers["Content-Security-Policy"]
         assert "'wasm-unsafe-eval'" in policy
         assert "'unsafe-eval'" not in policy.replace("'wasm-unsafe-eval'", "")
@@ -52,7 +55,8 @@ class TestContentSecurityPolicy:
 
 class TestStrictTransportSecurity:
     def test_absent_on_plain_http(self, client):
-        # 明文连接上发 HSTS 没有任何效果，只会掩盖「这条链路其实没加密」
+        # Sending HSTS over a plaintext connection has no effect and only
+        # masks that this link is not actually encrypted
         assert "Strict-Transport-Security" not in client.get("/api/v1/health").headers
 
     def test_present_on_https(self):
@@ -66,7 +70,8 @@ class TestStrictTransportSecurity:
 
 class TestCacheScoping:
     def test_photo_and_retrieval_responses_are_never_cached(self, client):
-        """作用域陷阱：长缓存一旦进全局中间件，照片与取回响应也会被缓存。"""
+        """Scoping trap: once the long cache lands in the global middleware,
+        photo and retrieval responses get cached too."""
         resp = client.post("/api/v1/retrievals/resolve", json={"key": "ZZZZZZ"})
         assert resp.headers["Cache-Control"] == "no-store, private"
 
@@ -74,19 +79,23 @@ class TestCacheScoping:
         assert "immutable" not in client.get("/api/v1/health").headers.get("Cache-Control", "")
 
     def test_middleware_does_not_append_a_second_copy_of_an_existing_header(self, client):
-        """回归：existing 收的是 ASGI 的 bytes 头名，却拿 str 去比对，永远不相等——
-        「不覆盖已有响应头」的守卫是死代码，中间件会无条件追加第二个同名头。"""
+        """Regression: existing held ASGI bytes header names but was compared as
+        str, so it never matched - the "don't override existing headers" guard
+        was dead code and the middleware appended a second same-name header
+        unconditionally."""
         resp = client.post("/api/v1/retrievals/resolve", json={"key": "ZZZZZZ"})
         raw = [v for k, v in resp.headers.raw if k.lower() == b"cache-control"]
-        assert raw == [b"no-store, private"], f"Cache-Control 被追加成了 {raw}"
+        assert raw == [b"no-store, private"], f"Cache-Control was appended into {raw}"
 
 
 class TestProxyHeaderTrust:
-    """回归：Dockerfile 曾用 --forwarded-allow-ips "*"。
+    """Regression: the Dockerfile used --forwarded-allow-ips "*".
 
-    那让 uvicorn 信任任意直连客户端的 X-Forwarded-For，request.client.host 变成
-    攻击者可控的字符串，§9.3 的单 IP 限速随之失效——每次换一个伪造 IP 就换一个
-    新的限速桶，30 次/小时的限额永远不触发，6 位取回码可以被无限速枚举。
+    It made uvicorn trust X-Forwarded-For from any directly connected client,
+    turning request.client.host into an attacker-controlled string and
+    silently defeating §9.3's per-IP rate limit - each forged IP got a fresh
+    bucket, the 30/hour cap never triggered, and the 6-character retrieval
+    code space could be enumerated without limit.
     """
 
     DOCKERFILE = Path(__file__).resolve().parents[2] / "Dockerfile"
@@ -98,13 +107,15 @@ class TestProxyHeaderTrust:
             for line in text.splitlines()
             if line.startswith("CMD") and not line.lstrip().startswith("#")
         )
-        assert cmd, "Dockerfile 必须有 CMD"
+        assert cmd, "Dockerfile must have a CMD"
         assert "--forwarded-allow-ips" not in cmd, (
-            "不要在镜像里写死可信代理；用 FORWARDED_ALLOW_IPS 环境变量指定具体地址或 CIDR"
+            "do not hard-code trusted proxies in the image; use the FORWARDED_ALLOW_IPS "
+            "environment variable to specify a concrete address or CIDR"
         )
 
     def test_ip_rate_limit_buckets_by_client(self, client):
-        """限速必须真的按客户端分桶——这是取回码枚举的唯一屏障。"""
+        """Rate limiting must actually bucket by client - this is the only
+        barrier against retrieval-code enumeration."""
         from app.config import get_settings
         from app.db import connect
 
@@ -119,6 +130,7 @@ class TestProxyHeaderTrust:
             ).fetchone()
         finally:
             conn.close()
-        # 同一个客户端的三次请求必须落进同一个桶并累加，而不是各开一个新桶
+        # The same client's three requests must land in one bucket and
+        # accumulate, not each open a new bucket
         assert row["buckets"] == 1
         assert row["top"] == 3

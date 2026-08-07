@@ -1,4 +1,5 @@
-"""模板内容门（C13）：引用完整性、contentHash 绑定与工具链。"""
+"""Template content gate (C13): reference integrity, contentHash binding, and
+the toolchain."""
 
 import copy
 import json
@@ -12,7 +13,8 @@ from app.template_store import _content_hash, load_template_catalog
 
 @pytest.fixture()
 def template_dir(tmp_path):
-    """把仓库里的真实模板复制一份，供各用例破坏后验证门禁。"""
+    """Copy the repository's real templates so each case can break them and
+    verify the gate."""
     from app.template_store import _PUBLICATIONS_FILE, _REVISIONS_DIR
 
     revisions = tmp_path / "revisions"
@@ -43,7 +45,8 @@ class TestReferenceIntegrity:
         revisions, publications = template_dir
         target = revisions / "fi-police-digital@1.json"
         _rewrite(target, lambda d: d["overlay"]["ruleIds"].append("no-such-rule"))
-        # 坏引用在 EDT-008 上线后只表现为「蒙版静默不画」
+        # A broken reference only shows up as "mask silently not drawn" once
+        # EDT-008 is live
         with pytest.raises(ValueError, match="overlay.ruleIds"):
             _load(revisions, publications)
 
@@ -58,7 +61,7 @@ class TestReferenceIntegrity:
         revisions, publications = template_dir
         target = revisions / "fi-police-digital@1.json"
         _rewrite(target, lambda d: d["cropRules"].append(copy.deepcopy(d["cropRules"][0])))
-        with pytest.raises(ValueError, match="重复"):
+        with pytest.raises(ValueError, match="duplicate rule id"):
             _load(revisions, publications)
 
 
@@ -80,7 +83,8 @@ class TestContentHashBinding:
 class TestPublicationSchema:
     def test_rejects_an_unknown_status(self, template_dir):
         revisions, publications = template_dir
-        # 早退等于放行：未知状态曾被当成「不用检查」
+        # Early return equals allow: an unknown status used to be treated as
+        # "nothing to check"
         _rewrite(
             publications,
             lambda d: d["publications"][0].__setitem__("status", "experimental"),
@@ -98,7 +102,7 @@ class TestPublicationSchema:
 class TestCli:
     def test_validate_passes_on_the_repository(self, capsys):
         assert template_tools.main(["validate"]) == 0
-        assert "模板校验通过" in capsys.readouterr().out
+        assert "template validation passed" in capsys.readouterr().out
 
     def test_report_lists_every_template(self, capsys):
         assert template_tools.main(["report"]) == 0

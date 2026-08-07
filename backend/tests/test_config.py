@@ -1,4 +1,5 @@
-"""配置与根密钥的启动期契约（A1）：不冻结、缺失即拒绝、示例文件与代码一致。"""
+"""Startup contract for config and the root secret (A1): not frozen,
+refuses to start when missing, sample file consistent with code."""
 
 import base64
 import re
@@ -16,10 +17,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 class TestSettingsAreNotFrozenAtImport:
     def test_paths_follow_environment_changes(self, monkeypatch, tmp_path):
-        """回归：db_path/storage_dir 曾是 dataclass 字段默认值，在 import 期求值。
+        """Regression: db_path/storage_dir used to be dataclass field defaults
+        evaluated at import time.
 
-        那种写法下 monkeypatch/tmp_path 对已导入的模块完全无效，
-        所有用例共享同一个数据库，并发与清理行为无法被可信验证。
+        Under that approach monkeypatch/tmp_path had no effect on already
+        imported modules, all tests shared one database, and concurrency and
+        cleanup behavior could not be verified credibly.
         """
         monkeypatch.setenv("PORTRAIT_DB_PATH", str(tmp_path / "a.db"))
         assert get_settings().db_path == str(tmp_path / "a.db")
@@ -59,7 +62,7 @@ class TestSecretKeyBase:
         monkeypatch.setenv(
             SECRET_KEY_BASE_ENV, base64.urlsafe_b64encode(secrets.token_bytes(16)).decode("ascii")
         )
-        with pytest.raises(ConfigError, match="至少需要"):
+        with pytest.raises(ConfigError, match="at least"):
             require_secret_key_base()
 
     def test_malformed_root_key_is_rejected(self, monkeypatch):
@@ -68,16 +71,19 @@ class TestSecretKeyBase:
             require_secret_key_base()
 
     def test_same_root_key_survives_process_restart(self, monkeypatch):
-        """A1 的核心验收：同一根密钥必须导出同一 KEY 指纹。
+        """A1's core acceptance: the same root key must derive the same KEY
+        fingerprint.
 
-        旧实现用 os.urandom(32) 兜底，容器重启即换密钥，
-        此前发出的每个 KEY 与删除密钥同时失效，而照片仍按 TTL 留存。
+        The old implementation fell back to os.urandom(32), so every container
+        restart rotated the key, invalidating every previously issued KEY and
+        delete secret while photos stayed for the TTL.
         """
         root = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
         monkeypatch.setenv(SECRET_KEY_BASE_ENV, root)
         first = key_fingerprint("ABC123")
 
-        # 模拟重启：换一个根密钥再换回来，强制重新派生
+        # Simulate a restart: switch the root key and switch back, forcing
+        # re-derivation
         monkeypatch.setenv(
             SECRET_KEY_BASE_ENV, base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii")
         )
@@ -102,19 +108,20 @@ class TestSecretKeyBase:
 
 class TestEnvExample:
     def test_every_documented_variable_is_read_by_code(self):
-        """.env.example 曾整份与代码对不上：照它配置得不到任何效果。"""
+        """.env.example used to be entirely out of sync with the code:
+        configuring per it had no effect at all."""
         example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
         documented = set(re.findall(r"^([A-Z][A-Z0-9_]*)=", example, flags=re.MULTILINE))
-        assert documented, ".env.example 必须列出可配置变量"
+        assert documented, ".env.example must list the configurable variables"
 
         sources = "\n".join(
             p.read_text(encoding="utf-8") for p in (REPO_ROOT / "backend" / "app").rglob("*.py")
         )
         unread = sorted(name for name in documented if name not in sources)
-        assert not unread, f".env.example 中这些变量没有任何代码读取：{unread}"
+        assert not unread, f"these .env.example variables are read by no code: {unread}"
 
     def test_compose_passes_the_root_key(self):
         compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         assert SECRET_KEY_BASE_ENV in compose
-        # 缺失时必须让 compose 直接失败，而不是把空串传进去
+        # Missing must fail compose outright, not pass an empty string through
         assert f"{SECRET_KEY_BASE_ENV}:?" in compose

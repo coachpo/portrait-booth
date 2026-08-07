@@ -1,10 +1,13 @@
-"""生命周期 worker（SAV-011/§9.2）。
-到期 → access-revoked + 撤销下载能力；purge 物理删除；orphan sweep 清理无引用 staging 对象。
+"""Lifecycle worker (SAV-011/§9.2).
+Expiry → access-revoked + download capability revoked; purge does physical
+deletion; orphan sweep removes unreferenced staging objects.
 
-调度方式：随 API 进程内的后台任务运行（见 main.py 的 lifespan）。
-之前这个模块只有 __main__ 入口，而 Dockerfile 的 CMD 只有 uvicorn、compose 也没有第二个服务——
-清理逻辑写好了却从不执行：到期照片永远不被撤销，用户点了删除也只是标记，
-磁盘上的原件继续留到 TTL 结束。
+Scheduling: runs as a background task inside the API process (see the lifespan
+in main.py).
+Previously this module only had a __main__ entry, while the Dockerfile CMD
+ran only uvicorn and compose had no second service - the cleanup logic was
+written but never executed: expired photos were never revoked, clicking
+delete only marked them, and the original bytes on disk stayed until TTL.
 """
 
 import asyncio
@@ -24,7 +27,8 @@ def _now() -> str:
 
 
 def purge_expired(conn: sqlite3.Connection, storage: Storage, now: str | None = None) -> int:
-    """到期或 access-revoked 到期的照片：标 access-revoked → 物理删除 → purged。"""
+    """Photos past expiry or access-revoked expiry: mark access-revoked →
+    physically delete → purged."""
     now = now or _now()
     conn.execute(
         "UPDATE photo_records SET status='access-revoked', "
@@ -46,7 +50,7 @@ def purge_expired(conn: sqlite3.Connection, storage: Storage, now: str | None = 
 
 
 def purge_due(conn: sqlite3.Connection, storage: Storage, now: str | None = None) -> int:
-    """用户主动删除后待清理的照片（purge_due_at 已到）。"""
+    """Photos awaiting cleanup after user-initiated delete (purge_due_at reached)."""
     now = now or _now()
     rows = conn.execute(
         "SELECT id, object_key FROM photo_records "
@@ -67,7 +71,8 @@ def purge_photo(
     object_key: str,
     now: str,
 ) -> None:
-    """撤销下载能力 → 退役 KEY → 物理删除字节 → 标 purged。"""
+    """Revoke download capability → retire KEY → physically delete bytes → mark
+    purged."""
     conn.execute(
         "UPDATE photo_records SET status='purging', purge_started_at=? WHERE id=?",
         (now, photo_id),
@@ -92,7 +97,8 @@ def sweep_orphans(
     storage: Storage,
     min_age_seconds: float | None = None,
 ) -> int:
-    """删除无数据库引用的 staging 对象（§8.2）。默认带 15 分钟年龄门限。"""
+    """Delete staging objects with no database reference (§8.2). Defaults to a
+    15-minute age gate."""
     if min_age_seconds is None:
         min_age_seconds = get_settings().orphan_min_age_seconds
     rows = conn.execute("SELECT object_key FROM photo_records").fetchall()
@@ -101,10 +107,11 @@ def sweep_orphans(
 
 
 def purge_consumed_grants(conn: sqlite3.Connection, now: str | None = None) -> int:
-    """删除已消费或已过期的下载凭证（SPEC:740：最长 60 秒或首次原子消费后删除）。
+    """Delete consumed or expired download grants (SPEC:740: at most 60 seconds
+    or deleted after first atomic consumption).
 
-    retrievals.py 对「行不存在」与「已消费」返回完全相同的响应，物理删除对外
-    不可观察。
+    retrievals.py returns exactly the same response for "row missing" and
+    "consumed", so physical deletion is externally unobservable.
     """
     now = now or _now()
     cur = conn.execute(
@@ -116,13 +123,16 @@ def purge_consumed_grants(conn: sqlite3.Connection, now: str | None = None) -> i
 
 
 def purge_purged_photo_records(conn: sqlite3.Connection) -> int:
-    """删除已确认物理清除的照片元数据行（SPEC:738：清除确认后删除关联记录）。
+    """Delete photo metadata rows whose bytes are confirmed physically cleared
+    (SPEC:738: delete associated records after clear confirmation).
 
-    只删 status='purged' 的行：purge_photo 先调 storage.delete，只有没抛异常
-    才会置 purged，所以行到达 purged 就意味着字节已不在盘上；sweep_orphans
-    把 photo_records.object_key 全集当作已知引用，删 'purging'/'access-revoked'
-    会把盘上尚存的对象变成孤儿。key_registry 的 retired 行是审计要求（SPEC:739），
-    不删。
+    Deletes only status='purged' rows: purge_photo calls storage.delete first
+    and sets purged only when it did not raise, so a row reaching purged means
+    the bytes are no longer on disk; sweep_orphans treats the full
+    photo_records.object_key set as known references, and deleting
+    'purging'/'access-revoked' rows would orphan objects still on disk.
+    key_registry retired rows are an audit requirement (SPEC:739) and are
+    never deleted.
     """
     cur = conn.execute("DELETE FROM photo_records WHERE status='purged' AND purged_at IS NOT NULL")
     conn.commit()
@@ -138,8 +148,9 @@ def run_once() -> int:
         purged = purge_expired(conn, storage)
         purged += purge_due(conn, storage)
         swept = sweep_orphans(conn, storage)
-        # 三类记录清理必须排在照片清理之后：前面的 purge_photo 是多语句序列、
-        # 统一 commit，插在中间会把半个 purge 提前提交（坑 5）
+        # The three record cleanups must run after the photo cleanup: the
+        # earlier purge_photo is a multi-statement sequence committed as one,
+        # and inserting in the middle would commit half a purge early (ticket 5)
         purge_expired_idempotency(conn, time.time(), cfg.idempotency_window_seconds)
         purge_consumed_grants(conn)
         purge_purged_photo_records(conn)
@@ -149,12 +160,13 @@ def run_once() -> int:
 
 
 def inline_worker_enabled() -> bool:
-    """进程内调度开关。独立部署 worker 时设 PORTRAIT_DISABLE_INLINE_WORKER=1。"""
+    """In-process scheduling switch. Set PORTRAIT_DISABLE_INLINE_WORKER=1 when
+    deploying a standalone worker."""
     return os.environ.get("PORTRAIT_DISABLE_INLINE_WORKER", "").strip() not in {"1", "true"}
 
 
 async def run_periodically(interval_seconds: float | None = None) -> None:
-    """随 API 进程运行的清理循环。取消时安静退出。"""
+    """Cleanup loop running inside the API process. Exits quietly on cancel."""
     interval = interval_seconds or get_settings().purge_interval_seconds
     while True:
         try:
@@ -162,14 +174,15 @@ async def run_periodically(interval_seconds: float | None = None) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            # 清理失败不能拖垮 API 进程；下一轮重试
+            # A cleanup failure must not take down the API process; retry next
+            # round
             pass
         await asyncio.sleep(interval)
 
 
 @contextlib.asynccontextmanager
 async def lifecycle_worker():
-    """在 FastAPI lifespan 中托管清理循环。"""
+    """Host the cleanup loop inside the FastAPI lifespan."""
     if not inline_worker_enabled():
         yield
         return
@@ -182,5 +195,5 @@ async def lifecycle_worker():
             await task
 
 
-if __name__ == "__main__":  # 供 cron/systemd timer 调用
+if __name__ == "__main__":  # For cron/systemd timer invocations
     print(f"purged+swept: {run_once()}")
