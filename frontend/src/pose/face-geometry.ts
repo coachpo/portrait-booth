@@ -1,17 +1,19 @@
 /**
- * 人脸关键点几何启发式（O2）。
- * 纯函数：不依赖 canvas 与 MediaPipe，只吃归一化 landmark 数组（canonical
- * face mesh 索引，见 tracking.ts 的 faceMetrics 注释）。
- * 阈值是未校准占位值（同 LANDMARKER_CONFIDENCE），UI 文案必须带 HEURISTIC_NOTICE。
+ * Face-landmark geometry heuristics (O2).
+ * Pure functions: no canvas or MediaPipe dependency, only normalized landmark
+ * arrays (canonical face mesh indices; see the faceMetrics comment in
+ * tracking.ts).
+ * Thresholds are uncalibrated placeholders (same as LANDMARKER_CONFIDENCE);
+ * UI copy must carry HEURISTIC_NOTICE.
  */
 
 import type { FaceObservation } from "./tracking";
 
-/** 未校准占位阈值：EAR 低于它判定「疑似闭眼」（竖距 = 横距 0.3 倍在睁眼一侧） */
+/** Uncalibrated placeholder threshold: EAR below this flags "eyes may be closed" (vertical distance = 0.3× horizontal on the open-eye side) */
 export const EAR_CLOSED_MAX = 0.25;
-/** 未校准占位阈值：MAR 高于它判定「疑似张嘴」 */
+/** Uncalibrated placeholder threshold: MAR above this flags "mouth may be open" */
 export const MAR_OPEN_MIN = 0.5;
-/** ROI 外扩比例（归一化包围盒基础上） */
+/** ROI expansion ratio (on top of the normalized bounding box) */
 export const ROI_EXPAND_RATIO = 0.15;
 
 export interface FaceRoi {
@@ -33,8 +35,9 @@ function pt(face: FaceObservation, index: number): Point | null {
 }
 
 /**
- * 纵横比校正的竖/横距比：landmark 的 x 按图宽、y 按图高归一化，
- * 所以 Δy_norm/Δx_norm 不是真实纵横比，必须乘以 aspect = H / W。
+ * Aspect-ratio-corrected vertical/horizontal distance ratio: landmark x is
+ * normalized by image width and y by image height, so Δy_norm/Δx_norm is not
+ * the true aspect ratio and must be multiplied by aspect = H / W.
  */
 function ratioWithAspect(dy: number, dx: number, aspect: number): number | null {
   if (dx === 0 || !Number.isFinite(dy) || !Number.isFinite(aspect)) return null;
@@ -58,9 +61,10 @@ function eyeVerticalOverHorizontal(
 }
 
 /**
- * 平均双眼 EAR（Eye Aspect Ratio）。
- * 左眼 (159,145) 竖距 ÷ (33,133) 横距；右眼 (386,374) 竖距 ÷ (362,263) 横距。
- * 任一索引缺失或分母为 0 返回 null（不返回 0）。
+ * Average two-eye EAR (Eye Aspect Ratio).
+ * Left eye (159,145) vertical ÷ (33,133) horizontal; right eye (386,374)
+ * vertical ÷ (362,263) horizontal.
+ * Missing index or zero denominator returns null (never 0).
  */
 export function eyeAspectRatio(face: FaceObservation, aspect: number): number | null {
   const left = eyeVerticalOverHorizontal(face, 159, 145, 33, 133);
@@ -70,8 +74,8 @@ export function eyeAspectRatio(face: FaceObservation, aspect: number): number | 
 }
 
 /**
- * 嘴部 MAR（Mouth Aspect Ratio）：(13,14) 竖距 ÷ (61,291) 横距。
- * 索引缺失或分母为 0 返回 null。
+ * Mouth MAR (Mouth Aspect Ratio): (13,14) vertical ÷ (61,291) horizontal.
+ * Missing index or zero denominator returns null.
  */
 export function mouthAspectRatio(face: FaceObservation, aspect: number): number | null {
   const a = pt(face, 13);
@@ -83,10 +87,12 @@ export function mouthAspectRatio(face: FaceObservation, aspect: number): number 
 }
 
 /**
- * 人脸 ROI：全部有效 landmark 的归一化包围盒，按 ROI_EXPAND_RATIO 外扩并
- * 夹到 [0,1]。无有效 landmark 或包围盒退化（宽或高为 0）返回 null。
+ * Face ROI: the normalized bounding box of all valid landmarks, expanded by
+ * ROI_EXPAND_RATIO and clamped to [0,1]. Returns null when there are no valid
+ * landmarks or the box is degenerate (zero width or height).
  */
 export function faceRoi(face: FaceObservation, _aspect: number): FaceRoi | null {
+  void _aspect; // kept for signature stability; the ROI is the raw landmark bbox
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;

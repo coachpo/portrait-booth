@@ -1,12 +1,16 @@
 /**
- * 创建流程的状态机。
+ * The creation-flow state machine.
  *
- * 两条不变式：
- * 1. 「返回」只改变当前步骤，不销毁下游状态——从终态返回编辑、从编辑返回确认、
- *    会话内更换模板都必须能看到原来的裁剪参数与撤销栈，否则每次核对都等于
- *    从头再来一遍；换模板时变换按新模板的输出尺寸重新投影；
- * 2. 只有源照片真正被替换时，编辑状态才作废；换到禁止调整构图的模板时
- *    编辑状态同样作废（构图锁定不能被继承的构图绕过）。
+ * Two invariants:
+ * 1. "Back" only changes the current step and never destroys downstream
+ *    state - returning from final to edit, from edit to confirm, or switching
+ *    templates within a session must all preserve the original crop
+ *    parameters and undo stack, otherwise every verification restarts from
+ *    scratch; on a template switch the transform is re-projected to the new
+ *    template's output size;
+ * 2. Edit state is invalidated only when the source photo is truly replaced;
+ *    switching to a composition-locked template also invalidates it (the
+ *    composition lock must not be bypassed by an inherited composition).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -41,11 +45,11 @@ interface StepGroup {
 }
 
 const STEP_GROUPS: StepGroup[] = [
-  { key: "template", label: "选择模板", steps: ["template"] },
-  { key: "source", label: "获取照片", steps: ["source", "capture", "upload"] },
-  { key: "review", label: "确认照片", steps: ["review"] },
-  { key: "edit", label: "编辑", steps: ["edit"] },
-  { key: "final", label: "终态检查", steps: ["final"] },
+  { key: "template", label: "Choose template", steps: ["template"] },
+  { key: "source", label: "Get photo", steps: ["source", "capture", "upload"] },
+  { key: "review", label: "Confirm photo", steps: ["review"] },
+  { key: "edit", label: "Edit", steps: ["edit"] },
+  { key: "final", label: "Final checks", steps: ["final"] },
 ];
 
 function groupIndexOf(step: Step): number {
@@ -53,10 +57,10 @@ function groupIndexOf(step: Step): number {
 }
 
 const TEMPLATE_NOTE_TEXT: Record<ReprojectNote, string> = {
-  refit: "模板输出尺寸变化，裁剪参数已重新适配",
-  "mirror-cleared": "新模板禁止镜像，已取消水平镜像",
-  "rotation-cleared": "新模板禁止旋转，已取消旋转",
-  reset: "无法在新尺寸下保留原裁剪，已重置",
+  refit: "the template output size changed; crop parameters were re-fitted",
+  "mirror-cleared": "the new template forbids mirroring; horizontal mirror was cancelled",
+  "rotation-cleared": "the new template forbids rotation; rotation was cancelled",
+  reset: "the original crop could not be kept at the new size; it was reset",
 };
 
 export function CreatePage() {
@@ -65,24 +69,32 @@ export function CreatePage() {
   const [sourceMode, setSourceMode] = useState<"upload" | "camera" | null>(null);
   const [source, setSource] = useState<SourceImage | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
-  // ranged_pixels 模板的用户选定输出尺寸（P6）；null = 模板默认档
+  // The user-selected output size for ranged_pixels templates (P6); null =
+  // the template default band
   const [selectedSize, setSelectedSize] = useState<OutputSizeOption | null>(null);
-  // 已暂存回执（仅会话内存，不落盘）：从终态返回编辑再回来时原样恢复，
-  // 服务端不会因为这一趟多出第二张照片（§9.2 编辑状态只在会话内存）
+  // Staged receipt (session memory only, never persisted): restored as-is
+  // when returning from final to edit and back, so the server never ends up
+  // with a second photo from this round trip (§9.2 edit state is in session
+  // memory only)
   const [staged, setStaged] = useState<{
     saved: SaveResponse;
     idempotencyKey: string;
     source: SourceImage;
     transform: EditTransform;
   } | null>(null);
-  // 换模板投影后的可见说明（role=status，渲染在确认页）
+  // Visible note after the template-switch projection (role=status,
+  // rendered on the confirm page)
   const [templateNotice, setTemplateNotice] = useState<string | null>(null);
-  // 当前模板的来源前置约束（渲染在模板卡与「选择照片来源」步骤）
+  // The current template's source prerequisites (rendered on the template
+  // card and the "choose photo source" step)
   const sourcePolicy = selected ? editorPolicy(selected.revision) : null;
 
-  // 有未保存内容才算脏：只选了模板（还没取照片）时离开不丢任何东西
+  // Dirty means unsaved content: leaving after only selecting a template
+  // (no photo yet) loses nothing
   const dirty = !!source || !!editorState || staged !== null;
-  // 站内导航与返回手势的统一拦截：同路径点击（已在 /create 再点「创建照片」）不拦
+  // Unified interception of in-app navigation and the back gesture: a
+  // same-path click (clicking "Create photo" while already on /create) is not
+  // intercepted
   const blocker = useBlocker(
     useCallback(
       ({ currentLocation, nextLocation }) =>
@@ -102,7 +114,8 @@ export function CreatePage() {
     [],
   );
 
-  // 步骤切换时把焦点移到新步骤，键盘与读屏用户才不会停在上一屏的位置
+  // Move focus to the new step on step changes, so keyboard and
+  // screen-reader users do not stay parked on the previous screen
   useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
@@ -111,8 +124,10 @@ export function CreatePage() {
     stepHeadingRef.current?.focus();
   }, [step]);
 
-  // 刷新或误关标签页会丢掉全部内存态：照片、裁剪参数、撤销栈都不落盘（§9.2）。
-  // 与 dirty 同判：只选了模板时不该弹刷新确认（站内跳转由上面的 blocker 拦截）
+  // A refresh or accidental tab close drops all in-memory state: photos,
+  // crop parameters, and the undo stack are never persisted (§9.2). Same
+  // predicate as dirty: selecting only a template must not trigger the
+  // refresh confirm (in-app navigation is intercepted by the blocker above)
   useEffect(() => {
     if (!dirty) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -127,7 +142,8 @@ export function CreatePage() {
     sourceRef.current?.dispose();
     sourceRef.current = next;
     setSource(next);
-    // 源照片换了，此前的裁剪参数就不再对应任何东西
+    // The source photo changed; previous crop parameters no longer
+    // correspond to anything
     setEditorState(null);
   }, []);
 
@@ -135,7 +151,7 @@ export function CreatePage() {
     if (
       staged !== null &&
       !window.confirm(
-        "这张照片已暂存，重新开始会丢失取回码与删除密钥。请先「下载回执」；确定继续吗？",
+        "This photo is already staged; restarting will lose the retrieval code and delete secret. Download the receipt first; continue?",
       )
     ) {
       return;
@@ -154,8 +170,8 @@ export function CreatePage() {
 
   return (
     <>
-      <h1>创建照片</h1>
-      <ol className="step-bar" aria-label="创建进度">
+      <h1>Create photo</h1>
+      <ol className="step-bar" aria-label="Creation progress">
         {STEP_GROUPS.map((group, index) => (
           <li
             key={group.key}
@@ -167,17 +183,20 @@ export function CreatePage() {
         ))}
       </ol>
 
-      {/* tabIndex=-1 容器只用于步骤切换后的焦点落点，不进 Tab 序列 */}
+      {/* The tabIndex=-1 container is only the focus landing spot after step
+      switches and stays out of the Tab sequence */}
       <div ref={stepHeadingRef} tabIndex={-1}>
         {step === "template" && (
           <>
             <TemplateStep
               onSelect={(entry) => {
                 setSelected(entry);
-                // 换模板后尺寸档回到该模板默认（不改 editorState，见 P6 坑 10）
+                // After a template switch the size band returns to that
+                // template's default (editorState untouched; see P6 ticket 10)
                 setSelectedSize(null);
                 if (source === null) {
-                  // 首次选模板：还没有照片，照旧进来源选择
+                  // First template selection: no photo yet, go to source
+                  // selection as before
                   setStep("source");
                   return;
                 }
@@ -185,11 +204,15 @@ export function CreatePage() {
                   selected !== null && selected.revision.revisionId !== entry.revision.revisionId;
                 if (editorState !== null) {
                   if (templateChanged && entry.revision.capabilities.crop === "forbidden") {
-                    // 新模板禁止调整构图：继承的 scale/translate 必须作废（P2 收口）
+                    // The new template forbids adjusting composition: the
+                    // inherited scale/translate must be voided (P2 closure)
                     setEditorState(null);
-                    setTemplateNotice("新模板禁止调整构图，裁剪已重置为默认构图。");
+                    setTemplateNotice(
+                      "the new template forbids adjusting composition; crop was reset to the default composition.",
+                    );
                   } else {
-                    // 会话内换模板：保留照片与编辑状态，按新模板重新投影
+                    // Same-session template switch: keep the photo and
+                    // edit state, re-project to the new template
                     const { state, notes } = reprojectEditorState(
                       editorState,
                       { width: source.width, height: source.height },
@@ -207,7 +230,7 @@ export function CreatePage() {
             {source !== null && (
               <div className="step-actions">
                 <button type="button" onClick={() => setStep("review")}>
-                  返回（保留当前模板）
+                  Back (keep current template)
                 </button>
               </div>
             )}
@@ -215,9 +238,9 @@ export function CreatePage() {
         )}
 
         {step === "source" && selected && (
-          <section aria-label="选择照片来源">
-            <h2>选择照片来源</h2>
-            <p className="muted">上传已有照片，或使用摄像头拍摄新照片。</p>
+          <section aria-label="Choose photo source">
+            <h2>Choose photo source</h2>
+            <p className="muted">Upload an existing photo, or take a new one with the camera.</p>
             {sourcePolicy && sourcePolicy.sourceRequirements.length > 0 && (
               <ul className="muted">
                 {sourcePolicy.sourceRequirements.map((r) => (
@@ -234,7 +257,7 @@ export function CreatePage() {
                   setStep("upload");
                 }}
               >
-                上传照片
+                Upload photo
               </button>
               <button
                 type="button"
@@ -243,12 +266,12 @@ export function CreatePage() {
                   setStep("capture");
                 }}
               >
-                使用摄像头拍摄
+                Use camera capture
               </button>
             </div>
             <div className="step-actions">
               <button type="button" onClick={() => setStep("template")}>
-                返回重新选择模板
+                Back to choose another template
               </button>
             </div>
           </section>
@@ -307,7 +330,8 @@ export function CreatePage() {
               setEditorState(state);
               setStep("final");
             }}
-            // 返回确认步骤：编辑状态由本回调显式写回，返回再进来时原样保留
+            // Back to the confirm step: edit state is written back explicitly
+            // by this callback, so returning re-enters with it intact
             onBack={(state) => {
               setEditorState(state);
               setStep("review");
@@ -350,12 +374,13 @@ export function CreatePage() {
           aria-labelledby="leave-title"
           className="confirm-box"
         >
-          <h3 id="leave-title">离开创建流程？</h3>
+          <h3 id="leave-title">Leave the creation flow?</h3>
           {staged ? (
             <>
               <p>
-                这张照片已暂存成功。取回码与删除密钥只显示一次，离开后无法找回；
-                尚未暂存的照片与编辑内容也会丢失。
+                This photo has been staged successfully. The retrieval code and delete secret are
+                shown only once and cannot be recovered after leaving; unsaved photos and edits
+                would also be lost.
               </p>
               <div className="step-actions">
                 <button
@@ -363,19 +388,22 @@ export function CreatePage() {
                   className="primary"
                   onClick={() => downloadReceipt(staged.saved)}
                 >
-                  下载回执（含取回码与删除密钥）
+                  Download receipt (with retrieval code and delete secret)
                 </button>
               </div>
             </>
           ) : (
-            <p>当前有未保存的照片与编辑内容（裁剪参数、撤销栈），离开后都会丢失。</p>
+            <p>
+              There are unsaved photos and edits (crop parameters, undo stack); leaving will lose
+              them.
+            </p>
           )}
           <div className="step-actions">
             <button type="button" className="primary" onClick={() => blocker.proceed()}>
-              继续离开
+              Continue leaving
             </button>
             <button type="button" onClick={() => blocker.reset()}>
-              留在本页
+              Stay on this page
             </button>
           </div>
         </div>

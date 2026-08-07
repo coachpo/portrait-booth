@@ -4,7 +4,8 @@ import { formatKeyGroups, isCompleteKey, normalizeKeyInput } from "./key";
 
 describe("normalizeKeyInput", () => {
   it("uppercases and strips separators", () => {
-    // 粘贴带空格、连字符或小写的取回码不该被一句「格式错误」挡在门外
+    // Pasting a retrieval code with spaces, hyphens, or lowercase must not
+    // be blocked by a "format error"
     expect(normalizeKeyInput("a7c 2f9")).toBe("A7C2F9");
     expect(normalizeKeyInput("A7C-2F9")).toBe("A7C2F9");
     expect(normalizeKeyInput(" a7c\t2f9 ")).toBe("A7C2F9");
@@ -12,7 +13,7 @@ describe("normalizeKeyInput", () => {
 
   it("drops characters outside the key alphabet", () => {
     expect(normalizeKeyInput("A7C@2F9!")).toBe("A7C2F9");
-    expect(normalizeKeyInput("取回码 A7C2F9")).toBe("A7C2F9");
+    expect(normalizeKeyInput("-- A7C2F9")).toBe("A7C2F9");
   });
 
   it("truncates to six characters", () => {

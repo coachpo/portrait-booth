@@ -1,7 +1,8 @@
 /**
- * 隐私与留存说明（SPEC §3.1 / §9.2）。
- * 留存时长、取回方式与上传上限全部来自 /api/v1/service-policy——
- * 这些数字由服务端政策决定，页面上不得硬编码。
+ * Privacy and retention statement (SPEC §3.1 / §9.2).
+ * Retention, retrieval method, and upload caps all come from
+ * /api/v1/service-policy - these numbers are decided by the server policy
+ * and must never be hard-coded on the page.
  */
 
 import { useEffect, useState } from "react";
@@ -27,7 +28,8 @@ export function PrivacyPage() {
         if (!cancelled) setPolicy(p);
       },
       () => {
-        if (!cancelled) setError("暂时无法读取服务政策，请稍后重试。");
+        if (!cancelled)
+          setError("unable to load the service policy right now; please try again later.");
       },
     );
     return () => {
@@ -36,68 +38,87 @@ export function PrivacyPage() {
   }, [attempt]);
 
   return (
-    <section aria-label="隐私说明">
-      <h1>隐私与留存说明</h1>
+    <section aria-label="Privacy">
+      <h1>Privacy & retention</h1>
 
-      <h2>照片在什么时候离开你的设备</h2>
+      <h2>When photos leave your device</h2>
       <p>
-        选择模板、拍摄或上传、编辑与终态渲染全部在你的浏览器内完成，照片不会离开设备。
-        只有当你在终态页明确点击「暂存并生成取回码」时，成品照片才会上传到服务器。
+        Choosing a template, taking or uploading, editing, and final rendering all happen inside
+        your browser; photos never leave the device. The artifact is uploaded to the server only
+        when you explicitly click "Stage and generate retrieval code" on the final page.
       </p>
 
-      <h2>服务端政策</h2>
+      <h2>Server policy</h2>
       {error && (
         <div role="alert" className="template-error">
           <p>{error}</p>
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-            重试
+            Retry
           </button>
         </div>
       )}
-      {!policy && !error && <p aria-live="polite">正在读取服务政策…</p>}
+      {!policy && !error && <p aria-live="polite">Loading service policy…</p>}
       {policy && (
         <dl className="final-details">
           <div>
-            <dt>暂存留存时长</dt>
+            <dt>Staging retention</dt>
             <dd>
-              {formatRetention(policy.temporaryStorageTtlSeconds)}（到期自动删除，不提供续期）
+              {formatRetention(policy.temporaryStorageTtlSeconds)} (auto-deleted on expiry; no
+              renewal offered)
             </dd>
           </div>
           <div>
-            <dt>取回方式</dt>
+            <dt>Retrieval method</dt>
             <dd>{retrievalModeLabel(policy.retrievalMode)}</dd>
           </div>
           <div>
-            <dt>单张上传上限</dt>
+            <dt>Upload cap per photo</dt>
             <dd>{formatMaxUpload(policy.maxUploadBytes)}</dd>
           </div>
           <div>
-            <dt>政策版本</dt>
+            <dt>Policy version</dt>
             <dd>{policy.policyVersion}</dd>
           </div>
         </dl>
       )}
 
-      <h2>暂存前你会知道的事</h2>
+      <h2>What you will know before staging</h2>
       <ul>
-        <li>上传目的：仅用于凭取回码取回这张照片，不做其他用途。</li>
-        <li>留存时长：以上方服务端政策为准；保存成功后的响应里会给出权威到期时间。</li>
-        <li>取回码：6 位字符，只在你的浏览器里显示一次，服务端只保存它的指纹。</li>
-        <li>删除密钥：与取回码分开，是你主动删除这张照片的唯一凭证。</li>
-        <li>取回码遗失后无法找回，也无法通过邮箱或手机号恢复——服务端没有这些信息。</li>
+        <li>
+          Upload purpose: used only to retrieve this photo with the retrieval code, nothing else.
+        </li>
+        <li>
+          Retention: per the server policy above; the response after a successful save gives the
+          authoritative expiry.
+        </li>
+        <li>
+          Retrieval code: 6 characters, shown once in your browser; the server stores only its
+          fingerprint.
+        </li>
+        <li>
+          Delete secret: separate from the retrieval code; the only credential for proactively
+          deleting this photo.
+        </li>
+        <li>
+          A lost retrieval code cannot be recovered, nor restored via email or phone - the server
+          has none of that information.
+        </li>
       </ul>
 
-      <h2>不会做的事</h2>
+      <h2>What we do not do</h2>
       <ul>
-        <li>不要求账号、邮箱或手机号，不建立用户画像。</li>
-        <li>不在本地持久化照片、编辑状态或人脸关键点。</li>
-        <li>不把照片、取回码或删除密钥写入日志、URL 或缓存。</li>
-        <li>不把姿态与曝光检查表述为官方认证——它们是未经校准的启发式判断。</li>
+        <li>No accounts, emails, or phone numbers; no user profiling.</li>
+        <li>No local persistence of photos, edit state, or face landmarks.</li>
+        <li>Photos, retrieval codes, and delete secrets never enter logs, URLs, or caches.</li>
+        <li>
+          Pose and exposure checks are never presented as official certification - they are
+          uncalibrated heuristics.
+        </li>
       </ul>
 
       <div className="step-actions">
-        <Link to="/create">开始创建照片</Link>
-        <Link to="/retrieve">用取回码取回照片</Link>
+        <Link to="/create">Start creating a photo</Link>
+        <Link to="/retrieve">Retrieve a photo with your code</Link>
       </div>
     </section>
   );

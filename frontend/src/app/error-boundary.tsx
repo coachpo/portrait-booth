@@ -1,8 +1,8 @@
 /**
- * 全局错误边界。
+ * Global error boundary.
  *
- * 没有它时，渲染期抛出的任何异常都会让 React 卸载整棵树——
- * 用户看到的是一块白屏，既没有说明也没有回到首页的出口。
+ * Without it, any exception thrown during render unmounts the whole tree -
+ * the user sees a blank screen with neither an explanation nor a way home.
  */
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
@@ -23,26 +23,28 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // 只输出错误本身与组件栈，不带任何照片数据或 KEY（§9.4 字段白名单）
-    console.error("[portrait-booth] 渲染失败", error.message, info.componentStack);
+    // Log only the error and component stack, never photo data or KEYs
+    // (§9.4 field whitelist)
+    console.error("[portrait-booth] render failed", error.message, info.componentStack);
   }
 
   render(): ReactNode {
     const { error } = this.state;
     if (!error) return this.props.children;
     return (
-      <section aria-label="页面出错" role="alert">
-        <h2>页面出错了</h2>
+      <section aria-label="Something went wrong" role="alert">
+        <h2>Something went wrong</h2>
         <p className="muted">
-          这一步没能正常显示。你的照片只存在于本次会话的内存中，不会因为这个错误被上传或保留。
+          This step could not be displayed. Your photo exists only in this session's memory and will
+          not be uploaded or retained because of this error.
         </p>
-        <p className="muted">错误信息：{error.message}</p>
+        <p className="muted">Error: {error.message}</p>
         <div className="step-actions">
           <button type="button" className="primary" onClick={() => this.setState({ error: null })}>
-            重试
+            Retry
           </button>
           <button type="button" onClick={() => (window.location.href = "/")}>
-            回到首页
+            Back to home
           </button>
         </div>
       </section>

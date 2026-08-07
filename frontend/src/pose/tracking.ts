@@ -1,6 +1,7 @@
 /**
- * 姿态跟踪状态机（GDE-001/002/004）。
- * 主脸关联、EMA 平滑、进入/退出滞回、稳定计时与中文指令（以用户身体方向表达）。
+ * Pose tracking state machine (GDE-001/002/004).
+ * Primary-face association, EMA smoothing, enter/exit hysteresis, stability
+ * timing, and structured hints (expressed in the subject's body direction).
  */
 
 import { decomposeFaceMatrix, type PoseAngles } from "./angles";
@@ -10,10 +11,10 @@ export interface PoseThresholds {
   pitchDeg: number;
   rollDeg: number;
   stableMs: number;
-  /** 脸宽 / 图像宽 的允许区间 */
+  /** Allowed range of face width / image width */
   faceWidthMin: number;
   faceWidthMax: number;
-  /** 脸中心相对图像中心的允许偏移（归一化） */
+  /** Allowed offset of the face center relative to the image center (normalized) */
   faceOffsetMax: number;
 }
 
@@ -28,16 +29,17 @@ export const DEFAULT_POSE_THRESHOLDS: PoseThresholds = {
 };
 
 /**
- * 滞回：**已经就绪后放宽**阈值，边界上的小抖动才不会把状态踢出去。
+ * Hysteresis: thresholds **widen after ready**, so small jitter at the
+ * boundary does not kick the state out.
  *
- * 这里曾经是 0.7——进入 ready 之后阈值反而收紧 30%，
- * 于是刚好卡在 7° 的用户会在 ready 与 unstable 之间来回跳，
- * 正是滞回本该消除的现象。
+ * This used to be 0.7 - after entering ready the thresholds tightened by 30%,
+ * so a user sitting right at 7° bounced between ready and unstable, exactly
+ * the phenomenon hysteresis is supposed to eliminate.
  */
 export const HYSTERESIS_EXIT_FACTOR = 1.3;
 
 export interface FaceObservation {
-  /** 帧内人脸序号（用于主脸关联） */
+  /** Face index within the frame (for primary-face association) */
   faceIndex: number;
   landmarks: Array<{ x: number; y: number; z?: number }>;
   matrix: number[];
@@ -46,8 +48,8 @@ export interface FaceObservation {
 export type GuidanceStatus = "no-face" | "multi-face" | "out-of-position" | "unstable" | "ready";
 
 /**
- * 结构化姿态提示 key（O4）：tracking 只产出 key，中文措辞在
- * pose/guidance-text.ts 统一格式化。
+ * Structured pose hint keys (O4): tracking only produces keys; the English
+ * wording is formatted centrally in pose/guidance-text.ts.
  */
 export type GuidanceHint =
   | "move-closer"
@@ -68,22 +70,22 @@ export type GuidanceHint =
 export interface PoseState {
   status: GuidanceStatus;
   angles: PoseAngles;
-  /** 脸宽 / 图像宽 */
+  /** Face width / image width */
   faceWidthRatio: number;
-  /** 脸中心相对图像中心偏移（归一化，负数=左/上） */
+  /** Face center offset relative to the image center (normalized; negative = left/up) */
   faceOffset: { x: number; y: number };
   stableMs: number;
-  /** 自动拍摄就绪：稳定且位置合规 */
+  /** Ready for automatic capture: stable and position-compliant */
   shootable: boolean;
-  /** 姿态提示 key（顺序即语义：先远近、再左右、后上下；yaw、pitch、roll） */
+  /** Pose hint keys (order carries meaning: distance first, then left/right, then up/down; then yaw, pitch, roll) */
   guidanceHints: GuidanceHint[];
 }
 
 export interface TrackingOptions {
   thresholds?: PoseThresholds;
-  /** 预览是否为镜像。只影响取景框绘制，不再影响指令措辞（见 guidance）。 */
+  /** Whether the preview is mirrored. Only affects viewfinder drawing, not guidance wording (see guidance). */
   mirrored?: boolean;
-  alpha?: number; // EMA 平滑系数
+  alpha?: number; // EMA smoothing factor
 }
 
 interface SmoothedAngles {
@@ -93,13 +95,13 @@ interface SmoothedAngles {
 }
 
 export interface FaceMetrics {
-  /** 脸宽 / 图像宽 */
+  /** Face width / image width */
   width: number;
-  /** 脸中心的归一化坐标（0–1） */
+  /** Normalized face center coordinates (0–1) */
   center: { x: number; y: number };
 }
 
-/** 脸宽取 landmarks 33（左眼外眦）与 263（右眼外眦）的水平距离。 */
+/** Face width is the horizontal distance between landmarks 33 (left eye outer corner) and 263 (right eye outer corner). */
 export function faceMetrics(face: FaceObservation): FaceMetrics | null {
   const left = face.landmarks[33];
   const right = face.landmarks[263];
@@ -116,11 +118,13 @@ export function faceMetrics(face: FaceObservation): FaceMetrics | null {
 }
 
 /**
- * 主脸关联：按「脸宽 × 居中度」打分，并以上一帧主脸位置作最近邻先验。
+ * Primary-face association: scores by "face width × centeredness" with the
+ * previous frame's primary position as a nearest-neighbor prior.
  *
- * 这里曾经按 score 降序取第一张。但 §4.4 把 outputFaceBlendshapes 固定为 false，
- * 于是 score 恒为 undefined，排序全程等价、退化成「取第一张脸」——
- * 而 MediaPipe 的返回顺序并不保证是主体优先。
+ * This used to take the first face ordered by score. But §4.4 pins
+ * outputFaceBlendshapes to false, so score was always undefined, the ordering
+ * was equivalent throughout, and it degenerated to "take the first face" -
+ * while MediaPipe's return order is not guaranteed to prefer the subject.
  */
 export function selectPrimaryFace(
   faces: FaceObservation[],
@@ -138,7 +142,8 @@ export function selectPrimaryFace(
     const centering = 1 - Math.min(1, offCenter * 2);
     let score = metrics.width * (0.5 + 0.5 * centering);
     if (previousCenter) {
-      // 两张脸大小接近时，靠上一帧的位置定住主体，避免逐帧来回跳
+      // When two faces are similar in size, anchor on the previous frame's
+      // position to avoid switching back and forth each frame
       const drift = Math.hypot(
         metrics.center.x - previousCenter.x,
         metrics.center.y - previousCenter.y,
@@ -154,12 +159,15 @@ export function selectPrimaryFace(
 }
 
 /**
- * yaw/roll 的正负与身体方向的映射。
+ * The sign mapping of yaw/roll to body direction.
  *
- * canonical face model 的 +X 指向被摄者自己的左侧，因此 yaw > 0 读作「头转向自己的左侧」。
- * 这条映射还没有用真人样本实测确认（GDE-003），文案会在实测后调整。
- * 但无论最终是哪个方向，前置与后置摄像头必须给出同一句指令——
- * 指令描述的是被摄者的身体，不是屏幕上的画面。
+ * The canonical face model's +X points to the subject's own left, so yaw > 0
+ * reads as "head turned toward the subject's own left".
+ * This mapping has not yet been confirmed against real-person samples
+ * (GDE-003); copy will be adjusted after measurement.
+ * Whichever direction is final, front and rear cameras must give the same
+ * instruction - the instruction describes the subject's body, not the
+ * on-screen picture.
  */
 const YAW_POSITIVE_IS_OWN_LEFT = true;
 const ROLL_POSITIVE_IS_OWN_LEFT = true;
@@ -170,7 +178,8 @@ export class PoseTracker {
   private alpha: number;
   private smoothed: SmoothedAngles | null = null;
   private lastStatus: GuidanceStatus = "no-face";
-  /** 角度/位置判定得到的状态，不含 multi-face 这类提示态；迟滞只看它 */
+  /** State from the angle/position judgment, excluding hint states like
+   * multi-face; hysteresis looks only at this */
   private lastComputed: GuidanceStatus = "no-face";
   private stableSince: number | null = null;
   private lastAngles: PoseAngles = { yaw: 0, pitch: 0, roll: 0 };
@@ -184,7 +193,8 @@ export class PoseTracker {
     this.alpha = options.alpha ?? 0.5;
   }
 
-  /** 切换前后摄像头时更新镜像标记，不需要重建 tracker 或 landmarker。 */
+  /** Update the mirror flag when switching between front and rear cameras;
+   * no need to rebuild the tracker or landmarker. */
   setMirrored(mirrored: boolean): void {
     this.mirrored = mirrored;
   }
@@ -193,7 +203,7 @@ export class PoseTracker {
     return this.mirrored;
   }
 
-  /** 输入一帧的人脸观察结果与时间戳；返回更新后的姿态状态。 */
+  /** Feed one frame of face observations with a timestamp; returns the updated pose state. */
   update(faces: FaceObservation[], nowMs: number): PoseState {
     const primary = selectPrimaryFace(faces, this.lastCenter);
     if (!primary) {
@@ -207,11 +217,12 @@ export class PoseTracker {
 
     const angles = decomposeFaceMatrix(primary.matrix);
     if (!angles) {
-      // 这一帧没有可用角度。保持上一状态——把 NaN 平滑进 EMA 会让之后每一帧都是 NaN。
+      // No usable angles this frame. Keep the previous state - smoothing NaN
+      // into the EMA would make every later frame NaN.
       return this.buildState(this.lastStatus, nowMs);
     }
 
-    // EMA 平滑（防指令抖动）
+    // EMA smoothing (prevents guidance flicker)
     this.smoothed = this.smoothed
       ? {
           yaw: this.smoothed.yaw * (1 - this.alpha) + angles.yaw * this.alpha,
@@ -229,7 +240,7 @@ export class PoseTracker {
       ? { x: metrics.center.x - 0.5, y: metrics.center.y - 0.5 }
       : { x: 0, y: 0 };
 
-    // 滞回：已经就绪时放宽阈值，未就绪时用原阈值
+    // Hysteresis: widen thresholds once ready; use the base thresholds otherwise
     const settled = this.lastComputed === "ready";
     const factor = settled ? HYSTERESIS_EXIT_FACTOR : 1;
     const inPosition = this.inPosition(this.lastFaceWidth, this.lastFaceOffset, factor);
@@ -251,7 +262,8 @@ export class PoseTracker {
     }
     this.lastComputed = computed;
 
-    // 多脸是提示性状态：关联与平滑照常进行，结果才不会被丢掉（§4.4）
+    // Multi-face is a hint state: association and smoothing continue so the
+    // result is not discarded (§4.4)
     const status: GuidanceStatus = faces.length > 1 ? "multi-face" : computed;
     this.lastStatus = status;
     return this.buildState(status, nowMs);
@@ -281,12 +293,15 @@ export class PoseTracker {
   }
 
   /**
-   * GDE-002：指令以用户身体方向表达。
+   * GDE-002: guidance expressed in the subject's body direction.
    *
-   * 措辞不依赖 mirrored——身体方向是物理事实，不随预览是否镜像而改变。
-   * 旧实现用 mirrored 去翻转身体方向，等价于断言「换个摄像头，人就转了个身」，
-   * 两个分支里必然有一支是错的。
-   * 只产出 key，不产中文；真人样本校准后要翻的是下面两个方向常量，文案表不动。
+   * Wording does not depend on mirrored - body direction is a physical fact
+   * and does not change with preview mirroring. The old implementation used
+   * mirrored to flip body direction, which is equivalent to asserting
+   * "switching cameras turns the person around"; one of the two branches is
+   * necessarily wrong.
+   * Only keys are produced, never copy; after real-sample calibration only
+   * the two direction constants below flip, never the copy tables.
    */
   private guidance(status: GuidanceStatus): GuidanceHint[] {
     if (status === "no-face" || status === "multi-face" || status === "ready") return [];
@@ -297,9 +312,11 @@ export class PoseTracker {
       if (w < this.thresholds.faceWidthMin) parts.push("move-closer");
       else if (w > this.thresholds.faceWidthMax) parts.push("move-farther");
       if (Math.abs(x) > this.thresholds.faceOffsetMax) {
-        // MediaPipe 读的是 <video> 的原始帧——预览镜像只是 CSS transform，
-        // 不改变送进推理的像素。未镜像画面里，被摄者向自己的左侧移动时脸往画面
-        // 右侧走（x 增大）。所以 x > 0 表示人已经偏在自己的左侧，要往右回中。
+        // MediaPipe reads the raw <video> frame - preview mirroring is only a
+        // CSS transform and does not change the pixels fed to inference. In an
+        // unmirrored frame, when the subject moves to their own left the face
+        // moves right on screen (x increases). So x > 0 means the person is
+        // already off to their own left and needs to move back right.
         parts.push(x > 0 ? "move-own-right" : "move-own-left");
       }
       if (Math.abs(y) > this.thresholds.faceOffsetMax) {
@@ -316,9 +333,11 @@ export class PoseTracker {
         parts.push(turnedToOwnLeft ? "turn-own-right" : "turn-own-left");
       }
       if (Math.abs(pitch) > this.thresholds.pitchDeg) {
-        // pitch = asin(-R12/s) 是绕 +X 轴的转角，而本文件采用的约定是
-        // +X 指向被摄者自己的左侧、+Y 向上、+Z 朝向相机。绕 +X 正向旋转把前向 +Z
-        // 转到 -Y，也就是脸朝下。所以 pitch > 0 表示正在低头，该提示抬头。
+        // pitch = asin(-R12/s) is the rotation about the +X axis, and this
+        // file's convention has +X pointing to the subject's own left, +Y up,
+        // +Z toward the camera. A positive rotation about +X turns the forward
+        // +Z toward -Y, i.e. face down. So pitch > 0 means looking down and
+        // the hint is to raise the head.
         parts.push(pitch > 0 ? "raise-head" : "lower-head");
       }
       if (Math.abs(roll) > this.thresholds.rollDeg) {

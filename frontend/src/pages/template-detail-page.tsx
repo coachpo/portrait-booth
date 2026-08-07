@@ -1,7 +1,8 @@
 /**
- * 模板详情页（TMP-002 完整披露）：/templates/:revisionId。
- * 只读展示目录响应里已有的 revision/publication 全量字段；
- * 目录缓存是模块级单例，本页不新增任何网络调用。
+ * Template detail page (TMP-002 full disclosure): /templates/:revisionId.
+ * Read-only display of the full revision/publication fields already in the
+ * catalog response; the catalog cache is a module-level singleton and this
+ * page makes no new network calls.
  */
 
 import { useEffect, useState } from "react";
@@ -41,26 +42,26 @@ function isOfficial(entry: TemplateEntry): boolean {
 function CapabilityList({ entry }: { entry: TemplateEntry }) {
   const caps = entry.revision.capabilities;
   const rows: Array<{ label: string; value: string }> = [
-    { label: "自行拍摄", value: capabilityValueLabel(caps.selfCapture) },
-    { label: "调整构图", value: capabilityValueLabel(caps.crop) },
-    { label: "旋转", value: capabilityValueLabel(caps.rotate) },
-    { label: "镜像", value: capabilityValueLabel(caps.mirror) },
-    { label: "修饰", value: capabilityValueLabel(caps.retouch) },
-    { label: "背景替换", value: capabilityValueLabel(caps.backgroundReplace) },
+    { label: "Self-capture", value: capabilityValueLabel(caps.selfCapture) },
+    { label: "Adjust composition", value: capabilityValueLabel(caps.crop) },
+    { label: "Rotation", value: capabilityValueLabel(caps.rotate) },
+    { label: "Mirroring", value: capabilityValueLabel(caps.mirror) },
+    { label: "Retouching", value: capabilityValueLabel(caps.retouch) },
+    { label: "Background replacement", value: capabilityValueLabel(caps.backgroundReplace) },
     {
-      label: "原始相机文件",
-      value: caps.requiresOriginalCameraFile ? "要求" : "不要求",
+      label: "Original camera file",
+      value: caps.requiresOriginalCameraFile ? "Required" : "Not required",
     },
     {
-      label: "认证摄影师",
-      value: caps.requiresProfessionalPhotographer ? "要求" : "不要求",
+      label: "Certified photographer",
+      value: caps.requiresProfessionalPhotographer ? "Required" : "Not required",
     },
   ];
   return (
     <ul className="capability-list">
       {rows.map((r) => (
         <li key={r.label}>
-          <strong>{r.label}：</strong>
+          <strong>{r.label}: </strong>
           {r.value}
         </li>
       ))}
@@ -71,8 +72,8 @@ function CapabilityList({ entry }: { entry: TemplateEntry }) {
 function RuleSource({ refs, literal }: { refs: string[]; literal?: string }) {
   return (
     <ul className="rule-meta">
-      {literal && <li>官方原文：{literal}</li>}
-      {refs.length > 0 && <li>来源引用：{refs.join("、")}</li>}
+      {literal && <li>Official source text: {literal}</li>}
+      {refs.length > 0 && <li>Source references: {refs.join(", ")}</li>}
     </ul>
   );
 }
@@ -80,7 +81,7 @@ function RuleSource({ refs, literal }: { refs: string[]; literal?: string }) {
 function CropRules({ entry }: { entry: TemplateEntry }) {
   const rev = entry.revision;
   if (rev.cropRules.length === 0) {
-    return <p className="muted">本模板未声明裁剪规则。</p>;
+    return <p className="muted">This template declares no crop rules.</p>;
   }
   const overlayIds = new Set(entry.revision.overlay.ruleIds);
   return (
@@ -88,21 +89,21 @@ function CropRules({ entry }: { entry: TemplateEntry }) {
       {rev.cropRules.map((r) => (
         <li key={r.id}>
           <strong>{r.id}</strong>
-          {overlayIds.has(r.id) && <span className="badge badge-active">用于蒙版</span>}
+          {overlayIds.has(r.id) && <span className="badge badge-active">Used in mask</span>}
           <ul className="rule-meta">
             <li>
-              指标：{metricLabel(r.metric)}
-              {r.min !== undefined && `，最小 ${r.min} ${r.unit}`}
-              {r.max !== undefined && `，最大 ${r.max} ${r.unit}`}
-              {r.target !== undefined && `，目标 ${r.target} ${r.unit}`}
-              {r.tolerance !== undefined && `，容差 ${r.tolerance} ${r.unit}`}
+              Metric: {metricLabel(r.metric)}
+              {r.min !== undefined && `, min ${r.min} ${r.unit}`}
+              {r.max !== undefined && `, max ${r.max} ${r.unit}`}
+              {r.target !== undefined && `, target ${r.target} ${r.unit}`}
+              {r.tolerance !== undefined && `, tolerance ${r.tolerance} ${r.unit}`}
             </li>
             <li>
-              坐标：{r.coordinateSpace}，轴 {r.axis}，锚点 {r.anchors.join("、")}
+              Coordinates: {r.coordinateSpace}, axis {r.axis}, anchors {r.anchors.join(", ")}
             </li>
             <li>
-              判定：{evaluationLabel(r.evaluation)}，{enforcementLabel(r.enforcement)}，来源：
-              {provenanceLabel(r.provenance)}
+              Judgment: {evaluationLabel(r.evaluation)}, {enforcementLabel(r.enforcement)},
+              provenance: {provenanceLabel(r.provenance)}
             </li>
           </ul>
           <RuleSource refs={r.sourceRefs} literal={r.sourceLiteral} />
@@ -115,7 +116,7 @@ function CropRules({ entry }: { entry: TemplateEntry }) {
 function CaptureRules({ entry }: { entry: TemplateEntry }) {
   const rules = entry.revision.captureRules;
   if (rules.length === 0) {
-    return <p className="muted">本模板未声明拍摄规则。</p>;
+    return <p className="muted">This template declares no capture rules.</p>;
   }
   return (
     <ul className="rule-list">
@@ -123,19 +124,19 @@ function CaptureRules({ entry }: { entry: TemplateEntry }) {
         const expected =
           typeof r.expected === "boolean"
             ? r.expected
-              ? "必须满足"
-              : "必须不满足"
+              ? "must hold"
+              : "must not hold"
             : String(r.expected);
         return (
           <li key={r.id}>
             <strong>{r.id}</strong>
             <ul className="rule-meta">
               <li>
-                检查：{r.check}；期望：{expected}
+                Check: {r.check}; expected: {expected}
               </li>
               <li>
-                判定：{evaluationLabel(r.evaluation)}，{enforcementLabel(r.enforcement)}，来源：
-                {provenanceLabel(r.provenance)}
+                Judgment: {evaluationLabel(r.evaluation)}, {enforcementLabel(r.enforcement)},
+                provenance: {provenanceLabel(r.provenance)}
               </li>
             </ul>
             <RuleSource refs={r.sourceRefs} literal={r.sourceLiteral} />
@@ -152,59 +153,59 @@ function OutputSection({ entry }: { entry: TemplateEntry }) {
   const of = rev.outputFile;
   return (
     <div>
-      <h2>输出规格</h2>
+      <h2>Output specification</h2>
       <dl className="final-details">
         <div>
-          <dt>描述</dt>
+          <dt>Description</dt>
           <dd>{outputDescription(out)}</dd>
         </div>
         {(out.kind === "exact_pixels" || out.kind === "ranged_pixels") && (
           <div>
-            <dt>宽高比</dt>
+            <dt>Aspect ratio</dt>
             <dd>
-              {out.aspect.width}:{out.aspect.height}（{enforcementLabel(out.aspect.enforcement)}，
-              来源：{provenanceLabel(out.aspect.provenance)}）
+              {out.aspect.width}:{out.aspect.height} ({enforcementLabel(out.aspect.enforcement)},
+              provenance: {provenanceLabel(out.aspect.provenance)})
             </dd>
           </div>
         )}
         {of && (
           <>
             <div>
-              <dt>格式</dt>
-              <dd>{of.mime.join("、")}</dd>
+              <dt>Format</dt>
+              <dd>{of.mime.join(", ")}</dd>
             </div>
             {of.sizeLimit && (
               <div>
-                <dt>体积限制</dt>
+                <dt>Size limit</dt>
                 <dd>
-                  {of.sizeLimit.minBytes !== undefined && `最小 ${of.sizeLimit.minBytes} 字节；`}
-                  {of.sizeLimit.maxBytes !== undefined && `最大 ${of.sizeLimit.maxBytes} 字节；`}
+                  {of.sizeLimit.minBytes !== undefined && `min ${of.sizeLimit.minBytes} bytes; `}
+                  {of.sizeLimit.maxBytes !== undefined && `max ${of.sizeLimit.maxBytes} bytes; `}
                   {of.sizeLimit.normalization && normalizationLabel(of.sizeLimit.normalization)}
-                  {of.sizeLimit.sourceLiteral && `（${of.sizeLimit.sourceLiteral}）`}
+                  {of.sizeLimit.sourceLiteral && ` (${of.sizeLimit.sourceLiteral})`}
                 </dd>
               </div>
             )}
             {of.colorSpace && (
               <div>
-                <dt>色彩空间</dt>
+                <dt>Color space</dt>
                 <dd>{of.colorSpace}</dd>
               </div>
             )}
             {of.bitsPerChannel !== undefined && (
               <div>
-                <dt>位深</dt>
+                <dt>Bits per channel</dt>
                 <dd>{of.bitsPerChannel}</dd>
               </div>
             )}
             {of.channels !== undefined && (
               <div>
-                <dt>通道</dt>
+                <dt>Channels</dt>
                 <dd>{of.channels}</dd>
               </div>
             )}
             {of.maxCompressionRatio !== undefined && (
               <div>
-                <dt>最大压缩比</dt>
+                <dt>Max compression ratio</dt>
                 <dd>{of.maxCompressionRatio}</dd>
               </div>
             )}
@@ -222,8 +223,9 @@ export function TemplateDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
-    // 每次重新加载/重试都先回到 loading 态（写进 then/catch 或另开 effect 都清不掉旧态）
-    /* eslint-disable react-hooks/set-state-in-effect -- 数据获取的 loading 复位 */
+    // Every reload/retry starts back at loading (writing in then/catch or a
+    // separate effect cannot clear the stale state)
+    /* eslint-disable react-hooks/set-state-in-effect -- loading reset for data fetching */
     setState({ kind: "loading" });
     /* eslint-enable react-hooks/set-state-in-effect */
     fetchTemplateCatalog()
@@ -234,7 +236,7 @@ export function TemplateDetailPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setState({ kind: "error", message: err instanceof Error ? err.message : "加载失败" });
+        setState({ kind: "error", message: err instanceof Error ? err.message : "load failed" });
       });
     return () => {
       cancelled = true;
@@ -242,24 +244,26 @@ export function TemplateDetailPage() {
   }, [revisionId, attempt]);
 
   if (state.kind === "loading") {
-    return <p aria-live="polite">正在加载模板详情…</p>;
+    return <p aria-live="polite">Loading template details…</p>;
   }
   if (state.kind === "error") {
     return (
       <div role="alert" className="template-error">
-        <p>模板目录加载失败：{state.message}</p>
+        <p>Template catalog failed to load: {state.message}</p>
         <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-          重试
+          Retry
         </button>
       </div>
     );
   }
   if (state.kind === "missing") {
     return (
-      <section aria-label="模板不存在">
-        <h1>模板不存在</h1>
-        <p className="muted">未找到模板「{revisionId}」，可能已被移除或地址有误。</p>
-        <Link to="/create">返回模板列表</Link>
+      <section aria-label="Template not found">
+        <h1>Template not found</h1>
+        <p className="muted">
+          No template found for "{revisionId}"; it may have been removed or the address is wrong.
+        </p>
+        <Link to="/create">Back to template list</Link>
       </section>
     );
   }
@@ -271,27 +275,27 @@ export function TemplateDetailPage() {
   const notes = sourceNotesFor(rev, uiLocale());
 
   return (
-    <section aria-label="模板详情">
+    <section aria-label="Template details">
       <h1>{entryLabel(entry, uiLocale())}</h1>
       <p className="muted">
         <span className={`badge badge-${pub.status}`}>
-          {pub.status === "active" ? "可用" : "仅供参考"}
+          {pub.status === "active" ? "Available" : "Reference only"}
         </span>
-        {!official && <span className="badge badge-portrait">非证件模板</span>}
+        {!official && <span className="badge badge-portrait">Non-document template</span>}
       </p>
       {pub.statusReason && <p className="warn-text">{pub.statusReason}</p>}
 
       <div>
-        <h2>版本与治理</h2>
+        <h2>Version & governance</h2>
         <dl className="final-details">
           <div>
             <dt>revisionId</dt>
             <dd>{rev.revisionId}</dd>
           </div>
           <div>
-            <dt>模板 ID / 版本</dt>
+            <dt>Template ID / version</dt>
             <dd>
-              {rev.id}@{rev.version}（schema v{rev.schemaVersion}）
+              {rev.id}@{rev.version} (schema v{rev.schemaVersion})
             </dd>
           </div>
           <div>
@@ -299,48 +303,48 @@ export function TemplateDetailPage() {
             <dd>{entry.contentHash}</dd>
           </div>
           <div>
-            <dt>本项目复核日期</dt>
+            <dt>Review date for this project</dt>
             <dd>{pub.verifiedAt}</dd>
           </div>
           <div>
-            <dt>复核到期日</dt>
+            <dt>Review due date</dt>
             <dd>{pub.reviewDueAt}</dd>
           </div>
           <div>
-            <dt>生效日期</dt>
+            <dt>Effective date</dt>
             <dd>{pub.effectiveAt}</dd>
           </div>
           <div>
-            <dt>维护 / 复核</dt>
+            <dt>Maintainer / reviewer</dt>
             <dd>
-              {pub.owner} / {pub.reviewer}（发布修订 v{pub.publicationRevision}）
+              {pub.owner} / {pub.reviewer} (publication revision v{pub.publicationRevision})
             </dd>
           </div>
         </dl>
       </div>
 
       <div>
-        <h2>适用范围</h2>
+        <h2>Applicable scope</h2>
         <dl className="final-details">
           <div>
-            <dt>辖区</dt>
+            <dt>Jurisdiction</dt>
             <dd>{jurisdictionName(rev.jurisdiction)}</dd>
           </div>
           <div>
-            <dt>证件类型</dt>
+            <dt>Document type</dt>
             <dd>{documentTypeName(rev.documentType)}</dd>
           </div>
           <div>
-            <dt>提交渠道</dt>
+            <dt>Submission channel</dt>
             <dd>{channelName(rev.submissionChannel)}</dd>
           </div>
           <div>
-            <dt>适用人群</dt>
+            <dt>Applicant class</dt>
             <dd>{rev.applicantClass}</dd>
           </div>
           {rev.applicationPost && (
             <div>
-              <dt>适用领区</dt>
+              <dt>Applicable post</dt>
               <dd>{rev.applicationPost}</dd>
             </div>
           )}
@@ -350,32 +354,34 @@ export function TemplateDetailPage() {
       <OutputSection entry={entry} />
 
       <div>
-        <h2>裁剪规则</h2>
+        <h2>Crop rules</h2>
         <CropRules entry={entry} />
       </div>
 
       <div>
-        <h2>拍摄规则</h2>
+        <h2>Capture rules</h2>
         <CaptureRules entry={entry} />
       </div>
 
       <div>
-        <h2>能力限制</h2>
+        <h2>Capability restrictions</h2>
         <CapabilityList entry={entry} />
       </div>
 
       <div>
-        <h2>官方来源</h2>
+        <h2>Official sources</h2>
         <ul className="rule-list">
           {rev.sources.map((s) => (
             <li key={s.id}>
               <a href={s.url} target="_blank" rel="noreferrer noopener">
-                {s.title}（{s.authority}）
+                {s.title} ({s.authority})
               </a>
               <ul className="rule-meta">
-                <li>访问于 {s.accessedAt}</li>
+                <li>Accessed {s.accessedAt}</li>
                 <li>
-                  {s.sourceUpdatedAt ? `官方更新于 ${s.sourceUpdatedAt}` : "官方未标注更新时间"}
+                  {s.sourceUpdatedAt
+                    ? `Officially updated ${s.sourceUpdatedAt}`
+                    : "Official update time not provided"}
                 </li>
               </ul>
             </li>
@@ -385,7 +391,7 @@ export function TemplateDetailPage() {
 
       {notes.length > 0 && (
         <div>
-          <h2>模板复核记录</h2>
+          <h2>Template review record</h2>
           <ul className="rule-list">
             {notes.map((n, i) => (
               <li key={i}>{n}</li>
@@ -395,7 +401,7 @@ export function TemplateDetailPage() {
       )}
 
       <div className="step-actions">
-        <Link to="/create">返回模板列表</Link>
+        <Link to="/create">Back to template list</Link>
       </div>
     </section>
   );

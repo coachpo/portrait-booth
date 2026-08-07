@@ -14,7 +14,7 @@ function le32(v: number): number[] {
   return [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff];
 }
 
-/** 小端 TIFF 头 + 仅含 Orientation tag 的 IFD0 */
+/** Little-endian TIFF header + an IFD0 with only the Orientation tag */
 function tiffOrientation(o: number): number[] {
   const b = new Array<number>(8 + 2 + 12 + 4).fill(0);
   b[0] = 0x49;

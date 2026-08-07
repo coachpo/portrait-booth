@@ -53,37 +53,38 @@ beforeEach(() => {
 });
 
 function typeKey(value: string) {
-  fireEvent.change(screen.getByLabelText("取回码"), { target: { value } });
+  fireEvent.change(screen.getByLabelText("Retrieval code"), { target: { value } });
 }
 
 describe("RetrievePage", () => {
   it("normalizes the key while typing and shows it grouped", () => {
     render(<RetrievePage />);
     typeKey("a7c-2f9");
-    expect(screen.getByLabelText("取回码")).toHaveValue("A7C 2F9");
+    expect(screen.getByLabelText("Retrieval code")).toHaveValue("A7C 2F9");
   });
 
   it("keeps the retrieve button disabled until the key is complete", () => {
     render(<RetrievePage />);
-    expect(screen.getByRole("button", { name: "取回" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retrieve" })).toBeDisabled();
     typeKey("A7C2F9");
-    expect(screen.getByRole("button", { name: "取回" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Retrieve" })).toBeEnabled();
   });
 
   it("sends the normalized key, not the displayed one", async () => {
     vi.mocked(resolvePhoto).mockResolvedValue(resolved());
     render(<RetrievePage />);
     typeKey("a7c 2f9");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
     await waitFor(() => expect(resolvePhoto).toHaveBeenCalledWith("A7C2F9"));
   });
 
   it("shows the photo summary returned by resolve", async () => {
-    // 回归：resolve 的 width/height 恒为 null，取回页拿不到任何摘要
+    // Regression: resolve's width/height used to be always null, so the
+    // retrieve page got no summary at all
     vi.mocked(resolvePhoto).mockResolvedValue(resolved());
     render(<RetrievePage />);
     typeKey("A7C2F9");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
 
     expect(await screen.findByText("600×600")).toBeInTheDocument();
     expect(screen.getByText("50.0 KB")).toBeInTheDocument();
@@ -94,28 +95,29 @@ describe("RetrievePage", () => {
     vi.mocked(resolvePhoto).mockRejectedValue(new ApiError("PHOTO_UNAVAILABLE", "gone", 404));
     render(<RetrievePage />);
     typeKey("A7C2F9");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("照片不可用");
-    const input = screen.getByLabelText("取回码");
+    expect(alert).toHaveTextContent("photo unavailable");
+    const input = screen.getByLabelText("Retrieval code");
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(input.getAttribute("aria-describedby")).toBe(alert.id);
   });
 
   it("revokes the previous preview when a second photo is resolved", async () => {
-    // 回归：blob URL 从不撤销，同一会话里每取回一张就多一份驻留内存的照片字节
+    // Regression: blob URLs were never revoked, so each retrieval in one
+    // session added more photo bytes resident in memory
     vi.mocked(resolvePhoto).mockResolvedValue(resolved());
     render(<RetrievePage />);
 
     typeKey("A7C2F9");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
     await screen.findByText("600×600");
 
     typeKey("B8D3G1");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
     await waitFor(() => expect(revokedUrls).toContain("blob:photo-1"));
-    // 当前显示的这张不能被撤销，否则预览裂图
+    // The currently shown one must not be revoked, or the preview breaks
     expect(revokedUrls).not.toContain("blob:photo-2");
   });
 
@@ -125,14 +127,14 @@ describe("RetrievePage", () => {
     render(<RetrievePage />);
 
     typeKey("A7C2F9");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
     await screen.findByText("600×600");
 
-    fireEvent.change(screen.getByLabelText("删除密钥"), {
+    fireEvent.change(screen.getByLabelText("Delete secret"), {
       target: { value: "secret-value-123456" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "删除这张照片" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete this photo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
     await screen.findByRole("status");
 
     await waitFor(() => expect(revokedUrls).toContain("blob:photo-1"));
@@ -143,61 +145,64 @@ describe("RetrievePage", () => {
     const { unmount } = render(<RetrievePage />);
 
     typeKey("A7C2F9");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
     await screen.findByText("600×600");
 
     unmount();
-    // 创建的 URL 全部被撤销，无残留
+    // Every created URL is revoked; nothing lingers
     await waitFor(() => expect(revokedUrls).toEqual(createdUrls));
   });
 
   it("offers a delete entry point outside the staging page", async () => {
-    // 回归：删除密钥一旦离开暂存页就永久失效，取回页没有任何删除入口
+    // Regression: the delete secret used to be permanently useless once
+    // leaving the staging page; the retrieve page had no delete entry
     vi.mocked(deletePhoto).mockResolvedValue(undefined);
     render(<RetrievePage />);
     typeKey("A7C2F9");
-    fireEvent.change(screen.getByLabelText("删除密钥"), {
+    fireEvent.change(screen.getByLabelText("Delete secret"), {
       target: { value: "secret-value-123456" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "删除这张照片" }));
-    // 删除不可逆，先确认再执行
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete this photo" }));
+    // Deletion is irreversible; confirm before executing
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
 
     await waitFor(() => expect(deletePhoto).toHaveBeenCalledWith("A7C2F9", "secret-value-123456"));
-    expect(await screen.findByRole("status")).toHaveTextContent("已提交删除");
+    expect(await screen.findByRole("status")).toHaveTextContent("Delete submitted");
   });
 
   it("requires both the key and the delete secret before deleting", () => {
     render(<RetrievePage />);
-    expect(screen.getByRole("button", { name: "删除这张照片" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete this photo" })).toBeDisabled();
     typeKey("A7C2F9");
-    expect(screen.getByRole("button", { name: "删除这张照片" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete this photo" })).toBeDisabled();
   });
 });
 
-describe("同一会话内的第二次删除", () => {
+describe("a second delete within the same session", () => {
   it("resets the delete form when another key is resolved", async () => {
-    // 回归：deleteStage 到达 done 后没有任何复位路径，resolve() 也不重置它——
-    // 同一会话里取回第二张照片时，删除表单一直停在「已提交删除」，
-    // 密钥输入框与按钮都不再渲染，不刷新整页就删不掉第二张。
+    // Regression: deleteStage had no reset path after done and resolve() did
+    // not reset it either - retrieving a second photo in the same session
+    // left the delete form stuck at "delete submitted" with no inputs or
+    // buttons rendered, so the second photo could not be deleted without a
+    // full refresh.
     vi.mocked(deletePhoto).mockResolvedValue(undefined);
     vi.mocked(resolvePhoto).mockResolvedValue(resolved());
     render(<RetrievePage />);
 
     typeKey("A7C2F9");
-    fireEvent.change(screen.getByLabelText("删除密钥"), {
+    fireEvent.change(screen.getByLabelText("Delete secret"), {
       target: { value: "secret-value-123456" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "删除这张照片" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete this photo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
     await screen.findByRole("status");
 
-    // 取回另一张照片
+    // Retrieve another photo
     typeKey("B8D3G1");
-    fireEvent.click(screen.getByRole("button", { name: "取回" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve" }));
     await screen.findByText("600×600");
 
-    expect(screen.getByLabelText("删除密钥")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "删除这张照片" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Delete secret")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete this photo" })).toBeInTheDocument();
   });
 });

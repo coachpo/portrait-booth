@@ -13,7 +13,7 @@ function fakeTemplate(overrides: Partial<TemplateEntry["revision"]> = {}): Templ
       id: "fi",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "芬兰警方证件" },
+      label: { en: "Finnish police document" },
       jurisdiction: "FI",
       documentType: "id",
       submissionChannel: "digital_upload",
@@ -69,7 +69,8 @@ const BASE_CAPS: Caps = {
   requiresProfessionalPhotographer: false,
 };
 
-/** capabilities 是整字段替换：按用例合并只改需要的策略 */
+/** capabilities is whole-field replacement: merge per case to change only
+ * the policy under test */
 function withCaps(partial: Partial<Caps>): Partial<TemplateEntry["revision"]> {
   return { capabilities: { ...BASE_CAPS, ...partial } };
 }
@@ -88,7 +89,8 @@ const source = {
 } as unknown as SourceImage;
 
 function renderEditor(overrides: Partial<TemplateEntry["revision"]> = {}) {
-  // jsdom 的 canvas.getContext 返回 null，组件绘制路径自动跳过；交互断言不依赖像素
+  // jsdom's canvas.getContext returns null, so the drawing path is
+  // skipped automatically; interaction assertions do not depend on pixels
   const onDone = vi.fn();
   const onBack = vi.fn();
   const view = render(
@@ -105,16 +107,16 @@ function renderEditor(overrides: Partial<TemplateEntry["revision"]> = {}) {
 describe("EditorStep", () => {
   it("renders template label and controls", () => {
     renderEditor();
-    expect(screen.getByRole("heading", { name: "编辑照片" })).toBeInTheDocument();
-    expect(screen.getByText(/芬兰警方证件/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "旋转 90°" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "撤销" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "重置" })).toBeDisabled();
+    expect(screen.getByRole("heading", { name: "Edit photo" })).toBeInTheDocument();
+    expect(screen.getByText(/Finnish police document/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rotate 90°" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
   });
 
   it("disables mirror when the template forbids it (EDT-005)", () => {
     renderEditor();
-    expect(screen.getByRole("button", { name: "水平镜像" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mirror horizontally" })).toBeDisabled();
   });
 
   it("enables mirror when the template allows it", () => {
@@ -130,20 +132,20 @@ describe("EditorStep", () => {
         requiresProfessionalPhotographer: false,
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "水平镜像" }));
-    expect(screen.getByRole("button", { name: "撤销" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Mirror horizontally" }));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
   });
 
   it("records undo history after an edit and restores it", () => {
     const { onDone } = renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "旋转 90°" }));
-    const undoBtn = screen.getByRole("button", { name: "撤销" });
+    fireEvent.click(screen.getByRole("button", { name: "Rotate 90°" }));
+    const undoBtn = screen.getByRole("button", { name: "Undo" });
     expect(undoBtn).toBeEnabled();
     fireEvent.click(undoBtn);
-    expect(screen.getByRole("button", { name: "重置" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "重做" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "重做" }));
-    fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+    expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Redo" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
     expect(onDone).toHaveBeenCalledWith(
       expect.objectContaining({
         transform: expect.objectContaining({ rotationDeg: 90, scale: 1 }),
@@ -153,17 +155,17 @@ describe("EditorStep", () => {
 
   it("resets after edits", () => {
     renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "旋转 90°" }));
-    fireEvent.click(screen.getByRole("button", { name: "重置" }));
-    expect(screen.getByRole("button", { name: "撤销" })).toBeEnabled(); // 重置本身可撤销
-    expect(screen.getByRole("button", { name: "重置" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Rotate 90°" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled(); // reset itself is undoable
+    expect(screen.getByRole("button", { name: "Reset" })).toBeDisabled();
   });
 
   it("applies scale via slider and keyboard", () => {
     const { onDone } = renderEditor();
-    const slider = screen.getByRole("slider", { name: /缩放/ });
+    const slider = screen.getByRole("slider", { name: /zoom/i });
     fireEvent.change(slider, { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
     expect(onDone).toHaveBeenCalledWith(
       expect.objectContaining({ transform: expect.objectContaining({ scale: 2 }) }),
     );
@@ -171,9 +173,10 @@ describe("EditorStep", () => {
 
   it("rotates 90 and raises scale to keep coverage", () => {
     const { onDone } = renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "旋转 90°" }));
-    fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
-    // 源 800×600 → 旋转后 cover 比例 653/800 > 500/800，scale 需抬升
+    fireEvent.click(screen.getByRole("button", { name: "Rotate 90°" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
+    // source 800×600 → after rotation the cover ratio 653/800 > 500/800,
+    // so scale must rise
     expect(onDone).toHaveBeenCalledWith(
       expect.objectContaining({
         transform: expect.objectContaining({ rotationDeg: 90, scale: expect.any(Number) }),
@@ -183,7 +186,7 @@ describe("EditorStep", () => {
 
   describe("pointer interaction (EDT-007)", () => {
     function canvasWithSize(width: number, height: number) {
-      const canvas = screen.getByLabelText(/照片预览/) as HTMLCanvasElement;
+      const canvas = screen.getByLabelText(/photo preview/i) as HTMLCanvasElement;
       canvas.setPointerCapture = vi.fn();
       canvas.releasePointerCapture = vi.fn();
       vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
@@ -201,38 +204,40 @@ describe("EditorStep", () => {
     }
 
     it("normalizes drag by the canvas display size, not the output pixels", () => {
-      // 回归：分母曾是输出像素。画布被 CSS 压到 250px 宽时，
-      // 图像只跟着手指走一半的距离。
+      // Regression: the denominator used to be output pixels. With the
+      // canvas squeezed to 250px wide by CSS, the image followed the finger
+      // only half the distance.
       const { onDone } = renderEditor();
       const canvas = canvasWithSize(250, 326);
       fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 0, clientY: 0 });
       fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 25, clientY: 0 });
       fireEvent.pointerUp(canvas, { pointerId: 1 });
-      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+      fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
 
       const state = onDone.mock.calls[0][0] as { transform: { translateX: number } };
-      // 25 / 250 = 0.1；按输出宽度 500 归一化只会得到 0.05
+      // 25 / 250 = 0.1; normalized by the output width 500 it would only be 0.05
       expect(state.transform.translateX).toBeCloseTo(0.1, 5);
     });
 
     it("offers button and numeric alternatives to dragging (WCAG 2.5.7)", () => {
       const { onDone } = renderEditor();
-      fireEvent.click(screen.getByRole("button", { name: "右移" }));
-      fireEvent.click(screen.getByRole("button", { name: "右移" }));
-      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+      fireEvent.click(screen.getByRole("button", { name: "Move right" }));
+      fireEvent.click(screen.getByRole("button", { name: "Move right" }));
+      fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
 
       const state = onDone.mock.calls[0][0] as {
         transform: { translateX: number; translateY: number };
       };
       expect(state.transform.translateX).toBeCloseTo(0.04, 5);
-      // 源 800×600 在 500×653 上 cover 后高度恰好贴合，纵向没有可平移的余量
+      // After cover on 500×653 the 800×600 source fits the height exactly;
+      // there is no vertical pan headroom
       expect(state.transform.translateY).toBe(0);
     });
 
     it("refuses a nudge that would expose an edge", () => {
       const { onDone } = renderEditor();
-      fireEvent.click(screen.getByRole("button", { name: "下移" }));
-      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+      fireEvent.click(screen.getByRole("button", { name: "Move down" }));
+      fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
 
       const state = onDone.mock.calls[0][0] as { transform: { translateY: number } };
       expect(state.transform.translateY).toBe(0);
@@ -240,9 +245,9 @@ describe("EditorStep", () => {
 
     it("recenters the photo", () => {
       const { onDone } = renderEditor();
-      fireEvent.click(screen.getByRole("button", { name: "右移" }));
-      fireEvent.click(screen.getByRole("button", { name: "居中" }));
-      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+      fireEvent.click(screen.getByRole("button", { name: "Move right" }));
+      fireEvent.click(screen.getByRole("button", { name: "Center" }));
+      fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
 
       const state = onDone.mock.calls[0][0] as { transform: { translateX: number } };
       expect(state.transform.translateX).toBe(0);
@@ -250,8 +255,10 @@ describe("EditorStep", () => {
 
     it("accepts a typed translation value", () => {
       const { onDone } = renderEditor();
-      fireEvent.change(screen.getByLabelText("水平位置数值"), { target: { value: "0.1" } });
-      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+      fireEvent.change(screen.getByLabelText("Horizontal position value"), {
+        target: { value: "0.1" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
 
       const state = onDone.mock.calls[0][0] as { transform: { translateX: number } };
       expect(state.transform.translateX).toBeCloseTo(0.1, 5);
@@ -265,10 +272,10 @@ describe("EditorStep", () => {
       fireEvent.pointerMove(canvas, { pointerId: 2, clientX: 300, clientY: 100 });
       fireEvent.pointerUp(canvas, { pointerId: 2 });
       fireEvent.pointerUp(canvas, { pointerId: 1 });
-      fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+      fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
 
       const state = onDone.mock.calls[0][0] as { transform: { scale: number } };
-      // 两指间距从 100 拉到 200：缩放翻倍
+      // Pinch distance goes from 100 to 200: zoom doubles
       expect(state.transform.scale).toBeCloseTo(2, 5);
     });
   });
@@ -277,8 +284,8 @@ describe("EditorStep", () => {
     const { onDone } = renderEditor({
       output: { kind: "portal_source", officialPortalPerformsCrop: true },
     });
-    expect(screen.getByText(/由官方门户处理裁剪/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(screen.getByText(/cropped by the official portal/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(onDone).toHaveBeenCalledWith(
       expect.objectContaining({
         transform: expect.objectContaining({ scale: 1, rotationDeg: 0 }),
@@ -287,7 +294,8 @@ describe("EditorStep", () => {
   });
 
   it("passes the restored initialState through for portal templates (P7)", () => {
-    // 会话内换模板后带着外来编辑状态回到 !out 分支：继续不能再硬写 INITIAL
+    // After a same-session template switch with external edit state, the
+    // !out branch must not hard-write INITIAL on continue
     const state: EditorState = {
       transform: { ...IDENTITY_TRANSFORM, scale: 2, flipX: true },
       history: { undo: [IDENTITY_TRANSFORM], redo: [] },
@@ -304,42 +312,47 @@ describe("EditorStep", () => {
         onBack={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(onDone).toHaveBeenCalledWith(state);
   });
 });
 
-describe("capabilities 政策接入（P2）", () => {
+describe("capabilities policy wiring (P2)", () => {
   it("locks the rotate inputs and guards their onChange when rotation is forbidden", () => {
-    // 回归：旋转禁令曾可被滑杆/数值框绕过——按钮灰了，输入框照样改
+    // Regression: the rotation ban used to be bypassable via the
+    // slider/numeric input - the button greyed out but the input still
+    // changed
     const { onDone } = renderEditor(withCaps({ rotate: "forbidden" }));
-    const number = screen.getByLabelText("旋转数值") as HTMLInputElement;
+    const number = screen.getByLabelText("Rotation value") as HTMLInputElement;
     expect(number).toBeDisabled();
-    // jsdom 里 disabled 拦不住 fireEvent.change：回调内守卫才是真断言
+    // In jsdom, disabled does not stop fireEvent.change: the in-callback
+    // guard is the real assertion
     fireEvent.change(number, { target: { value: "30" } });
-    fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
     const state = onDone.mock.calls[0][0] as { transform: { rotationDeg: number } };
     expect(state.transform.rotationDeg).toBe(0);
   });
 
   it("locks compose controls and ignores pointer drags when crop is forbidden", () => {
     const { onDone } = renderEditor(withCaps({ crop: "forbidden" }));
-    expect(screen.getByLabelText("缩放数值")).toBeDisabled();
-    expect(screen.getByLabelText("水平位置数值")).toBeDisabled();
-    expect(screen.getByLabelText("垂直位置数值")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "右移" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "下移" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "居中" })).toBeDisabled();
-    // 锁定原因（缩放控件外）与操作说明（预览下方）各有一条可见文案
-    expect(screen.getByText(/固定在默认覆盖构图/)).toBeInTheDocument();
-    expect(screen.getByText(/缩放、平移与方向键均已停用/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Zoom value")).toBeDisabled();
+    expect(screen.getByLabelText("Horizontal position value")).toBeDisabled();
+    expect(screen.getByLabelText("Vertical position value")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move right" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move down" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Center" })).toBeDisabled();
+    // Both the lock reason (outside the zoom controls) and the operation
+    // hint (below the preview) show visible copy
+    expect(screen.getByText(/default cover composition/)).toBeInTheDocument();
+    expect(screen.getByText(/zoom, pan, and arrow keys are disabled/)).toBeInTheDocument();
 
-    // 指针拖移被输入边界拦截：transform 保持初始默认构图
-    const canvas = screen.getByLabelText("照片预览（构图已锁定）");
+    // Pointer drags are intercepted at the input boundary: the transform
+    // stays at the initial default composition
+    const canvas = screen.getByLabelText("Photo preview (composition locked)");
     fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 100 });
     fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 300, clientY: 300 });
     fireEvent.pointerUp(canvas, { pointerId: 1 });
-    fireEvent.click(screen.getByRole("button", { name: "下一步（终态检查）" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next (final checks)" }));
     const state = onDone.mock.calls[0][0] as { transform: { translateX: number; scale: number } };
     expect(state.transform.translateX).toBe(0);
     expect(state.transform.scale).toBe(1);
@@ -347,9 +360,9 @@ describe("capabilities 政策接入（P2）", () => {
 
   it("renders distinguishable notices for retouch warn and backgroundReplace forbidden", () => {
     renderEditor(withCaps({ retouch: "warn" }));
-    expect(screen.getByText("模板限制")).toBeInTheDocument();
-    expect(screen.getByText(/对修饰有警告/)).toBeInTheDocument();
-    expect(screen.getByText(/禁止背景替换/)).toBeInTheDocument();
-    expect(screen.getByText(/禁止镜像/)).toBeInTheDocument();
+    expect(screen.getByText("Template restrictions")).toBeInTheDocument();
+    expect(screen.getByText(/warning about retouching/i)).toBeInTheDocument();
+    expect(screen.getByText(/forbids background replacement/i)).toBeInTheDocument();
+    expect(screen.getByText(/forbids mirroring/i)).toBeInTheDocument();
   });
 });

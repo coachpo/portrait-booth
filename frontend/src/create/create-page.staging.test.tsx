@@ -13,7 +13,7 @@ const template = {
     id: "us",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "美国签证" },
+    label: { en: "US visa" },
     jurisdiction: "US",
     documentType: "visa",
     submissionChannel: "digital_upload",
@@ -100,7 +100,7 @@ const saved = {
 vi.mock("./template-step", () => ({
   TemplateStep: ({ onSelect }: { onSelect: (t: TemplateEntry) => void }) => (
     <button type="button" onClick={() => onSelect(template)}>
-      选择这个模板
+      Select this template
     </button>
   ),
 }));
@@ -109,10 +109,10 @@ vi.mock("./source-step", () => ({
   SourceStep: ({ onReady, onBack }: { onReady: (s: SourceImage) => void; onBack: () => void }) => (
     <>
       <button type="button" onClick={() => onReady(fakeSource())}>
-        完成上传
+        Complete upload
       </button>
       <button type="button" onClick={onBack}>
-        上传步骤返回
+        Upload step back
       </button>
     </>
   ),
@@ -121,7 +121,7 @@ vi.mock("./source-step", () => ({
 vi.mock("./capture-step", () => ({
   CaptureStep: ({ onReady }: { onReady: (s: SourceImage) => void }) => (
     <button type="button" onClick={() => onReady(fakeSource())}>
-      完成拍摄
+      Complete capture
     </button>
   ),
 }));
@@ -139,7 +139,7 @@ vi.mock("../editor/editor-step", async () => {
       onBack: (s: EditorState) => void;
     }) => (
       <>
-        <p>编辑器：缩放 {initialState?.transform.scale ?? "初始"}</p>
+        <p>Editor: zoom {initialState?.transform.scale ?? "initial"}</p>
         <button
           type="button"
           onClick={() =>
@@ -149,17 +149,17 @@ vi.mock("../editor/editor-step", async () => {
             })
           }
         >
-          完成编辑
+          Complete edit
         </button>
         <button type="button" onClick={() => onBack(INITIAL_EDITOR_STATE)}>
-          编辑器返回
+          Editor back
         </button>
       </>
     ),
   };
 });
 
-// 终态渲染与检查桩；final-page 与 review-step 保持真实
+// Final render and check stubs; final-page and review-step stay real
 vi.mock("../render/final-artifact", () => ({
   renderFinalArtifact: vi.fn(async () => fakeArtifact),
 }));
@@ -187,17 +187,17 @@ function click(name: string) {
   fireEvent.click(screen.getByRole("button", { name }));
 }
 
-/** 走完整流程到终态页并暂存成功 */
+/** Walk the full flow to the final page and stage successfully */
 async function walkToStaged() {
   render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ["/create"] })} />);
-  click("选择这个模板");
-  click("上传照片");
-  click("完成上传");
-  click("使用这张照片");
-  click("完成编辑");
-  await screen.findByRole("button", { name: "暂存并生成取回码" });
-  click("暂存并生成取回码");
-  click("确认并上传");
+  click("Select this template");
+  click("Upload photo");
+  click("Complete upload");
+  click("Use this photo");
+  click("Complete edit");
+  await screen.findByRole("button", { name: "Stage and generate retrieval code" });
+  click("Stage and generate retrieval code");
+  click("Confirm and upload");
   await screen.findByText("A7C 2F9");
 }
 
@@ -215,21 +215,23 @@ beforeEach(() => {
   vi.mocked(deletePhoto).mockResolvedValue(undefined);
 });
 
-describe("CreatePage 暂存回执", () => {
+describe("CreatePage staging receipt", () => {
   it("keeps the staging receipt when going back to editing and returning", async () => {
-    // 回归：回执只活在 StagingPanel 局部 state，返回编辑即卸载，
-    // 取回码与删除密钥一起消失，照片变成谁也删不掉的孤儿
+    // Regression: the receipt lived only in StagingPanel local state and
+    // unmounted on back-to-edit, taking the retrieval code and delete secret
+    // with it - an orphan photo nobody could delete
     await walkToStaged();
 
-    click("返回编辑");
-    click("完成编辑");
+    click("Back to edit");
+    click("Complete edit");
 
     expect(await screen.findByText("A7C 2F9")).toBeInTheDocument();
     expect(screen.getByText(/secret-value-1234567890/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /下载回执/ })).toBeInTheDocument();
-    // 服务端没有因为这一趟多出第二张照片，面板也不再提供第二次暂存
+    expect(screen.getByRole("button", { name: /download receipt/i })).toBeInTheDocument();
+    // The server has no second photo from this round trip, and the panel
+    // offers no second staging
     expect(savePhoto).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "暂存并生成取回码" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stage and generate retrieval code" })).toBeNull();
   });
 
   it("asks for confirmation before restart discards a staged receipt", async () => {
@@ -237,14 +239,14 @@ describe("CreatePage 暂存回执", () => {
     try {
       await walkToStaged();
 
-      click("重新开始");
+      click("Restart");
       expect(confirm).toHaveBeenCalledTimes(1);
-      // 取消：什么都不改，回执还在
+      // Cancel: nothing changes and the receipt stays
       expect(screen.getByText("A7C 2F9")).toBeInTheDocument();
 
       confirm.mockReturnValue(true);
-      click("重新开始");
-      expect(screen.getByRole("button", { name: "选择这个模板" })).toBeInTheDocument();
+      click("Restart");
+      expect(screen.getByRole("button", { name: "Select this template" })).toBeInTheDocument();
     } finally {
       confirm.mockRestore();
     }

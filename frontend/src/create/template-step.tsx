@@ -50,7 +50,11 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? `模板目录加载失败：${err.message}` : "模板目录加载失败");
+        setError(
+          err instanceof Error
+            ? `template catalog failed to load: ${err.message}`
+            : "template catalog failed to load",
+        );
       });
     return () => {
       cancelled = true;
@@ -90,29 +94,30 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
       <div role="alert" className="template-error">
         <p>{error}</p>
         <button type="button" onClick={retry}>
-          重试
+          Retry
         </button>
       </div>
     );
   }
   if (!catalog) {
-    return <p aria-live="polite">正在加载模板目录…</p>;
+    return <p aria-live="polite">Loading template catalog…</p>;
   }
 
   return (
-    <section aria-label="选择照片模板">
-      <h2>选择照片规格</h2>
+    <section aria-label="Choose photo template">
+      <h2>Choose a photo specification</h2>
       <p className="muted">
-        按证件类型筛选模板；通用肖像模板不用于官方申请，仅适合普通照片或开发验收。
+        Filter templates by document type; generic portrait templates are not for official
+        applications and suit ordinary photos or development acceptance only.
       </p>
       <fieldset className="filter-group">
-        <legend>国家或地区</legend>
+        <legend>Country or region</legend>
         <button
           type="button"
           className={jurisdiction === "" ? "chip selected" : "chip"}
           onClick={() => setJurisdiction("")}
         >
-          全部
+          All
         </button>
         {jurisdictions.map((code) => (
           <button
@@ -127,12 +132,12 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
       </fieldset>
       <div className="filter-row">
         <label>
-          证件类型
+          Document type
           <select
             value={documentType}
             onChange={(e) => setDocumentType(e.target.value as DocumentType | "")}
           >
-            <option value="">全部</option>
+            <option value="">All</option>
             {DOCUMENT_TYPES.map((t) => (
               <option key={t} value={t}>
                 {documentTypeName(t)}
@@ -141,12 +146,12 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
           </select>
         </label>
         <label>
-          提交渠道
+          Submission channel
           <select
             value={channel}
             onChange={(e) => setChannel(e.target.value as SubmissionChannel | "")}
           >
-            <option value="">全部</option>
+            <option value="">All</option>
             {CHANNELS.map((c) => (
               <option key={c} value={c}>
                 {channelName(c)}
@@ -156,7 +161,7 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
         </label>
       </div>
       {sorted.length === 0 ? (
-        <p className="muted">没有符合筛选条件的模板。</p>
+        <p className="muted">No templates match the current filters.</p>
       ) : (
         <ul className="template-list">
           {sorted.map((entry) => (
@@ -184,30 +189,32 @@ function TemplateCard({
     <li className="template-card">
       <div className="template-card-head">
         <h3>{entryLabel(entry, uiLocale())}</h3>
-        <span className={`badge badge-${status}`}>{status === "active" ? "可用" : "仅供参考"}</span>
-        {!official && <span className="badge badge-portrait">非证件模板</span>}
+        <span className={`badge badge-${status}`}>
+          {status === "active" ? "Available" : "Reference only"}
+        </span>
+        {!official && <span className="badge badge-portrait">Non-document template</span>}
       </div>
       {status !== "active" && <p className="warn-text">{entry.publication.statusReason}</p>}
       <dl className="template-card-details">
         <div>
-          <dt>规格</dt>
+          <dt>Specification</dt>
           <dd>{outputDescription(rev.output)}</dd>
         </div>
         <div>
-          <dt>来源</dt>
-          <dd>{rev.sources.map((s) => s.authority).join("、")}</dd>
+          <dt>Source</dt>
+          <dd>{rev.sources.map((s) => s.authority).join(", ")}</dd>
         </div>
         <div>
-          <dt>版本</dt>
+          <dt>Version</dt>
           <dd>{rev.version}</dd>
         </div>
         <div>
-          <dt>本项目复核日期</dt>
+          <dt>Review date for this project</dt>
           <dd>{entry.publication.verifiedAt}</dd>
         </div>
         {rev.applicationPost && (
           <div>
-            <dt>适用领区</dt>
+            <dt>Applicable post</dt>
             <dd>{rev.applicationPost}</dd>
           </div>
         )}
@@ -216,7 +223,7 @@ function TemplateCard({
         <ul className="muted">
           {restrictions.map((r) => (
             <li key={r.id}>
-              <strong>{r.level === "forbidden" ? "禁止" : "警告"}：</strong>
+              <strong>{r.level === "forbidden" ? "Forbidden" : "Warning"}: </strong>
               {r.text}
             </li>
           ))}
@@ -233,33 +240,39 @@ function TemplateCard({
       <div className="template-card-actions">
         {status === "active" ? (
           <button type="button" className="primary" onClick={() => onSelect(entry)}>
-            选择此模板
+            Select this template
           </button>
         ) : (
-          <button type="button" disabled title="该模板尚未通过发布验证">
-            不可用于提交
+          <button
+            type="button"
+            disabled
+            title="this template has not passed publication verification"
+          >
+            Not submittable
           </button>
         )}
         <Link className="secondary-link" to={`/templates/${entry.revision.revisionId}`}>
-          查看模板详情
+          View template details
         </Link>
         <details className="sources">
-          <summary>{official ? "官方来源" : "项目内部规格来源"}</summary>
+          <summary>
+            {official ? "Official sources" : "Project-internal specification sources"}
+          </summary>
           <ul>
             {rev.sources.map((s) => (
               <li key={s.id}>
                 <a href={s.url} target="_blank" rel="noreferrer noopener">
-                  {s.title}（{s.authority}）
+                  {s.title} ({s.authority})
                 </a>
-                {s.sourceUpdatedAt && <span className="muted"> 更新于 {s.sourceUpdatedAt}</span>}
-                <span className="muted"> 访问于 {s.accessedAt}</span>
+                {s.sourceUpdatedAt && <span className="muted"> updated {s.sourceUpdatedAt}</span>}
+                <span className="muted"> accessed {s.accessedAt}</span>
               </li>
             ))}
           </ul>
         </details>
         {notes.length > 0 && (
           <details className="sources">
-            <summary>模板复核记录（{notes.length} 条）</summary>
+            <summary>Template review record ({notes.length} entries)</summary>
             <ul>
               {notes.map((n, i) => (
                 <li key={i}>{n}</li>

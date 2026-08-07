@@ -1,14 +1,15 @@
 /**
- * 取回码的输入归一化与显示（SAV-007）。
+ * Retrieval-code input normalization and display (SAV-007).
  *
- * 服务端只接受 6 位大写字母数字。输入期就归一化，用户粘贴带空格、
- * 连字符或小写的取回码时不会被一句「格式错误」挡在门外。
+ * The server only accepts 6 uppercase alphanumeric characters. Normalizing
+ * during input means pasting a code with spaces, hyphens, or lowercase never
+ * gets blocked by a "format error".
  */
 
 const KEY_LENGTH = 6;
 const ALLOWED = /[A-Z0-9]/;
 
-/** 去掉分隔符与大小写差异，截断到 6 位。 */
+/** Strip separators and case differences, truncating to 6 characters. */
 export function normalizeKeyInput(raw: string): string {
   const chars: string[] = [];
   for (const ch of raw.toUpperCase()) {
@@ -18,7 +19,7 @@ export function normalizeKeyInput(raw: string): string {
   return chars.join("");
 }
 
-/** 分组显示：ABC DEF。与服务端 keyDisplay 的分组一致。 */
+/** Grouped display: ABC DEF. Matches the server keyDisplay grouping. */
 export function formatKeyGroups(normalized: string): string {
   if (normalized.length <= 3) return normalized;
   return `${normalized.slice(0, 3)} ${normalized.slice(3)}`;

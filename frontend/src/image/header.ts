@@ -1,6 +1,7 @@
 /**
- * 文件头解析（SRC-002：先解析文件头尺寸再进入完整解码）。
- * 支持 JPEG / PNG / WebP 的尺寸与 EXIF orientation，并识别 HEIC/HEIF。
+ * File-header parsing (SRC-002: parse header dimensions before full
+ * decoding). Supports JPEG / PNG / WebP dimensions and EXIF orientation, and
+ * recognizes HEIC/HEIF.
  */
 
 export type ImageFormat = "jpeg" | "png" | "webp" | "heif";
@@ -9,7 +10,7 @@ export interface ImageHeader {
   format: ImageFormat;
   width: number;
   height: number;
-  /** EXIF orientation 1–8；无方向信息时为 1 */
+  /** EXIF orientation 1–8; 1 when no orientation info */
   orientation: number;
 }
 
@@ -60,7 +61,7 @@ function isHeif(b: Uint8Array): boolean {
   return ["heic", "heix", "hevc", "hevx", "hevm", "hevs", "mif1", "msf1"].includes(brand);
 }
 
-/** TIFF IFD 遍历：返回 tag 值（SHORT/LONG），找不到返回 null。 */
+/** TIFF IFD walk: returns the tag value (SHORT/LONG), null when not found. */
 function parseTiffOrientation(data: Uint8Array): number | null {
   if (data.length < 8) return null;
   const littleEndian = data[0] === 0x49 && data[1] === 0x49;
@@ -97,7 +98,7 @@ function parseJpeg(b: Uint8Array): ImageHeader | null {
     const marker = b[off + 1];
     if (marker === 0xd9 || marker === 0xda) break; // EOI / SOS
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-      off += 2; // 无长度字段
+      off += 2; // no length field
       continue;
     }
     const len = (b[off + 2] << 8) | b[off + 3];
@@ -122,7 +123,7 @@ function parseJpeg(b: Uint8Array): ImageHeader | null {
       (marker >= 0xc9 && marker <= 0xcb) ||
       (marker >= 0xcd && marker <= 0xcf)
     ) {
-      // SOF0–SOF15（不含 DHT/JPG/DAC）
+      // SOF0–SOF15 (excluding DHT/JPG/DAC)
       height = (b[off + 5] << 8) | b[off + 6];
       width = (b[off + 7] << 8) | b[off + 8];
       break;
@@ -154,7 +155,7 @@ function parsePng(b: Uint8Array): ImageHeader | null {
       }
       break;
     }
-    if (type === "IDAT") break; // eXIf 只允许出现在 IDAT 之前
+    if (type === "IDAT") break; // eXIf is only allowed before IDAT
     off += 12 + len;
   }
   return { format: "png", width, height, orientation };
@@ -173,7 +174,7 @@ function parseWebp(b: Uint8Array): ImageHeader | null {
       if (data + 10 > b.length) return null;
       width = 1 + (b[data + 4] | (b[data + 5] << 8) | (b[data + 6] << 16));
       height = 1 + (b[data + 7] | (b[data + 8] << 8) | (b[data + 9] << 16));
-      off += size % 2 === 1 ? 9 + size : 8 + size; // 继续找 EXIF chunk
+      off += size % 2 === 1 ? 9 + size : 8 + size; // keep looking for the EXIF chunk
     } else if (chunk === "VP8 ") {
       if (data + 7 > b.length) return null;
       width = b[data + 3] | ((b[data + 4] & 0x3f) << 8);

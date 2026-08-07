@@ -12,7 +12,7 @@ const template = {
     id: "us",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "美国签证" },
+    label: { en: "US visa" },
     jurisdiction: "US",
     documentType: "visa",
     submissionChannel: "digital_upload",
@@ -55,7 +55,8 @@ const template = {
 
 const dispose = vi.fn();
 
-// 源图要明显大于模板输出（600×600），避免 EDT-004 分辨率不足警告干扰
+// The source must be clearly larger than the template output (600×600)
+// to avoid EDT-004 resolution warnings interfering
 function fakeSource(): SourceImage {
   return {
     file: new Blob([new Uint8Array(4)], { type: "image/jpeg" }),
@@ -74,7 +75,7 @@ function fakeSource(): SourceImage {
 vi.mock("./template-step", () => ({
   TemplateStep: ({ onSelect }: { onSelect: (t: TemplateEntry) => void }) => (
     <button type="button" onClick={() => onSelect(template)}>
-      选择这个模板
+      Select this template
     </button>
   ),
 }));
@@ -82,27 +83,27 @@ vi.mock("./template-step", () => ({
 vi.mock("./source-step", () => ({
   SourceStep: ({ onReady }: { onReady: (s: SourceImage) => void }) => (
     <button type="button" onClick={() => onReady(fakeSource())}>
-      完成上传
+      Complete upload
     </button>
   ),
 }));
 
 vi.mock("./capture-step", () => ({
-  CaptureStep: () => <p>拍摄步骤桩</p>,
+  CaptureStep: () => <p>capture step stub</p>,
 }));
 
 vi.mock("../render/final-page", () => ({
   FinalPage: ({ onBack }: { onBack: () => void }) => (
     <>
-      <p>终态页</p>
+      <p>Final page</p>
       <button type="button" onClick={onBack}>
-        返回编辑
+        Back to edit
       </button>
     </>
   ),
 }));
 
-// EditorStep 与 ReviewStep 用真实实现
+// EditorStep and ReviewStep use real implementations
 
 function mount() {
   render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ["/create"] })} />);
@@ -114,60 +115,62 @@ function click(name: string) {
 
 function walkToEditor() {
   mount();
-  click("选择这个模板");
-  click("上传照片");
-  click("完成上传");
-  click("使用这张照片");
-  expect(screen.getByRole("heading", { name: "编辑照片" })).toBeInTheDocument();
+  click("Select this template");
+  click("Upload photo");
+  click("Complete upload");
+  click("Use this photo");
+  expect(screen.getByRole("heading", { name: "Edit photo" })).toBeInTheDocument();
 }
 
 function scaleInput(): HTMLInputElement {
-  return screen.getByLabelText("缩放数值") as HTMLInputElement;
+  return screen.getByLabelText("Zoom value") as HTMLInputElement;
 }
 
-describe("CreatePage 编辑状态保留（A4）", () => {
+describe("CreatePage edit-state retention (A4)", () => {
   it("keeps unsubmitted transform and undo history when returning from the editor", () => {
-    // 回归：返回确认页再回来，缩放/撤销栈曾全部归零
+    // Regression: returning to the confirm page and back used to zero the
+    // zoom/undo stack entirely
     walkToEditor();
     expect(scaleInput().value).toBe("1");
-    expect(screen.getByRole("button", { name: "撤销" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
 
     fireEvent.change(scaleInput(), { target: { value: "1.6" } });
-    click("返回重新选择照片");
-    expect(screen.getByRole("heading", { name: "确认这张照片" })).toBeInTheDocument();
+    click("Back to choose another photo");
+    expect(screen.getByRole("heading", { name: "Confirm this photo" })).toBeInTheDocument();
 
-    click("使用这张照片");
+    click("Use this photo");
     expect(scaleInput().value).toBe("1.6");
-    expect(screen.getByRole("button", { name: "撤销" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
   });
 
   it("keeps the state committed at the last final-check submission", () => {
-    // 二次提交场景：退回上次提交点，而不是全部归零
+    // Second-commit scenario: back to the last committed point, not zeroed
     walkToEditor();
     fireEvent.change(scaleInput(), { target: { value: "1.6" } });
-    click("下一步（终态检查）");
-    expect(screen.getByText("终态页")).toBeInTheDocument();
+    click("Next (final checks)");
+    expect(screen.getByText("Final page")).toBeInTheDocument();
 
-    click("返回编辑");
+    click("Back to edit");
     expect(scaleInput().value).toBe("1.6");
     fireEvent.change(scaleInput(), { target: { value: "2.4" } });
 
-    click("返回重新选择照片");
-    click("使用这张照片");
+    click("Back to choose another photo");
+    click("Use this photo");
     expect(scaleInput().value).toBe("2.4");
   });
 
   it("resets the editor state when the photo is actually replaced", () => {
-    // 反向锁不变式 2：真换了照片，编辑状态必须作废归零
+    // Reverse-lock invariant 2: with the photo truly replaced, edit state
+    // must be voided to zero
     walkToEditor();
     fireEvent.change(scaleInput(), { target: { value: "1.6" } });
 
-    click("返回重新选择照片");
-    click("重新选择文件");
-    click("完成上传");
-    click("使用这张照片");
+    click("Back to choose another photo");
+    click("Choose another file");
+    click("Complete upload");
+    click("Use this photo");
 
     expect(scaleInput().value).toBe("1");
-    expect(screen.getByRole("button", { name: "撤销" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
   });
 });

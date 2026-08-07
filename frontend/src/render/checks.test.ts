@@ -47,7 +47,7 @@ function template(
       id: "fi",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "芬兰警方证件" },
+      label: { en: "Finnish police document" },
       jurisdiction: "FI",
       documentType: "id",
       submissionChannel: "digital_upload",
@@ -147,7 +147,7 @@ function staticCheckResult(overrides: Partial<StaticCheckResult> = {}): StaticCh
     pose: poseState(),
     quality: {
       status: "warn",
-      issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+      issues: ["exposure and sharpness show no obvious issues (heuristic, for reference only)"],
       metrics: {
         darkClipRatio: 0,
         brightClipRatio: 0,
@@ -168,13 +168,16 @@ describe("buildChecks", () => {
     expect(s["metadata"]).toBe("pass");
     expect(s["no-alpha"]).toBe("pass");
     expect(s["source-resolution"]).toBe("pass");
-    // 没有跑过复检时才是 unknown
+    // Only when no recheck ran is it unknown
     expect(s["pose"]).toBe("unknown");
     expect(s["exposure"]).toBe("unknown");
   });
 
   it("marks reference_only templates as warn (TMP-003)", async () => {
-    const t = template({}, { status: "reference_only", statusReason: "未通过校准打印测试" });
+    const t = template(
+      {},
+      { status: "reference_only", statusReason: "not verified by calibrated print tests" },
+    );
     const s = await statuses(t);
     expect(s["publication"]).toBe("warn");
   });
@@ -197,7 +200,7 @@ describe("buildChecks", () => {
         sizeLimit: { maxBytes: 50, sourceLiteral: "50 B", normalization: "source_exact" },
       },
     });
-    const s = await statuses(t); // blob 约 60 字节 > 50
+    const s = await statuses(t); // blob ~60 bytes > 50
     expect(s["file-size"]).toBe("fail");
   });
 
@@ -238,7 +241,7 @@ describe("buildChecks", () => {
     const checks = await buildChecks(artifact(300), t);
     const item = checks.find((c) => c.id === "print-density");
     expect(item!.status).toBe("pass");
-    expect(item!.detail).toMatch(/derived|未经校准/);
+    expect(item!.detail).toMatch(/derived|not verified/);
   });
 
   it("appends the calibration confirmation only when print-ready (P5)", async () => {
@@ -262,8 +265,8 @@ describe("buildChecks", () => {
     const checks = await buildChecks(artifact(300), t);
     const item = checks.find((c) => c.id === "print-density");
     expect(item!.status).toBe("pass");
-    expect(item!.detail).toContain("已通过校准打印验证");
-    expect(item!.detail).not.toContain("未经校准");
+    expect(item!.detail).toContain("verified by calibrated print");
+    expect(item!.detail).not.toContain("not verified");
   });
 
   it("fails when EXIF survives (OUT-004)", async () => {
@@ -273,7 +276,8 @@ describe("buildChecks", () => {
 
   describe("crop integrity (EDT-009)", () => {
     it("fails when transparent pixels remain in the crop", async () => {
-      // 回归：这一项曾是字面量 pass，带黑角的成品也会显示为全绿
+      // Regression: this used to be a literal pass, so an artifact with
+      // black corners also showed all green
       const s = await statuses(
         template(),
         artifact(96, false, 60, { scannedPixels: 1000, transparentPixels: 7 }),
@@ -307,7 +311,9 @@ describe("buildChecks", () => {
         staticCheckResult({
           quality: {
             status: "warn",
-            issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+            issues: [
+              "exposure and sharpness show no obvious issues (heuristic, for reference only)",
+            ],
             metrics: {
               darkClipRatio: 0,
               brightClipRatio: 0,
@@ -319,7 +325,7 @@ describe("buildChecks", () => {
       );
       const item = checks.find((c) => c.id === "background")!;
       expect(item.status).toBe("unknown");
-      expect(item.detail).toContain("未检查");
+      expect(item.detail).toContain("not checked");
     });
 
     it("never passes the background item even when the auto signal is clean (O2)", async () => {
@@ -329,7 +335,9 @@ describe("buildChecks", () => {
         staticCheckResult({
           quality: {
             status: "warn",
-            issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+            issues: [
+              "exposure and sharpness show no obvious issues (heuristic, for reference only)",
+            ],
             metrics: {
               darkClipRatio: 0,
               brightClipRatio: 0,
@@ -341,7 +349,7 @@ describe("buildChecks", () => {
       );
       const item = checks.find((c) => c.id === "background")!;
       expect(item.status).not.toBe("pass");
-      expect(item.detail).toContain("仍需人工确认");
+      expect(item.detail).toContain("requires manual confirmation");
     });
 
     it("warns with the heuristic notice when the background signal exceeds a threshold (O2)", async () => {
@@ -351,7 +359,9 @@ describe("buildChecks", () => {
         staticCheckResult({
           quality: {
             status: "warn",
-            issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+            issues: [
+              "exposure and sharpness show no obvious issues (heuristic, for reference only)",
+            ],
             metrics: {
               darkClipRatio: 0,
               brightClipRatio: 0,
@@ -363,12 +373,13 @@ describe("buildChecks", () => {
       );
       const item = checks.find((c) => c.id === "background")!;
       expect(item.status).toBe("warn");
-      expect(item.detail).toContain("左右阴影不平衡");
+      expect(item.detail).toContain("left/right shadows");
       expect(item.detail).toContain(HEURISTIC_NOTICE);
     });
 
     it("passes the pose check when the recheck says ready", async () => {
-      // 回归：复检结果曾被丢弃，这一项无条件写「后续版本提供」
+      // Regression: the recheck results used to be discarded and this
+      // item unconditionally wrote "provided in a later version"
       const s = await statuses(template(), artifact(96), staticCheckResult());
       expect(s["pose"]).toBe("pass");
     });
@@ -383,8 +394,8 @@ describe("buildChecks", () => {
       );
       const pose = checks.find((c) => c.id === "pose")!;
       expect(pose.status).toBe("warn");
-      expect(pose.detail).toContain("请抬头一点");
-      expect(pose.detail).toContain("未经官方容差校准");
+      expect(pose.detail).toContain("raise your head a little");
+      expect(pose.detail).toContain("not calibrated to official tolerance");
     });
 
     it("stays unknown when the pose model was unavailable", async () => {
@@ -408,7 +419,7 @@ describe("buildChecks", () => {
         staticCheckResult({
           quality: {
             status: "warn",
-            issues: ["曝光不足：暗部剪切像素占 8.3%"],
+            issues: ["underexposed: dark-clipped pixels are 8.3%"],
             metrics: {
               darkClipRatio: 0.083,
               brightClipRatio: 0,
@@ -432,11 +443,12 @@ describe("buildChecks", () => {
       );
       const item = checks.find((c) => c.id === "source-resolution")!;
       expect(item.status).toBe("warn");
-      expect(item.detail).toContain("2.00 倍");
+      expect(item.detail).toContain("2.00");
     });
 
     it("accounts for rotation when measuring the upscale factor", async () => {
-      // 45° 旋转 + 2 倍缩放：线性部分的行列式仍是 4，放大倍率 2
+      // 45° rotation + 2× scale: the linear part's determinant is still 4,
+      // so the upscale factor is 2
       const c = Math.SQRT1_2 * 2;
       const checks = await buildChecks(
         artifact(96, false, 60, undefined, [c, -c, c, c, 0, 0]),
@@ -444,7 +456,7 @@ describe("buildChecks", () => {
       );
       const item = checks.find((c) => c.id === "source-resolution")!;
       expect(item.status).toBe("warn");
-      expect(item.detail).toContain("2.00 倍");
+      expect(item.detail).toContain("2.00");
     });
 
     it("passes when the source is at least as large as the output", async () => {
@@ -457,7 +469,7 @@ describe("buildChecks", () => {
   });
 
   describe("captureRules (P8)", () => {
-    it("renders a manual rule as 需人工确认 with its source literal (P8)", async () => {
+    it("renders a manual rule as needs-manual-confirmation with its source literal (P8)", async () => {
       const checks = await buildChecks(
         artifact(96),
         template({
@@ -512,12 +524,13 @@ describe("buildChecks", () => {
       expect(auto).toBeDefined();
       expect(auto!.status).toBe("unknown");
       expect(auto!.status).not.toBe("manual");
-      // 两条规则产出两个不同 id，不会互相覆盖
+      // The two rules produce two distinct ids; they do not overwrite
+      // each other
       expect(new Set(checks.map((c) => c.id)).has("capture:t-manual-bg")).toBe(true);
       expect(new Set(checks.map((c) => c.id)).has("capture:t-auto-face")).toBe(true);
     });
 
-    it("marks non-mandatory rules as 拍摄要求（建议） (P8)", async () => {
+    it("marks non-mandatory rules as capture-requirement-recommended (P8)", async () => {
       const checks = await buildChecks(
         artifact(96),
         template({
@@ -536,15 +549,16 @@ describe("buildChecks", () => {
       );
       const item = checks.find((c) => c.id === "capture:t-rec");
       expect(item).toBeDefined();
-      expect(item!.label).toBe("拍摄要求（建议）");
-      // 无 sourceLiteral 时降级为 expected 原文
-      expect(item!.detail).toBe("要求：recent");
+      expect(item!.label).toBe("Capture requirement (recommended)");
+      // Without sourceLiteral it degrades to the expected value
+      expect(item!.detail).toBe("requirement: recent");
     });
 
     it("leaves the base summary unchanged when captureRules is empty (P8)", async () => {
       const checks = await buildChecks(artifact(96), template({ captureRules: [] }));
       const ids = checks.map((c) => c.id).sort();
-      // O2 起基线含 background（自动信号未测量时为 unknown「未检查」）
+      // Since O2 the baseline includes background (unknown "not checked"
+      // when the automatic signal was not measured)
       expect(ids).toEqual(
         [
           "exact-pixels",
@@ -615,7 +629,8 @@ describe("buildChecks", () => {
         height: 1300,
       });
       const item = checks.find((c) => c.id === "exact-pixels");
-      // 越界选择被 resolve 回落 default（600），与 manifest 不再相等
+      // An out-of-range selection falls back to default (600) via resolve,
+      // so it no longer equals the manifest
       expect(item!.status).toBe("fail");
     });
 

@@ -39,7 +39,7 @@ const template = {
     id: "us",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "美国签证" },
+    label: { en: "US visa" },
     jurisdiction: "US",
     documentType: "visa",
     submissionChannel: "digital_upload",
@@ -115,7 +115,7 @@ beforeEach(() => {
     poseAvailable: false,
     quality: {
       status: "warn",
-      issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+      issues: ["exposure and sharpness show no obvious issues (heuristic, for reference only)"],
       metrics: {
         darkClipRatio: 0,
         brightClipRatio: 0,
@@ -125,20 +125,22 @@ beforeEach(() => {
     },
     faceGeometry: null,
   });
-  // 姿态推理栈隔离：默认走「模型可用」，PoseGuide 在 jsdom 下渲染 null，
-  // 不注入模型 <script>、不留悬挂 Promise
+  // Pose inference stack isolation: default to "model available"; PoseGuide
+  // renders null in jsdom, injecting no model <script> and leaving no
+  // dangling Promises
   vi.mocked(acquireVideoLandmarker).mockResolvedValue({
     detectVideo: vi.fn().mockReturnValue([]),
   });
   vi.mocked(isFrontCamera).mockReturnValue(true);
   vi.mocked(listVideoDevices).mockResolvedValue([]);
   vi.mocked(openCamera).mockResolvedValue(fakeStream());
-  // jsdom 未实现 video.play
+  // jsdom does not implement video.play
   Object.defineProperty(HTMLMediaElement.prototype, "play", {
     configurable: true,
     value: vi.fn().mockResolvedValue(undefined),
   });
-  // jsdom 没有 mediaDevices：能力检测跑的是真实实现，这里补上它期待的形状
+  // jsdom has no mediaDevices: capability detection runs the real
+  // implementation, so provide the shape it expects
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: { getUserMedia: vi.fn(), enumerateDevices: vi.fn().mockResolvedValue([]) },
@@ -153,24 +155,25 @@ afterEach(() => {
 describe("CaptureStep", () => {
   it("does not request the camera until the user clicks (CAM-001)", () => {
     renderStep();
-    expect(screen.getByRole("button", { name: "开启摄像头" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open camera" })).toBeInTheDocument();
     expect(openCamera).not.toHaveBeenCalled();
   });
 
   it("blocks the camera button when the browser cannot open one (§10.2)", () => {
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: undefined });
     renderStep();
-    expect(screen.getByRole("button", { name: "开启摄像头" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Open camera" })).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent("getUserMedia");
   });
 
   it("stops the stream after the page stays hidden (CAM-005)", async () => {
     const stream = fakeStream();
     vi.mocked(openCamera).mockResolvedValue(stream);
-    // 门限注入成极短值，测试不需要假时钟，也就不会和 RTL 的轮询打架
+    // The threshold is injected as an extremely short value, so tests need
+    // no fake clocks and do not fight RTL polling
     render(<CaptureStep template={template} onReady={vi.fn()} onBack={vi.fn()} hiddenStopMs={5} />);
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    await screen.findByRole("button", { name: "拍摄" });
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    await screen.findByRole("button", { name: "Shoot" });
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     await act(async () => {
@@ -179,25 +182,25 @@ describe("CaptureStep", () => {
     });
 
     await waitFor(() => expect(stream.getVideoTracks()[0].stop).toHaveBeenCalled());
-    expect(await screen.findByRole("alert")).toHaveTextContent("已自动关闭");
+    expect(await screen.findByRole("alert")).toHaveTextContent("auto-stopped");
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   });
 
   it("starts the camera on click and shows the shutter (CAM-002/003)", async () => {
     renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    expect(await screen.findByRole("button", { name: "拍摄" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    expect(await screen.findByRole("button", { name: "Shoot" })).toBeInTheDocument();
     expect(openCamera).toHaveBeenCalledTimes(1);
   });
 
   it("shows a retry path when permission is denied (CAM-002)", async () => {
     vi.mocked(openCamera).mockRejectedValue(new DOMException("denied", "NotAllowedError"));
     renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("权限被拒绝");
-    expect(screen.getByRole("button", { name: "开启摄像头" })).toBeInTheDocument();
+    expect(alert).toHaveTextContent("permission denied");
+    expect(screen.getByRole("button", { name: "Open camera" })).toBeInTheDocument();
   });
 
   it("falls back to relaxed constraints on OverconstrainedError (CAM-003)", async () => {
@@ -205,8 +208,8 @@ describe("CaptureStep", () => {
       .mockRejectedValueOnce(new DOMException("c", "OverconstrainedError"))
       .mockResolvedValueOnce(fakeStream());
     renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    await screen.findByRole("button", { name: "拍摄" });
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    await screen.findByRole("button", { name: "Shoot" });
     expect(openCamera).toHaveBeenNthCalledWith(2, { relaxed: true, deviceId: undefined });
   });
 
@@ -216,8 +219,8 @@ describe("CaptureStep", () => {
     vi.mocked(loadSourceImage).mockResolvedValue(fakeSource());
     const onReady = vi.fn();
     renderStep(onReady);
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    fireEvent.click(await screen.findByRole("button", { name: "拍摄" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Shoot" }));
     expect(await vi.waitFor(() => expect(onReady).toHaveBeenCalledTimes(1)));
     expect(loadSourceImage).toHaveBeenCalledWith(blob);
   });
@@ -227,17 +230,19 @@ describe("CaptureStep", () => {
     vi.mocked(captureStill).mockResolvedValue(blob);
     vi.mocked(loadSourceImage).mockResolvedValue(fakeSource());
     renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    // 先用真实 timers 等相机就绪，再切 fake timers 驱动倒计时
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    // Use real timers until the camera is ready, then switch to fake
+    // timers to drive the countdown
     fireEvent.click(await screen.findByRole("checkbox"));
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "拍摄" }));
-    expect(screen.getByRole("button", { name: /取消/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Shoot" }));
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(1000);
     });
-    expect(screen.getByRole("button", { name: /取消（2 秒）/ })).toBeInTheDocument();
-    // React 批处理：每个 tick 需要独立 flush 才能创建下一个倒计时 timer
+    expect(screen.getByRole("button", { name: /cancel \(2s\)/i })).toBeInTheDocument();
+    // React batching: each tick needs its own flush to create the next
+    // countdown timer
     act(() => {
       vi.advanceTimersByTime(1000);
     });
@@ -252,8 +257,8 @@ describe("CaptureStep", () => {
     const stream = fakeStream();
     vi.mocked(openCamera).mockResolvedValue(stream);
     const { unmount } = renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    await screen.findByRole("button", { name: "拍摄" });
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    await screen.findByRole("button", { name: "Shoot" });
     expect((stream as unknown as { stop: ReturnType<typeof vi.fn> }).stop).not.toHaveBeenCalled();
     unmount();
     expect((stream as unknown as { stop: ReturnType<typeof vi.fn> }).stop).toHaveBeenCalled();
@@ -261,24 +266,25 @@ describe("CaptureStep", () => {
 
   it("shows a device switcher when multiple cameras exist (CAM-008)", async () => {
     vi.mocked(listVideoDevices).mockResolvedValue([
-      { kind: "videoinput", deviceId: "cam-1", label: "前置", groupId: "g" },
-      { kind: "videoinput", deviceId: "cam-2", label: "后置", groupId: "g" },
+      { kind: "videoinput", deviceId: "cam-1", label: "Front", groupId: "g" },
+      { kind: "videoinput", deviceId: "cam-2", label: "Rear", groupId: "g" },
     ] as MediaDeviceInfo[]);
     renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    const select = await screen.findByRole("combobox", { name: /切换摄像头/ });
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    const select = await screen.findByRole("combobox", { name: /switch camera/i });
     fireEvent.change(select, { target: { value: "cam-2" } });
     expect(openCamera).toHaveBeenCalledWith({ deviceId: "cam-2" });
   });
 
   it("acquires the pose model only in live and releases it on unmount", async () => {
-    // 回归：status === "live" 门控零覆盖，PoseGuide 接线被删也不会红
+    // Regression: the status === "live" gate had zero coverage; deleting
+    // the PoseGuide wiring would not turn red
     vi.mocked(releaseVideoLandmarker).mockClear();
     const { unmount } = renderStep();
     expect(acquireVideoLandmarker).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    await screen.findByRole("button", { name: "拍摄" });
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    await screen.findByRole("button", { name: "Shoot" });
     await vi.waitFor(() => expect(acquireVideoLandmarker).toHaveBeenCalledTimes(1));
 
     unmount();
@@ -286,35 +292,37 @@ describe("CaptureStep", () => {
   });
 
   it("keeps the shutter usable when the pose model fails (GDE-006)", async () => {
-    // 规格要求模型失败时只关自动指导、不阻止手动拍摄
+    // The spec requires a model failure to only disable
+    // automatic guidance, never block manual capture
     vi.mocked(acquireVideoLandmarker).mockRejectedValue(new Error("no wasm"));
     renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    await screen.findByText(/自动姿态指导不可用/);
-    expect(screen.getByRole("button", { name: "拍摄" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    await screen.findByText(/pose guidance unavailable/i);
+    expect(screen.getByRole("button", { name: "Shoot" })).toBeEnabled();
   });
 
   it("reports the source even when the static recheck fails (GDE-006)", async () => {
-    // 静态复检失败是步骤层第二条降级支路：仍把照片交给下一步
+    // A static-recheck failure is the second degraded branch at the step
+    // level: the photo still goes to the next step
     const blob = new Blob([new Uint8Array([0xff, 0xd8])], { type: "image/jpeg" });
     vi.mocked(captureStill).mockResolvedValue(blob);
     vi.mocked(loadSourceImage).mockResolvedValue(fakeSource());
     vi.mocked(runStaticCheck).mockRejectedValue(new Error("x"));
     const onReady = vi.fn();
     renderStep(onReady);
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    fireEvent.click(await screen.findByRole("button", { name: "拍摄" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Shoot" }));
     expect(await vi.waitFor(() => expect(onReady).toHaveBeenCalledTimes(1)));
   });
 
   it("reports a capture failure without locking the flow", async () => {
     vi.mocked(captureStill).mockResolvedValue(null);
     renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    fireEvent.click(await screen.findByRole("button", { name: "拍摄" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Shoot" }));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("拍摄失败");
-    expect(screen.getByRole("button", { name: "拍摄" })).toBeInTheDocument();
+    expect(alert).toHaveTextContent("capture failed");
+    expect(screen.getByRole("button", { name: "Shoot" })).toBeInTheDocument();
   });
 });
 vi.mock("../pose/static-check", async (importOriginal) => {
@@ -322,11 +330,12 @@ vi.mock("../pose/static-check", async (importOriginal) => {
   return { ...actual, runStaticCheck: vi.fn() };
 });
 
-describe("迟到的拍摄结果", () => {
+describe("late capture results", () => {
   it("drops a capture that finishes after the user left the step", async () => {
-    // 回归：shoot() 的异步结果没有代际检查。解码与静态复检要几百毫秒，
-    // 期间用户点了「返回」；迟到的 onReady 会把状态机硬推到确认步，
-    // 并 dispose 掉当时正在使用的另一张源照片。
+    // Regression: shoot()'s async result had no generation check. Decoding
+    // and the static recheck take hundreds of milliseconds, during which the
+    // user clicked "Back"; a late onReady forced the state machine back to
+    // the confirm step and disposed the other source photo in use.
     const blob = new Blob([new Uint8Array([0xff, 0xd8])], { type: "image/jpeg" });
     vi.mocked(captureStill).mockResolvedValue(blob);
     const source = fakeSource();
@@ -341,21 +350,23 @@ describe("迟到的拍摄结果", () => {
     const { unmount } = render(
       <CaptureStep template={template} onReady={onReady} onBack={vi.fn()} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "开启摄像头" }));
-    fireEvent.click(await screen.findByRole("button", { name: "拍摄" }));
-    // 等到解码真的开始，再让用户离开——否则第一道代际检查就把请求拦下了，
-    // 测不到「解码完成后才发现自己已经过时」这条路径
+    fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Shoot" }));
+    // Wait until decoding has actually started before the user leaves -
+    // otherwise the first generation check intercepts the request and the
+    // "discovered stale after decode finished" path is never exercised
     await waitFor(() => expect(loadSourceImage).toHaveBeenCalled());
 
-    // 用户离开这一步
+    // The user leaves this step
     unmount();
-    // 解码这才完成
+    // Only now does decoding finish
     await act(async () => {
       finishDecode(source);
     });
 
     expect(onReady).not.toHaveBeenCalled();
-    // 迟到的位图必须被释放，否则这份 ImageBitmap 永远没人管
+    // The late bitmap must be released, or this ImageBitmap is never
+    // managed by anyone
     await waitFor(() => expect(source.dispose).toHaveBeenCalled());
   });
 });

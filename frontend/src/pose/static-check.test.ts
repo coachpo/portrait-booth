@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * runStaticCheck 端到端（O2）：注入 landmarker deps + qualityDeps，验证
- * 主脸几何、ROI 背景与未检查信号。landmarker 的 imageInstance 是进程级
- * 单例缓存，每个用例后必须 resetLandmarkersForTest()。
+ * runStaticCheck end-to-end (O2): inject landmarker deps + qualityDeps to
+ * verify primary-face geometry, ROI background, and unchecked signals. The
+ * landmarker's imageInstance is a process-level singleton cache, so every
+ * case must call resetLandmarkersForTest() afterwards.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,20 +12,20 @@ import { resetLandmarkersForTest, setLandmarkerDeps } from "./landmarker";
 import { runStaticCheck, staticCheckWarnings } from "./static-check";
 import type { QualityDeps, StaticBitmapSource } from "./quality";
 
-/** 478 长度 canonical face mesh，睁眼闭嘴样本（square 图） */
+/** 478-length canonical face mesh, open-eyes-closed-mouth sample (square image) */
 function openEyesFaceLandmarks() {
   const landmarks = new Array(478).fill(null).map(() => ({ x: 0.5, y: 0.5 }));
-  // 左眼 33/133 横距 0.04，159/145 竖距 0.012 → EAR 0.3（睁眼）
+  // Left eye 33/133 horizontal 0.04, 159/145 vertical 0.012 → EAR 0.3 (open)
   landmarks[33] = { x: 0.5, y: 0.5 };
   landmarks[133] = { x: 0.54, y: 0.5 };
   landmarks[159] = { x: 0.52, y: 0.488 };
   landmarks[145] = { x: 0.52, y: 0.5 };
-  // 右眼
+  // Right eye
   landmarks[362] = { x: 0.54, y: 0.5 };
   landmarks[263] = { x: 0.5, y: 0.5 };
   landmarks[386] = { x: 0.52, y: 0.488 };
   landmarks[374] = { x: 0.52, y: 0.5 };
-  // 嘴 61/291 横距 0.04，13/14 竖距 0.012 → MAR 0.3（闭嘴）
+  // Mouth 61/291 horizontal 0.04, 13/14 vertical 0.012 → MAR 0.3 (closed)
   landmarks[61] = { x: 0.5, y: 0.7 };
   landmarks[291] = { x: 0.54, y: 0.7 };
   landmarks[13] = { x: 0.52, y: 0.688 };
@@ -52,7 +53,7 @@ function bitmap(w = 512, h = 512): StaticBitmapSource {
   return { width: w, height: h } as unknown as StaticBitmapSource;
 }
 
-/** 假像素 deps：左半 luma 60 带条纹、右半 luma 180 带条纹（仅均值不同） */
+/** Fake pixel deps: left half luma 60 with stripes, right half luma 180 with stripes (only the means differ) */
 function qualityDeps(w = 512, h = 512): QualityDeps {
   const data = new Uint8ClampedArray(w * h * 4);
   for (let y = 0; y < h; y++) {
@@ -94,7 +95,7 @@ describe("runStaticCheck (O2)", () => {
     const result = await runStaticCheck(bitmap(), { qualityDeps: qualityDeps() });
     expect(result.poseAvailable).toBe(true);
     expect(result.faceGeometry).toEqual({ eyesClosed: false, mouthOpen: false });
-    // 左 60 / 右 180 均值差 120 > 40 阈值 → 背景指标已测量
+    // Left 60 / right 180 mean difference 120 > 40 threshold → background metrics measured
     expect(result.quality.metrics.background).not.toBeNull();
     expect(result.quality.metrics.background!.leftRightDiff).toBeGreaterThan(40);
     expect(result.quality.metrics.background!.lumaStd).toBeGreaterThan(0);
@@ -102,7 +103,7 @@ describe("runStaticCheck (O2)", () => {
 
   it("marks face geometry unchecked when the model fails (O2)", async () => {
     stubLandmarker([]);
-    // landmarker 正常但 detect 返回空 → 无主脸 → 几何 null、背景 null
+    // Landmarker fine but detect returns empty → no primary face → geometry null, background null
     const result = await runStaticCheck(bitmap(), { qualityDeps: qualityDeps() });
     expect(result.poseAvailable).toBe(true);
     expect(result.faceGeometry).toBeNull();
@@ -124,7 +125,7 @@ describe("runStaticCheck (O2)", () => {
       faceGeometry: null,
       quality: {
         status: "warn",
-        issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+        issues: ["exposure and sharpness show no obvious issues (heuristic, for reference only)"],
         metrics: {
           darkClipRatio: 0,
           brightClipRatio: 0,
@@ -133,7 +134,9 @@ describe("runStaticCheck (O2)", () => {
         },
       },
     });
-    expect(warnings).toEqual(["姿态复检未通过：姿势需调整：请抬头一点。"]);
+    expect(warnings).toEqual([
+      "pose recheck failed: Pose needs adjustment: raise your head a little.",
+    ]);
   });
 
   it("keeps poseAvailable false and geometry null when the model throws (O2)", async () => {

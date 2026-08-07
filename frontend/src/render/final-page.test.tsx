@@ -24,7 +24,7 @@ const template = {
     id: "fi",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "芬兰警方证件" },
+    label: { en: "Finnish police document" },
     jurisdiction: "FI",
     documentType: "id",
     submissionChannel: "digital_upload",
@@ -118,8 +118,8 @@ describe("FinalPage", () => {
   it("renders artifact details and check summary (OUT-007)", async () => {
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([
-      { id: "exact-pixels", label: "像素尺寸", status: "pass", detail: "500×653" },
-      { id: "pose", label: "姿态检查", status: "unknown" },
+      { id: "exact-pixels", label: "Pixel size", status: "pass", detail: "500×653" },
+      { id: "pose", label: "Pose check", status: "unknown" },
     ]);
     renderPage();
 
@@ -127,25 +127,25 @@ describe("FinalPage", () => {
     expect(screen.getByText("JPEG · sRGB")).toBeInTheDocument();
     expect(screen.getByText((_, el) => el?.textContent === "fi@1")).toBeInTheDocument();
     expect(screen.getByText(/4\.9 KB/)).toBeInTheDocument();
-    expect(screen.getByText("通过")).toBeInTheDocument();
-    expect(screen.getByText("未检查")).toBeInTheDocument();
+    expect(screen.getByText("Passed")).toBeInTheDocument();
+    expect(screen.getByText("Not checked")).toBeInTheDocument();
   });
 
-  it("renders a manual check item as 需人工确认 with the check-manual class (P8)", async () => {
+  it("renders a manual check item as needs-manual-confirmation with the check-manual class (P8)", async () => {
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([
       {
         id: "capture:x",
-        label: "拍摄要求",
+        label: "Capture requirement",
         status: "manual",
-        detail: "官方原文：plain white background",
+        detail: "official source: plain white background",
       },
     ]);
     renderPage();
 
-    expect(await screen.findByText("需人工确认")).toBeInTheDocument();
-    expect(screen.getByText("（官方原文：plain white background）")).toBeInTheDocument();
-    const li = screen.getByText("需人工确认").closest("li");
+    expect(await screen.findByText("Needs manual confirmation")).toBeInTheDocument();
+    expect(screen.getByText("(official source: plain white background)")).toBeInTheDocument();
+    const li = screen.getByText("Needs manual confirmation").closest("li");
     expect(li).not.toBeNull();
     expect(li!.className).toContain("check-manual");
   });
@@ -154,9 +154,9 @@ describe("FinalPage", () => {
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);
     renderPage();
-    const btn = await screen.findByRole("button", { name: /下载/ });
-    expect(btn.textContent).toMatch(/^下载 fi-id-digital_upload-\d{8}\.jpg$/);
-    expect(btn.textContent).not.toMatch(/photo|KEY|姓名/i);
+    const btn = await screen.findByRole("button", { name: /download/i });
+    expect(btn.textContent).toMatch(/^Download fi-id-digital_upload-\d{8}\.jpg$/);
+    expect(btn.textContent).not.toMatch(/photo|KEY|name/i);
   });
 
   it("shows physical size for paper templates", async () => {
@@ -192,13 +192,13 @@ describe("FinalPage", () => {
         onStaged={vi.fn()}
       />,
     );
-    const dd = await screen.findByText(/35×45 毫米/);
+    const dd = await screen.findByText(/35×45 mm/);
     expect(dd).toBeInTheDocument();
-    expect(dd.textContent).toContain("参考图");
-    expect(screen.queryByText(/可按实际尺寸打印/)).toBeNull();
+    expect(dd.textContent).toContain("reference image");
+    expect(screen.queryByText(/printable at actual size/)).toBeNull();
   });
 
-  it("labels portal_verified + active paper as 可按实际尺寸打印 (P5)", async () => {
+  it("labels portal_verified + active paper as printable-at-actual-size (P5)", async () => {
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);
     const paper = {
@@ -232,13 +232,14 @@ describe("FinalPage", () => {
         onStaged={vi.fn()}
       />,
     );
-    const dd = await screen.findByText(/35×45 毫米/);
-    expect(dd.textContent).toContain("可按实际尺寸打印");
-    expect(dd.textContent).not.toContain("参考图");
+    const dd = await screen.findByText(/35×45 mm/);
+    expect(dd.textContent).toContain("printable at actual size");
+    expect(dd.textContent).not.toContain("reference image");
   });
 
   it("never labels portal_verified + reference_only paper as printable (P5)", async () => {
-    // 合取判据：只看 ppiProvenance 会把尚未通过校准打印的模板误标成可打印
+    // Conjunction criterion: looking only at ppiProvenance would mislabel
+    // a template that has not passed calibrated printing as printable
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);
     const paper = {
@@ -272,9 +273,9 @@ describe("FinalPage", () => {
         onStaged={vi.fn()}
       />,
     );
-    const dd = await screen.findByText(/35×45 毫米/);
-    expect(dd.textContent).toContain("参考图");
-    expect(screen.queryByText(/可按实际尺寸打印/)).toBeNull();
+    const dd = await screen.findByText(/35×45 mm/);
+    expect(dd.textContent).toContain("reference image");
+    expect(screen.queryByText(/printable at actual size/)).toBeNull();
   });
 
   it("physicalSizeInfo judges print-readiness by provenance and status (P5)", () => {
@@ -305,29 +306,29 @@ describe("FinalPage", () => {
     expect(physicalSizeInfo(withProvenance("source_literal"))!.printReady).toBe(false);
     expect(physicalSizeInfo(withProvenance("derived"))!.printReady).toBe(false);
     expect(physicalSizeInfo(withProvenance("portal_verified"))!.printReady).toBe(true);
-    expect(physicalSizeInfo(template as unknown as TemplateEntry)).toBeNull(); // exact_pixels 无物理尺寸
-    expect(physicalSizeInfo(withProvenance("portal_verified"))!.mm).toBe("35×45 毫米");
+    expect(physicalSizeInfo(template as unknown as TemplateEntry)).toBeNull(); // exact_pixels has no physical size
+    expect(physicalSizeInfo(withProvenance("portal_verified"))!.mm).toBe("35×45 mm");
   });
 
   it("does not show mm or print claims for pixel templates (P5)", async () => {
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);
     renderPage();
-    await screen.findByRole("heading", { name: "终态照片" });
-    expect(screen.queryByText(/毫米/)).toBeNull();
-    expect(screen.queryByText(/打印/)).toBeNull();
+    await screen.findByRole("heading", { name: "Final photo" });
+    expect(screen.queryByText(/mm/)).toBeNull();
+    expect(screen.queryByText(/print/i)).toBeNull();
   });
 
   it("shows an error with retry when rendering fails", async () => {
-    vi.mocked(renderFinalArtifact).mockRejectedValue(new Error("渲染失败"));
+    vi.mocked(renderFinalArtifact).mockRejectedValue(new Error("render failed"));
     renderPage();
-    expect(await screen.findByRole("alert")).toHaveTextContent("渲染失败");
-    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("render failed");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("offers a downgrade to the default size on size-limit errors (P6)", async () => {
     vi.mocked(renderFinalArtifact).mockRejectedValue(
-      new RenderError("size-limit", "已尝试所有压缩档位，仍超出文件体积上限"),
+      new RenderError("size-limit", "all compression bands tried; still above the file size limit"),
     );
     const onUseDefaultSize = vi.fn();
     render(
@@ -345,24 +346,26 @@ describe("FinalPage", () => {
       />,
     );
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("已尝试所有压缩档位");
-    // 模板默认 500×653：重试跑同一尺寸必然再次失败，必须给出降档出口
-    const downgrade = screen.getByRole("button", { name: "改用 500×653 重新生成" });
+    expect(alert).toHaveTextContent("all compression bands tried");
+    // The template default is 500×653: retrying the same size fails again by
+    // construction, so a downgrade exit is mandatory
+    const downgrade = screen.getByRole("button", { name: "Regenerate at 500×653" });
     fireEvent.click(downgrade);
     expect(onUseDefaultSize).toHaveBeenCalled();
   });
 
   it("does not offer the downgrade when already on the default size (P6)", async () => {
     vi.mocked(renderFinalArtifact).mockRejectedValue(
-      new RenderError("size-limit", "已尝试所有压缩档位，仍超出文件体积上限"),
+      new RenderError("size-limit", "all compression bands tried; still above the file size limit"),
     );
-    renderPage(); // selectedSize 未传 = 默认档
+    renderPage(); // no selectedSize passed = default band
     await screen.findByRole("alert");
-    expect(screen.queryByRole("button", { name: /重新生成/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /regenerate/i })).toBeNull();
   });
 
   it("discloses sources, restrictions and review notes on the final page (P3)", async () => {
-    // 旧实现：终态页无来源、无限制短语、无复核注记
+    // Old implementation: the final page had no sources, no restriction
+    // phrases, and no review notes
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);
     const withSources = {
@@ -373,13 +376,13 @@ describe("FinalPage", () => {
           {
             id: "s1",
             url: "https://example.com/spec",
-            title: "官方规格",
-            authority: "测试机构",
+            title: "Official specification",
+            authority: "Test authority",
             accessedAt: "2026-08-06",
             sourceUpdatedAt: "2026-01-01",
           },
         ],
-        sourceNotes: { zh: ["复核注记甲", "复核注记乙"] },
+        sourceNotes: { en: ["review note one", "review note two"] },
       },
     } as unknown as TemplateEntry;
     render(
@@ -394,34 +397,37 @@ describe("FinalPage", () => {
         onStaged={vi.fn()}
       />,
     );
-    await screen.findByRole("heading", { name: "终态照片" });
-    expect(screen.getByText("2026-08-06")).toBeInTheDocument(); // 本项目复核日期
-    expect(screen.getByText("更新于 2026-01-01")).toBeInTheDocument();
-    expect(screen.getByText("复核注记甲")).toBeInTheDocument();
-    expect(screen.getByText("复核注记乙")).toBeInTheDocument();
-    // 限制短语：fi 夹具的 mirror/retouch/backgroundReplace 都是 forbidden
-    expect(screen.getByText(/模板禁止镜像/)).toBeInTheDocument();
-    // 不出现无依据的合规/可提交文案
-    expect(screen.queryByText(/可提交成品/)).toBeNull();
-    expect(screen.queryByText(/已合规/)).toBeNull();
+    await screen.findByRole("heading", { name: "Final photo" });
+    expect(screen.getByText("2026-08-06")).toBeInTheDocument(); // review date for this project
+    expect(screen.getByText("updated 2026-01-01")).toBeInTheDocument();
+    expect(screen.getByText("review note one")).toBeInTheDocument();
+    expect(screen.getByText("review note two")).toBeInTheDocument();
+    // Restriction phrases: the fi fixture mirror/retouch/backgroundReplace
+    // are all forbidden
+    expect(screen.getByText(/forbids mirroring/i)).toBeInTheDocument();
+    // No unsupported compliance/submittable copy appears
+    expect(screen.queryByText(/submittable artifact/i)).toBeNull();
+    expect(screen.queryByText(/compliant/i)).toBeNull();
   });
 
   it("offers escape hatches when rendering fails (A3)", async () => {
-    // 回归：失败态只剩「重试」，没有回编辑/重开的出口
+    // Regression: the failure state used to have only "Retry" with no
+    // back-to-edit/restart exit
     vi.mocked(renderFinalArtifact).mockRejectedValue(new Error("BOOM"));
     const onBack = vi.fn();
     const onRestart = vi.fn();
     renderPage(onBack, onRestart);
 
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByRole("button", { name: "返回编辑" }));
-    fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
     expect(onBack).toHaveBeenCalledTimes(1);
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
   it("starts the retry from a clean slate (A3)", async () => {
-    // 回归：失败一次再重试成功，旧错误提示与「重试」按钮必须消失
+    // Regression: after one failure, a successful retry must clear the old
+    // error message and "Retry" button
     vi.mocked(renderFinalArtifact)
       .mockRejectedValueOnce(new Error("BOOM"))
       .mockResolvedValue(fakeArtifact);
@@ -429,18 +435,19 @@ describe("FinalPage", () => {
     renderPage();
 
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    await screen.findByRole("button", { name: /下载/ });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByRole("button", { name: /download/i });
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("drops the stale artifact when a re-render fails (A3)", async () => {
-    // 回归：先成功后失败，旧成品的「下载」「暂存」入口不得残留
+    // Regression: success-then-failure must not leave the old artifact's
+    // "Download"/"Stage" entries behind
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);
     const view = renderPage();
-    await screen.findByRole("button", { name: /下载/ });
+    await screen.findByRole("button", { name: /download/i });
 
     vi.mocked(renderFinalArtifact).mockRejectedValue(new Error("BOOM"));
     view.rerender(
@@ -456,8 +463,8 @@ describe("FinalPage", () => {
       />,
     );
     await screen.findByRole("alert");
-    expect(screen.queryByRole("button", { name: /下载/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /暂存/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /stage/i })).toBeNull();
   });
 
   it("navigates back to editing and restart", async () => {
@@ -466,11 +473,11 @@ describe("FinalPage", () => {
     const onBack = vi.fn();
     const onRestart = vi.fn();
     renderPage(onBack, onRestart);
-    await screen.findByRole("button", { name: /下载/ });
-    const back = screen.getByRole("button", { name: "返回编辑" });
+    await screen.findByRole("button", { name: /download/i });
+    const back = screen.getByRole("button", { name: "Back to edit" });
     back.click();
     expect(onBack).toHaveBeenCalledTimes(1);
-    const restart = screen.getByRole("button", { name: "重新开始" });
+    const restart = screen.getByRole("button", { name: "Restart" });
     restart.click();
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
@@ -479,7 +486,7 @@ describe("FinalPage", () => {
     vi.mocked(renderFinalArtifact).mockResolvedValue(fakeArtifact);
     vi.mocked(buildChecks).mockResolvedValue([]);
     const { rerender } = renderPage();
-    await screen.findByRole("button", { name: /下载/ });
+    await screen.findByRole("button", { name: /download/i });
     rerender(
       <FinalPage
         source={source}

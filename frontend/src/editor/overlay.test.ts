@@ -28,7 +28,7 @@ function revision(overrides: Partial<TemplateRevision> = {}): TemplateRevision {
     id: "t",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "测试" },
+    label: { en: "test" },
     jurisdiction: "US",
     documentType: "passport",
     submissionChannel: "digital_upload",
@@ -86,7 +86,7 @@ describe("toOutputPixels", () => {
   });
 
   it("refuses millimetres when the template declares no print density", () => {
-    // 宁可不画，也不能画一条位置错的参考线
+    // Better to draw nothing than a misplaced reference line
     const mm = rule({ coordinateSpace: "output_physical_mm_top_left", unit: "mm" });
     expect(toOutputPixels(10, mm, revision(), OUT)).toBeNull();
   });
@@ -121,7 +121,7 @@ describe("buildOverlayGuides", () => {
     const chin = rule({ id: "chin", metric: "chin_bottom_margin", min: 96, max: 124 });
     const rev = revision({ cropRules: [chin], overlay: { kind: "combined", ruleIds: ["chin"] } });
     const [guide] = buildOverlayGuides(rev, OUT);
-    // 自底边 96–124 → 画布 y 676–704
+    // From the bottom 96–124 → canvas y 676–704
     expect(guide.fromPx).toBe(800 - 124);
     expect(guide.toPx).toBe(800 - 96);
   });
@@ -194,7 +194,7 @@ describe("headEllipse", () => {
     });
     const ellipse = headEllipse(buildOverlayGuides(rev, OUT), OUT)!;
     expect(ellipse.cx).toBe(300);
-    // 头顶中点 70，下巴中点 800-110=690
+    // Crown midpoint 70, chin midpoint 800-110=690
     expect(ellipse.cy).toBeCloseTo(380, 6);
     expect(ellipse.ry).toBeCloseTo(310, 6);
   });
@@ -210,7 +210,7 @@ describe("headEllipse", () => {
 
 describe("metricLabel", () => {
   it("translates known metrics and passes unknown ones through", () => {
-    expect(metricLabel("head_height")).toBe("头部高度");
+    expect(metricLabel("head_height")).toBe("Head height");
     expect(metricLabel("something_new")).toBe("something_new");
   });
 });

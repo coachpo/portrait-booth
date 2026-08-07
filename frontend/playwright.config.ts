@@ -1,9 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * E2E：完整创建 → 暂存 → 取回流程。
- * webServer 同时启动后端（uvicorn，临时 DB）与前端（vite dev）。
- * fake media：Chromium 启动参数提供合成视频/音频，避免真实摄像头依赖。
+ * E2E: full create → stage → retrieve flow.
+ * webServer starts both the backend (uvicorn, temporary DB) and the frontend
+ * (vite dev).
+ * fake media: Chromium launch args provide synthetic video/audio, avoiding a
+ * real camera dependency.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -29,7 +31,8 @@ export default defineConfig({
       port: 8000,
       reuseExistingServer: !process.env.CI,
       env: {
-        // 根密钥缺失时后端按设计拒绝启动；e2e 用临时 DB，固定测试值即可
+        // The backend refuses to start when the root secret is missing by
+        // design; e2e uses a temporary DB, so a fixed test value is fine
         PORTRAIT_SECRET_KEY_BASE: "ZTJlLXRlc3Qtb25seS1yb290LWtleS0zMmJ5dGVzISE=",
         PORTRAIT_DB_PATH: "/tmp/pb-e2e/portrait.db",
         PORTRAIT_STORAGE_DIR: "/tmp/pb-e2e/objects",

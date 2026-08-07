@@ -40,27 +40,27 @@ describe("outputDescription", () => {
       ppiProvenance: "source_literal",
       calibrationProfileId: "none",
     };
-    expect(outputDescription(exact)).toBe("600×600 像素");
-    expect(outputDescription(ranged)).toContain("默认 600×600");
-    expect(outputDescription(physical)).toBe("35×45 毫米（300 ppi → 413×531 像素）");
+    expect(outputDescription(exact)).toBe("600×600 pixels");
+    expect(outputDescription(ranged)).toContain("default 600×600");
+    expect(outputDescription(physical)).toBe("35×45 mm (300 ppi → 413×531 pixels)");
     expect(outputDescription({ kind: "portal_source", officialPortalPerformsCrop: true })).toBe(
-      "由官方门户执行裁剪",
+      "Cropping performed by the official portal",
     );
-    expect(outputDescription({ kind: "guidance_only", reason: "内部" })).toBe(
-      "仅拍摄指导，不生成文件",
+    expect(outputDescription({ kind: "guidance_only", reason: "internal" })).toBe(
+      "Capture guidance only, no file produced",
     );
   });
 });
 
 describe("label tables", () => {
-  it("maps known values to Chinese labels", () => {
-    expect(enforcementLabel("mandatory")).toBe("强制");
-    expect(enforcementLabel("recommended")).toBe("建议");
-    expect(evaluationLabel("automatic")).toBe("自动判定");
-    expect(capabilityValueLabel("forbidden")).toBe("禁止");
-    expect(capabilityValueLabel("certified_only")).toBe("仅认证渠道");
-    expect(provenanceLabel("source_literal")).toBe("来源原文");
-    expect(normalizationLabel("server_authoritative")).toBe("服务端权威");
+  it("maps known values to English labels", () => {
+    expect(enforcementLabel("mandatory")).toBe("Mandatory");
+    expect(enforcementLabel("recommended")).toBe("Recommended");
+    expect(evaluationLabel("automatic")).toBe("Automatic");
+    expect(capabilityValueLabel("forbidden")).toBe("Forbidden");
+    expect(capabilityValueLabel("certified_only")).toBe("Certified channel only");
+    expect(provenanceLabel("source_literal")).toBe("Source text");
+    expect(normalizationLabel("server_authoritative")).toBe("Server-authoritative");
   });
 
   it("falls back to the raw value for unknown entries", () => {

@@ -1,58 +1,62 @@
 /**
- * 模板描述与标签映射（P4）：输出规格描述 + 规则/能力枚举的中文标签。
- * 展示用纯函数；capabilities 的限制短语唯一来源是 ./disclosure.ts（第 3 轮约定），
- * 本文件只做枚举取值 → 中文标签，不写第二份限制短语。
+ * Template description and label mapping (P4): output-spec descriptions + the
+ * English labels for rule/capability enumerations.
+ * Display-only pure functions; the single source for capability restriction
+ * phrases is ./disclosure.ts (round-3 convention); this file only maps enum
+ * values → labels and never writes a second restriction mapping.
  */
 
 import type { OutputProfile } from "./types";
 
-/** 逐字保持原输出（卡片与详情页共用，不得改写文案） */
+/** Keeps the original output verbatim (shared by card and detail page; the
+ * copy must not be rewritten) */
 export function outputDescription(output: OutputProfile): string {
   switch (output.kind) {
     case "exact_pixels":
-      return `${output.widthPx}×${output.heightPx} 像素`;
+      return `${output.widthPx}×${output.heightPx} pixels`;
     case "ranged_pixels":
-      return `${output.minWidthPx}–${output.maxWidthPx}×${output.minHeightPx}–${output.maxHeightPx} 像素，默认 ${output.defaultWidthPx}×${output.defaultHeightPx}`;
+      return `${output.minWidthPx}–${output.maxWidthPx}×${output.minHeightPx}–${output.maxHeightPx} pixels, default ${output.defaultWidthPx}×${output.defaultHeightPx}`;
     case "physical_raster":
-      return `${output.widthMm}×${output.heightMm} 毫米（${output.printPpi} ppi → ${output.widthPx}×${output.heightPx} 像素）`;
+      return `${output.widthMm}×${output.heightMm} mm (${output.printPpi} ppi → ${output.widthPx}×${output.heightPx} pixels)`;
     case "portal_source":
-      return "由官方门户执行裁剪";
+      return "Cropping performed by the official portal";
     case "guidance_only":
-      return "仅拍摄指导，不生成文件";
+      return "Capture guidance only, no file produced";
   }
 }
 
 const ENFORCEMENT_LABELS: Record<string, string> = {
-  mandatory: "强制",
-  recommended: "建议",
+  mandatory: "Mandatory",
+  recommended: "Recommended",
 };
 
 const EVALUATION_LABELS: Record<string, string> = {
-  automatic: "自动判定",
-  manual: "人工判定",
-  automatic_with_manual_confirmation: "自动判定 + 人工确认",
+  automatic: "Automatic",
+  manual: "Manual",
+  automatic_with_manual_confirmation: "Automatic + manual confirmation",
 };
 
 const CAPABILITY_VALUE_LABELS: Record<string, string> = {
-  allowed: "允许",
-  warn: "警告",
-  forbidden: "禁止",
-  not_confirmed: "未确认",
-  certified_only: "仅认证渠道",
+  allowed: "Allowed",
+  warn: "Warning",
+  forbidden: "Forbidden",
+  not_confirmed: "Not confirmed",
+  certified_only: "Certified channel only",
 };
 
 const PROVENANCE_LABELS: Record<string, string> = {
-  source_literal: "来源原文",
-  derived: "推导",
-  portal_verified: "门户核实",
+  source_literal: "Source text",
+  derived: "Derived",
+  portal_verified: "Portal-verified",
 };
 
 const NORMALIZATION_LABELS: Record<string, string> = {
-  server_authoritative: "服务端权威",
-  client_hint: "客户端提示",
+  server_authoritative: "Server-authoritative",
+  client_hint: "Client hint",
 };
 
-/** 未知值原样返回（provenance 是裸 string，不得写成穷尽 switch） */
+/** Unknown values are returned verbatim (provenance is a bare string; must not
+ * be written as an exhaustive switch) */
 export function labelFor(table: Record<string, string>, value: string): string {
   return table[value] ?? value;
 }

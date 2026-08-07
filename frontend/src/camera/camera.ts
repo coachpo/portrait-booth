@@ -1,45 +1,52 @@
 /**
- * 摄像头封装（CAM-001~008）。
- * getUserMedia 仅在用户显式触发后调用；track 生命周期由调用方用 token 管理。
+ * Camera wrapper (CAM-001~008).
+ * getUserMedia is only called after an explicit user action; track lifecycle
+ * is managed by the caller via tokens.
  */
 
 export interface CameraRequest {
   deviceId?: string;
-  /** 宽松重试：仅 {audio:false, video:true}，用于约束失败后的降级路径（CAM-003） */
+  /** Relaxed retry: only {audio:false, video:true}, for the constrained
+   * fallback path after a failure (CAM-003) */
   relaxed?: boolean;
 }
 
 export interface CameraSupport {
   supported: boolean;
-  /** 不支持时给出可操作的原因，而不是让用户点下去再看到一句通用报错 */
+  /** An actionable reason when unsupported, instead of a generic error
+   * after the user clicks */
   reason?: string;
 }
 
 /**
- * §10.2 能力检测：先确认这个浏览器/上下文根本能不能开摄像头。
- * 不做检测时，不支持 getUserMedia 的浏览器和非安全上下文都会走到
- * 「打开摄像头失败：请重试」——重试多少次都没用。
+ * §10.2 capability detection: first confirm this browser/context can open a
+ * camera at all. Without it, browsers without getUserMedia and insecure
+ * contexts both end up at "failed to open camera: retry" - retrying never
+ * helps.
  */
 export function checkCameraSupport(): CameraSupport {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     return {
       supported: false,
-      reason: "此浏览器不支持摄像头拍摄（缺少 getUserMedia）：请改用上传照片。",
+      reason:
+        "this browser does not support camera capture (no getUserMedia): please upload a photo instead.",
     };
   }
   if (typeof window !== "undefined" && window.isSecureContext === false) {
     return {
       supported: false,
-      reason: "摄像头需要 HTTPS 或 localhost 安全上下文：请改用上传照片，或通过 HTTPS 访问。",
+      reason:
+        "the camera needs an HTTPS or localhost secure context: please upload a photo instead, or visit over HTTPS.",
     };
   }
   return { supported: true };
 }
 
 /**
- * 让 <video> 开始播放。iOS Safari 只在 muted + playsInline + autoplay 齐备时
- * 允许自动播放，缺一项 play() 就 reject；失败原因必须暴露出来，
- * 否则用户看到的是一块永远黑着的预览，而界面显示「已就绪」。
+ * Start <video> playback. iOS Safari only allows autoplay with
+ * muted + playsInline + autoplay all present; missing any one makes play()
+ * reject. The failure reason must be surfaced, otherwise the user sees a
+ * permanently black preview while the UI says "ready".
  */
 export async function attachStream(
   video: HTMLVideoElement,
@@ -53,14 +60,15 @@ export async function attachStream(
     await video.play();
     return { playing: true };
   } catch (err) {
-    // jsdom 的 DOMException 不继承 Error：两种都要认，否则 name 永远读不到
+    // jsdom's DOMException does not extend Error: recognize both, or name
+    // would never be readable
     const name = err instanceof DOMException || err instanceof Error ? err.name : "";
     return {
       playing: false,
       reason:
         name === "NotAllowedError"
-          ? "浏览器阻止了预览自动播放：请点击预览区域后重试。"
-          : "预览无法播放：请重试，或改用上传照片。",
+          ? "the browser blocked preview autoplay: click the preview area and try again."
+          : "preview cannot play: try again, or upload a photo instead.",
     };
   }
 }
@@ -86,13 +94,14 @@ export async function listVideoDevices(): Promise<MediaDeviceInfo[]> {
   return devices.filter((d) => d.kind === "videoinput");
 }
 
-/** CAM-004：预览镜像不影响捕获；后置摄像头不镜像。 */
+/** CAM-004: preview mirroring does not affect capture; the rear camera is not mirrored. */
 export function isFrontCamera(stream: MediaStream | null): boolean {
   const settings = stream?.getVideoTracks()[0]?.getSettings();
   return settings?.facingMode === "user";
 }
 
-/** CAM-006：ImageCapture 能力检测后的高分辨率增强；失败或挂起时回退画布捕获。 */
+/** CAM-006: high-resolution enhancement after ImageCapture capability
+ * detection; falls back to canvas capture on failure or hang. */
 export async function captureWithImageCapture(video: HTMLVideoElement): Promise<Blob | null> {
   if (typeof ImageCapture === "undefined") return null;
   const src = video.srcObject;
@@ -101,7 +110,8 @@ export async function captureWithImageCapture(video: HTMLVideoElement): Promise<
       ? src.getVideoTracks()[0]
       : null;
   if (!track) return null;
-  // 部分浏览器（含 headless）ImageCapture 半实现：takePhoto 可能永久挂起，加超时回退
+  // Some browsers (including headless) half-implement ImageCapture:
+  // takePhoto can hang forever, so add a timeout fallback
   try {
     const photo = await Promise.race([
       new ImageCapture(track).takePhoto(),
@@ -113,7 +123,7 @@ export async function captureWithImageCapture(video: HTMLVideoElement): Promise<
   }
 }
 
-/** CAM-006：基线捕获——从 <video> 固有像素绘制到 Canvas。 */
+/** CAM-006: baseline capture - draw from the <video>'s intrinsic pixels to a Canvas. */
 export async function captureFromVideo(video: HTMLVideoElement): Promise<Blob | null> {
   const width = video.videoWidth;
   const height = video.videoHeight;
@@ -135,16 +145,16 @@ export function cameraErrorMessage(err: unknown): string {
   const name = err instanceof DOMException || err instanceof Error ? err.name : "";
   switch (name) {
     case "NotAllowedError":
-      return "摄像头权限被拒绝：请在浏览器地址栏允许摄像头访问后重试，或改用上传照片。";
+      return "camera permission denied: allow camera access in the browser address bar and retry, or upload a photo instead.";
     case "NotFoundError":
-      return "未检测到摄像头设备：请连接摄像头后重试，或改用上传照片。";
+      return "no camera device detected: connect a camera and retry, or upload a photo instead.";
     case "NotReadableError":
-      return "摄像头被其他应用占用：请关闭占用摄像头的程序后重试。";
+      return "the camera is in use by another application: close the program using it and retry.";
     case "OverconstrainedError":
-      return "摄像头不满足所需约束：请重试，或改用上传照片。";
+      return "the camera does not satisfy the required constraints: retry, or upload a photo instead.";
     case "SecurityError":
-      return "需要 HTTPS 或本地安全上下文才能使用摄像头。";
+      return "HTTPS or a local secure context is required to use the camera.";
     default:
-      return "打开摄像头失败：请重试，或改用上传照片。";
+      return "failed to open the camera: retry, or upload a photo instead.";
   }
 }

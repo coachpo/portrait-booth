@@ -1,23 +1,29 @@
 /**
- * 姿态角推导（GDE-003）。
+ * Pose angle derivation (GDE-003).
  *
- * MediaPipe 的 facialTransformationMatrixes 是 **列主序** 4×4（16 元素）：
+ * MediaPipe's facialTransformationMatrixes are **column-major** 4×4 (16
+ * elements):
  *   R[row][col] = m[col * 4 + row]
- * 并且左上 3×3 是「旋转 × 均匀缩放」，不是正交旋转矩阵——缩放来自模型把
- * 标准脸模型对齐到当前人脸的尺度，量级通常在 1.0–2.0 之间。
+ * and the top-left 3×3 is "rotation × uniform scale", not an orthogonal
+ * rotation matrix - the scale comes from the model aligning the canonical
+ * face model to the current face's size, typically 1.0–2.0.
  *
- * 两个后果：
- * 1. 按行主序取元素会把 yaw 与 roll 读成转置后的角度，符号与量级都错；
- * 2. pitch 走 asin，被缩放放大后可能直接饱和到 ±90°。
+ * Two consequences:
+ * 1. Reading row-major reads yaw and roll as the transposed angles, wrong in
+ *    both sign and magnitude;
+ * 2. pitch goes through asin and can saturate to ±90° after scale
+ *    amplification.
  *
- * 约定：旋转矩阵 R = Ry(yaw)·Rx(pitch)·Rz(roll)（列向量）。
- * 数值为拍摄启发式，不称为官方法定容差（GDE-004）。
+ * Convention: rotation matrix R = Ry(yaw)·Rx(pitch)·Rz(roll) (column
+ * vectors).
+ * Values are capture heuristics and must not be called official statutory
+ * tolerances (GDE-004).
  */
 
 export interface PoseAngles {
-  yaw: number; // 度
-  pitch: number; // 度
-  roll: number; // 度
+  yaw: number; // degrees
+  pitch: number; // degrees
+  roll: number; // degrees
 }
 
 export function clamp(v: number, lo: number, hi: number): number {
@@ -26,24 +32,25 @@ export function clamp(v: number, lo: number, hi: number): number {
 
 export const RAD_TO_DEG = 180 / Math.PI;
 
-/** 列主序 4×4 取元素：R[row][col]。 */
+/** Column-major 4×4 element access: R[row][col]. */
 function at(m: number[], row: number, col: number): number {
   return m[col * 4 + row];
 }
 
 /**
- * 左上 3×3 的均匀缩放因子：取第一列的模长。
- * 三列模长在均匀缩放下相等，取一列即可，也顺带给出矩阵是否退化的信号。
+ * Uniform scale factor of the top-left 3×3: the first column's length.
+ * Under uniform scaling all three columns have equal length, so one column
+ * suffices and also signals whether the matrix is degenerate.
  */
 export function matrixScale(m: number[]): number {
   return Math.hypot(at(m, 0, 0), at(m, 1, 0), at(m, 2, 0));
 }
 
 /**
- * 从列主序 4×4 分解 yaw/pitch/roll（度）。
+ * Decompose yaw/pitch/roll (degrees) from a column-major 4×4.
  *   pitch = asin(-R12 / s)
- *   yaw   = atan2(R02, R22)   —— 比值，缩放自动抵消
- *   roll  = atan2(R10, R11)   —— 同上
+ *   yaw   = atan2(R02, R22)   -- a ratio; scale cancels out
+ *   roll  = atan2(R10, R11)   -- same
  */
 export function decomposeRotationMatrix(m: number[]): PoseAngles {
   const s = matrixScale(m) || 1;
@@ -54,10 +61,12 @@ export function decomposeRotationMatrix(m: number[]): PoseAngles {
 }
 
 /**
- * 带校验的分解：矩阵缺失、长度不对、含非有限值或退化（缩放为 0）时返回 null。
+ * Validated decomposition: returns null when the matrix is missing, wrong
+ * length, contains non-finite values, or is degenerate (scale 0).
  *
- * 调用方必须把 null 当作「这一帧没有可用角度」而不是「角度为 0」——
- * 否则一帧 NaN 会被平滑进 EMA，之后每一帧都是 NaN。
+ * Callers must treat null as "no usable angles this frame", not "angles are
+ * 0" - otherwise one frame of NaN gets smoothed into the EMA and every later
+ * frame is NaN.
  */
 export function decomposeFaceMatrix(m: number[] | undefined | null): PoseAngles | null {
   if (!m || m.length < 16) return null;
@@ -72,12 +81,13 @@ export function decomposeFaceMatrix(m: number[] | undefined | null): PoseAngles 
 }
 
 /**
- * 由角度构造列主序 4×4（辅助工具）。
+ * Build a column-major 4×4 from angles (helper).
  *
- * 注意：**不要用它作为 decomposeRotationMatrix 的唯一验证手段**——
- * 用自写的 compose 去验自写的 decompose 是自证循环，
- * 两边同时按行主序理解矩阵时测试依然全绿。真正的回归断言必须直接写出
- * 已知角度对应的矩阵字面量，见 pose.test.ts。
+ * Note: **do not use this as the only verification of
+ * decomposeRotationMatrix** - verifying a hand-written decompose with a
+ * hand-written compose is a self-referential loop, and tests stay green while
+ * both sides read the matrix row-major. Real regression assertions must write
+ * the matrix literal for known angles directly; see pose.test.ts.
  */
 export function composeRotationMatrix(angles: PoseAngles, scale = 1): number[] {
   const y = (angles.yaw * Math.PI) / 180;
@@ -90,7 +100,7 @@ export function composeRotationMatrix(angles: PoseAngles, scale = 1): number[] {
   const cz = Math.cos(r);
   const sz = Math.sin(r);
 
-  // R = Ry·Rx·Rz，按 [row][col] 写出后再落到列主序位置
+  // R = Ry·Rx·Rz, written out by [row][col] then laid into column-major positions
   const r00 = cy * cz + sy * sx * sz;
   const r01 = -cy * sz + sy * sx * cz;
   const r02 = sy * cx;
@@ -115,7 +125,7 @@ export function composeRotationMatrix(angles: PoseAngles, scale = 1): number[] {
   return m;
 }
 
-/** 角度到度数的归一化（±180）。 */
+/** Normalize an angle to degrees (±180). */
 export function normalizeDeg(deg: number): number {
   let d = deg % 360;
   if (d > 180) d -= 360;

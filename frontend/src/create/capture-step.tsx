@@ -21,13 +21,14 @@ export interface CaptureStepProps {
   template: TemplateEntry;
   onReady: (source: SourceImage) => void;
   onBack: () => void;
-  /** 页面隐藏多久后自动停流（CAM-005）；可注入以便测试无需假时钟 */
+  /** How long the page may stay hidden before auto-stopping the stream
+   * (CAM-005); injectable so tests need no fake clocks */
   hiddenStopMs?: number;
 }
 
 type Status = "idle" | "requesting" | "live" | "capturing";
 
-/** 页面隐藏多久后自动停流（CAM-005）。 */
+/** How long the page may stay hidden before auto-stopping the stream (CAM-005). */
 const HIDDEN_STOP_MS = 30_000;
 
 export function CaptureStep({
@@ -49,7 +50,8 @@ export function CaptureStep({
   const shootRef = useRef<() => void>(() => {});
   const support = useMemo(() => checkCameraSupport(), []);
 
-  // CAM-005：组件卸载/页面离开时停止全部 tracks；迟到的旧请求结果直接丢弃
+  // CAM-005: stop all tracks on unmount/page leave; stale request results
+  // are dropped directly
   useEffect(
     () => () => {
       genRef.current += 1;
@@ -59,8 +61,9 @@ export function CaptureStep({
     [],
   );
 
-  // CAM-005：页面持续隐藏超过门限就停流。
-  // 摄像头指示灯一直亮着而用户已经切走，是明确的隐私问题。
+  // CAM-005: stop the stream once the page stays hidden past the threshold.
+  // The camera indicator staying on after the user left is a clear privacy
+  // problem.
   useEffect(() => {
     if (status !== "live") return;
     let timer = 0;
@@ -72,7 +75,9 @@ export function CaptureStep({
         stopStream(streamRef.current);
         streamRef.current = null;
         setStatus("idle");
-        setError("摄像头因页面长时间处于后台已自动关闭：需要时可重新开启。");
+        setError(
+          "the camera was auto-stopped because the page stayed in the background too long; re-open it when needed.",
+        );
       }, hiddenStopMs);
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -91,7 +96,7 @@ export function CaptureStep({
       try {
         stream = await openCamera(deviceId ? { deviceId } : {});
       } catch (err) {
-        // CAM-003：约束失败降级为宽松约束重试
+        // CAM-003: on a constraints failure, degrade to a relaxed-constraints retry
         if (err instanceof DOMException && err.name === "OverconstrainedError") {
           stream = await openCamera({ relaxed: true, deviceId });
         } else {
@@ -99,7 +104,7 @@ export function CaptureStep({
         }
       }
       if (gen !== genRef.current) {
-        stopStream(stream); // 已被更新的请求取代
+        stopStream(stream); // superseded by a newer request
         return;
       }
       stopStream(streamRef.current);
@@ -128,9 +133,11 @@ export function CaptureStep({
   const shoot = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
-    // 记下这次拍摄所属的代际。解码与静态复检要几百毫秒，期间用户可能已经点了
-    // 「返回」或重新连接摄像头；迟到的 onReady 会把状态机硬推到确认步，
-    // 甚至 dispose 掉当时正在使用的另一张源照片。
+    // Record which generation this shot belongs to. Decoding and the static
+    // recheck take hundreds of milliseconds, during which the user may have
+    // clicked "Back" or reconnected the camera; a late onReady would force
+    // the state machine back to the confirm step and could even dispose the
+    // other source photo in use.
     const gen = genRef.current;
     const isStale = () => gen !== genRef.current;
 
@@ -139,7 +146,7 @@ export function CaptureStep({
     const blob = await captureStill(video);
     if (isStale()) return;
     if (!blob) {
-      setError("拍摄失败：请重试，或改用上传照片。");
+      setError("capture failed: try again, or upload a photo instead.");
       setStatus("live");
       return;
     }
@@ -149,9 +156,11 @@ export function CaptureStep({
         source.dispose();
         return;
       }
-      // GDE-005：拍摄固定 Blob 后静态复检，不使用预览推理的旧结果
+      // GDE-005: run the static recheck on the fixed captured Blob; never
+      // use stale preview-inference results
       try {
-        // GDE-005 复检结果随 source 传递，由终态页统一展示
+        // GDE-005 recheck results travel with the source; the final page
+        // displays them
         const checks = await runStaticCheck(source.bitmap);
         if (isStale()) {
           source.dispose();
@@ -172,7 +181,8 @@ export function CaptureStep({
     }
   }, [onReady]);
 
-  // CAM-007：自动倒计时由用户显式开启，可取消；拍摄调用在 timer 回调中触发
+  // CAM-007: the auto countdown is user-enabled explicitly and cancellable;
+  // the shot fires in the timer callback
   useEffect(() => {
     shootRef.current = () => {
       void shoot();
@@ -197,10 +207,11 @@ export function CaptureStep({
   };
 
   return (
-    <section aria-label="摄像头拍摄">
-      <h2>拍摄照片</h2>
+    <section aria-label="Camera capture">
+      <h2>Take photo</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, uiLocale())}。仅在点击后才会请求摄像头权限。
+        Selected template: {entryLabel(template, uiLocale())}. Camera permission is only requested
+        after clicking.
       </p>
       {status === "idle" && (
         <>
@@ -216,38 +227,41 @@ export function CaptureStep({
               onClick={() => void startCamera()}
               disabled={!support.supported}
             >
-              开启摄像头
+              Open camera
             </button>
             <button type="button" onClick={onBack}>
-              返回
+              Back
             </button>
           </div>
         </>
       )}
       {(status === "requesting" || status === "live" || status === "capturing") && (
         <div className="camera-view">
-          {/* muted + autoPlay + playsInline 三者齐备，iOS Safari 才允许预览自动播放 */}
+          {/* muted + autoPlay + playsInline all present, or iOS Safari will
+          not allow preview autoplay */}
           <video
             ref={videoRef}
             className={mirrored ? "mirrored" : ""}
             playsInline
             autoPlay
             muted
-            aria-label="摄像头预览"
+            aria-label="Camera preview"
           />
           {status === "live" && <PoseGuide videoRef={videoRef} mirrored={mirrored} />}
           <p className="muted">
-            {status === "requesting" && "正在请求摄像头…"}
-            {status === "capturing" && "正在处理照片…"}
+            {status === "requesting" && "Requesting camera…"}
+            {status === "capturing" && "Processing photo…"}
             {status === "live" &&
-              (mirrored ? "预览为镜像，成品为真实方向（CAM-004）" : "后置摄像头，成品为真实方向")}
+              (mirrored
+                ? "preview is mirrored; the artifact has the true orientation (CAM-004)"
+                : "rear camera; the artifact has the true orientation")}
           </p>
           {status === "live" && (
             <>
               <div className="step-actions">
                 {countdown !== null ? (
                   <button type="button" className="primary" onClick={() => setCountdown(null)}>
-                    取消（{countdown} 秒）
+                    Cancel ({countdown}s)
                   </button>
                 ) : (
                   <button
@@ -256,7 +270,7 @@ export function CaptureStep({
                     onClick={triggerShoot}
                     disabled={status !== "live"}
                   >
-                    拍摄
+                    Shoot
                   </button>
                 )}
                 <label className="inline-label">
@@ -265,12 +279,12 @@ export function CaptureStep({
                     checked={autoCountdown}
                     onChange={(e) => setAutoCountdown(e.target.checked)}
                   />
-                  自动倒计时 3 秒
+                  Auto countdown 3s
                 </label>
               </div>
               {devices.length > 1 && (
                 <label>
-                  切换摄像头
+                  Switch camera
                   <select
                     value={activeDeviceId}
                     onChange={(e) => {
@@ -297,12 +311,12 @@ export function CaptureStep({
       <div className="step-actions">
         {status === "live" && (
           <button type="button" onClick={() => startCamera()}>
-            重新连接摄像头
+            Reconnect camera
           </button>
         )}
         {(status === "live" || status === "capturing") && (
           <button type="button" onClick={onBack}>
-            返回
+            Back
           </button>
         )}
       </div>

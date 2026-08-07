@@ -1,6 +1,7 @@
 /**
- * 应用外壳：页头导航、主内容区与页脚。
- * 每个页面都必须有回到首页的出口——内页走进死胡同是最容易被忽略的可用性缺陷。
+ * App shell: header navigation, main content area, and footer.
+ * Every page must have a way back home - dead-end inner pages are the most
+ * easily overlooked usability defect.
  */
 
 import { Link, NavLink, Outlet } from "react-router-dom";
@@ -8,9 +9,9 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { ErrorBoundary } from "./error-boundary";
 
 const NAV = [
-  { to: "/create", label: "创建照片" },
-  { to: "/retrieve", label: "取回照片" },
-  { to: "/privacy", label: "隐私说明" },
+  { to: "/create", label: "Create photo" },
+  { to: "/retrieve", label: "Retrieve photo" },
+  { to: "/privacy", label: "Privacy" },
 ];
 
 export function Layout() {
@@ -20,7 +21,7 @@ export function Layout() {
         <Link to="/" className="brand">
           Portrait Booth
         </Link>
-        <nav aria-label="主导航">
+        <nav aria-label="Main navigation">
           {NAV.map((item) => (
             <NavLink
               key={item.to}
@@ -39,11 +40,12 @@ export function Layout() {
       </main>
       <footer className="app-footer">
         <p className="muted">
-          照片检查为启发式判断，未经官方容差校准，不代表签发机关一定受理。
-          模板内容以各签发机关的官方说明为准。
+          Photo checks are heuristic judgments, not calibrated to official tolerances, and do not
+          guarantee acceptance by the issuing authority. Template content follows each issuing
+          authority's official guidance.
         </p>
         <p className="muted">
-          <Link to="/privacy">隐私与留存说明</Link>
+          <Link to="/privacy">Privacy & retention</Link>
         </p>
       </footer>
     </div>

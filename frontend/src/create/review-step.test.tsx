@@ -26,7 +26,7 @@ function entry(output: unknown, overrides: Partial<TemplateEntry["revision"]> = 
       id: "visa",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "美国签证" },
+      label: { en: "US visa" },
       jurisdiction: "US",
       documentType: "visa",
       submissionChannel: "digital_upload",
@@ -120,8 +120,9 @@ function renderStep(
 
 describe("ReviewStep recheck states (O2)", () => {
   it("lists unchecked items instead of the all-clear message when nothing was checked (O2)", () => {
-    // 旧实现：只有有警告/无警告两个分支，模型不可用 + 曝光正常时对
-    // 从未检查过的项目宣称「复检未发现明显问题」
+    // Old implementation: only a has-warnings/no-warnings dichotomy; when
+    // the model was unavailable and exposure was fine, it claimed "recheck
+    // found no obvious issues" for items never checked
     const unchecked = {
       ...source,
       staticChecks: {
@@ -130,7 +131,7 @@ describe("ReviewStep recheck states (O2)", () => {
         faceGeometry: null,
         quality: {
           status: "warn",
-          issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+          issues: ["exposure and sharpness show no obvious issues (heuristic, for reference only)"],
           metrics: {
             darkClipRatio: 0,
             brightClipRatio: 0,
@@ -141,11 +142,11 @@ describe("ReviewStep recheck states (O2)", () => {
       },
     } as unknown as SourceImage;
     renderStep(ranged, null, vi.fn(), unchecked);
-    expect(screen.getByText(/以下项目未检查，需人工确认/)).toBeInTheDocument();
-    expect(screen.getByText(/姿态复检/)).toBeInTheDocument();
-    expect(screen.getByText(/人脸几何（眼\/嘴）/)).toBeInTheDocument();
-    expect(screen.getByText(/背景均匀度/)).toBeInTheDocument();
-    expect(screen.queryByText(/复检未发现明显问题/)).toBeNull();
+    expect(screen.getByText(/not checked and need manual confirmation/i)).toBeInTheDocument();
+    expect(screen.getByText(/pose recheck/)).toBeInTheDocument();
+    expect(screen.getByText(/face geometry \(eyes\/mouth\)/)).toBeInTheDocument();
+    expect(screen.getByText(/background uniformity/)).toBeInTheDocument();
+    expect(screen.queryByText(/recheck found no obvious issues/i)).toBeNull();
   });
 
   it("keeps the all-clear message when every project was checked (O2)", () => {
@@ -157,7 +158,7 @@ describe("ReviewStep recheck states (O2)", () => {
         faceGeometry: { eyesClosed: false, mouthOpen: false },
         quality: {
           status: "warn",
-          issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+          issues: ["exposure and sharpness show no obvious issues (heuristic, for reference only)"],
           metrics: {
             darkClipRatio: 0,
             brightClipRatio: 0,
@@ -168,42 +169,43 @@ describe("ReviewStep recheck states (O2)", () => {
       },
     } as unknown as SourceImage;
     renderStep(ranged, null, vi.fn(), checked);
-    expect(screen.getByText(/复检未发现明显问题/)).toBeInTheDocument();
-    expect(screen.queryByText(/未检查/)).toBeNull();
+    expect(screen.getByText(/recheck found no obvious issues/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not checked/i)).toBeNull();
   });
 });
 
 describe("ReviewStep output size (P6)", () => {
   it("renders the size control for ranged templates with 600 selected by default (P6)", () => {
     renderStep(ranged);
-    const group = screen.getByRole("group", { name: "输出尺寸" });
+    const group = screen.getByRole("group", { name: "Output size" });
     expect(group).toBeInTheDocument();
     const radios = withinGroup(group);
     expect(radios).toHaveLength(2);
     const checked = radios.find((r) => (r as HTMLInputElement).checked);
     expect(checked?.value).toBe("600x600");
-    expect(screen.getByText(/输出 600×600 像素/)).toBeInTheDocument();
+    expect(screen.getByText(/output 600×600 pixels/)).toBeInTheDocument();
   });
 
   it("does not render the control for exact_pixels templates (P6)", () => {
     renderStep(exact);
-    expect(screen.queryByRole("group", { name: "输出尺寸" })).toBeNull();
-    expect(screen.getByText(/输出 500×653 像素/)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Output size" })).toBeNull();
+    expect(screen.getByText(/output 500×653 pixels/)).toBeInTheDocument();
   });
 
   it("updates the output text when switching to 1200x1200 (P6)", () => {
     const onSizeChange = vi.fn();
     renderStep(ranged, null, onSizeChange);
-    fireEvent.click(screen.getByRole("radio", { name: "1200×1200 像素" }));
+    fireEvent.click(screen.getByRole("radio", { name: "1200×1200 pixels" }));
     expect(onSizeChange).toHaveBeenCalledWith({ width: 1200, height: 1200 });
-    // 切档后按新尺寸渲染（selectedSize 由父级写回）
+    // After switching, it renders at the new size (selectedSize written
+    // back by the parent)
     renderStep(ranged, { width: 1200, height: 1200 }, onSizeChange);
-    expect(screen.getByText(/输出 1200×1200 像素/)).toBeInTheDocument();
+    expect(screen.getByText(/output 1200×1200 pixels/)).toBeInTheDocument();
   });
 
   it("shows a narrow-window notice when the max size is selected (P6)", () => {
     const { rerender } = renderStep(ranged, { width: 1200, height: 1200 });
-    expect(screen.getByText(/文件体积窗口很窄/)).toBeInTheDocument();
+    expect(screen.getByText(/narrow size window/i)).toBeInTheDocument();
     rerender(
       <ReviewStep
         source={source}
@@ -217,7 +219,7 @@ describe("ReviewStep output size (P6)", () => {
         onSizeChange={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/文件体积窗口很窄/)).toBeNull();
+    expect(screen.queryByText(/narrow size window/i)).toBeNull();
   });
 });
 

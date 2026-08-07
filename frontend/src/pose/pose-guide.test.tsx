@@ -16,11 +16,11 @@ vi.mock("./landmarker", async (importOriginal) => {
 import { acquireVideoLandmarker, releaseVideoLandmarker } from "./landmarker";
 import type { FaceObservation } from "./tracking";
 
-/** 列主序单位矩阵：正对镜头 */
+/** Column-major identity matrix: facing the camera */
 const MOCK_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 function faceObservation(): FaceObservation {
-  // 带眼/下巴关键点（宽度 0.3、居中）——位置合规
+  // With eye/chin landmarks (width 0.3, centered) - position compliant
   const landmarks = new Array<{ x: number; y: number; z?: number }>(478).fill({ x: 0.5, y: 0.5 });
   landmarks[33] = { x: 0.35, y: 0.4 };
   landmarks[263] = { x: 0.65, y: 0.4 };
@@ -29,7 +29,8 @@ function faceObservation(): FaceObservation {
   return { faceIndex: 0, landmarks, matrix: MOCK_MATRIX };
 }
 
-/** jsdom 没有 requestVideoFrameCallback：手工装一个可驱动、可断言的实现 */
+/** jsdom has no requestVideoFrameCallback: hand-install a drivable,
+ * assertable implementation */
 function makeVideo(withRvfc = false) {
   const video = document.createElement("video");
   Object.defineProperty(video, "videoWidth", { value: 640 });
@@ -63,8 +64,9 @@ function mockLandmarker(faces: FaceObservation[] = [faceObservation()]) {
   return detectVideo;
 }
 
-// 用 beforeEach 而不是 afterEach：testing-library 的自动 cleanup 也注册在 afterEach，
-// 卸载组件时还会再调一次 releaseVideoLandmarker，计数会漏到下一个用例。
+// Use beforeEach instead of afterEach: testing-library's automatic cleanup
+// is also registered in afterEach, and unmounting the component calls
+// releaseVideoLandmarker once more, leaking the count into the next case.
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -83,7 +85,7 @@ describe("PoseGuide", () => {
     });
 
     const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent(/姿势稳定|需调整/);
+    expect(status).toHaveTextContent(/pose stable|needs adjustment/i);
   });
 
   it("falls back gracefully when the model fails to load (GDE-006)", async () => {
@@ -94,8 +96,8 @@ describe("PoseGuide", () => {
     render(<PoseGuide videoRef={videoRef} mirrored={false} />);
 
     const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent("自动姿态指导不可用");
-    expect(status).toHaveTextContent("仍可手动拍摄");
+    expect(status).toHaveTextContent("Automatic pose guidance unavailable");
+    expect(status).toHaveTextContent("manual capture still works");
   });
 
   it("releases the video landmarker on unmount (GDE-007)", async () => {
@@ -111,8 +113,9 @@ describe("PoseGuide", () => {
   });
 
   it("cancels the rVFC loop on unmount", async () => {
-    // 回归：旧实现只调 cancelAnimationFrame，rVFC 分支的回调会一直自我续订，
-    // 卸载后继续推理，每次切换摄像头再叠加一条循环。
+    // Regression: the old implementation only called cancelAnimationFrame,
+    // so the rVFC branch kept re-scheduling itself: inference continued
+    // after unmount and each camera switch stacked another loop.
     mockLandmarker();
     const { video, cancel, tick, pendingCount } = makeVideo(true);
     const videoRef = createRef<HTMLVideoElement>();
@@ -147,8 +150,9 @@ describe("PoseGuide", () => {
   });
 
   it("updates the guidance text when hints change within the same status (O4)", async () => {
-    // 回归：sameGuidance 若只比 status、不比 hints，同 status（out-of-position）
-    // 下提示从「靠近」变成「靠近 + 向右」会被当成没变而卡住不更新
+    // Regression: if sameGuidance compared only status and not hints, the
+    // same status (out-of-position) with hints changing from "closer" to
+    // "closer + right" would be treated as unchanged and never update
     const outOfPositionFace = (width: number, offsetX: number) => {
       const f = faceObservation();
       const left = 0.5 - width / 2 + offsetX;
@@ -177,19 +181,21 @@ describe("PoseGuide", () => {
     const status = await screen.findByRole("status");
     const before = status.textContent;
 
-    // 同一 status 下 hints 从 [move-closer] 变成 [move-closer, move-own-right]
+    // Same status, hints change from [move-closer] to [move-closer,
+    // move-own-right]
     faces = [outOfPositionFace(0.05, 0.3)];
     nowSpy.mockReturnValue(200);
     await act(async () => tick());
     expect(status.textContent).not.toBe(before);
-    expect(status.textContent).toContain("请靠近一些");
-    expect(status.textContent).toContain("请向你自己的右侧移动");
+    expect(status.textContent).toContain("move a little closer");
+    expect(status.textContent).toContain("move to your own right");
     nowSpy.mockRestore();
   });
 
   it("throttles inference instead of running at display frame rate", async () => {
-    // 回归：旧实现靠 landmarker 内的 busy 标志丢帧，但推理是同步的，
-    // 函数返回时 busy 必然已复位——那个分支永远不成立。
+    // Regression: the old implementation relied on the landmarker's busy
+    // flag to drop frames, but inference is synchronous - by the time the
+    // function returns busy is already reset, so that branch never fired.
     const detectVideo = mockLandmarker();
     const { video, tick } = makeVideo(true);
     const videoRef = createRef<HTMLVideoElement>();
@@ -200,12 +206,14 @@ describe("PoseGuide", () => {
     await act(async () => {
       for (let i = 0; i < 8; i++) tick();
     });
-    // 8 帧在同一个 83 ms 窗口内到达：只允许一次推理
+    // 8 frames arrive within the same 83 ms window: only one inference
+    // allowed
     expect(detectVideo).toHaveBeenCalledTimes(1);
   });
 
   it("does not rebuild the landmarker when the mirror flag flips", async () => {
-    // 回归：mirrored 曾在 effect 依赖里，每次前后摄切换都重新下载并初始化模型
+    // Regression: mirrored used to be in the effect deps, re-downloading
+    // and re-initializing the model on every front/rear camera switch
     mockLandmarker();
     const { video } = makeVideo(true);
     const videoRef = createRef<HTMLVideoElement>();

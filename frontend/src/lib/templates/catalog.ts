@@ -1,26 +1,26 @@
 import type { DocumentType, SubmissionChannel, TemplateCatalog, TemplateEntry } from "./types";
 
 const JURISDICTION_NAMES: Record<string, string> = {
-  generic: "通用（非证件）",
-  US: "美国",
-  FI: "芬兰",
-  CN: "中国",
-  JP: "日本",
+  generic: "Generic (non-document)",
+  US: "United States",
+  FI: "Finland",
+  CN: "China",
+  JP: "Japan",
 };
 
 const DOCUMENT_TYPE_NAMES: Record<DocumentType, string> = {
-  passport: "护照",
-  visa: "签证",
-  id: "身份证件",
-  permit: "许可",
-  portrait: "通用肖像",
+  passport: "Passport",
+  visa: "Visa",
+  id: "Identity document",
+  permit: "Permit",
+  portrait: "Generic portrait",
 };
 
 const CHANNEL_NAMES: Record<SubmissionChannel, string> = {
-  paper: "纸质提交",
-  digital_upload: "数字上传",
-  certified_transfer: "认证传输",
-  onsite_capture: "现场拍摄",
+  paper: "Paper submission",
+  digital_upload: "Digital upload",
+  certified_transfer: "Certified transfer",
+  onsite_capture: "On-site capture",
 };
 
 let cached: Promise<TemplateCatalog> | null = null;
@@ -34,15 +34,17 @@ export function fetchTemplateCatalog(): Promise<TemplateCatalog> {
       return resp.json() as Promise<TemplateCatalog>;
     })
     .catch((error: unknown) => {
-      // 被拒绝的 Promise 不能留在缓存里：否则一次网络抖动后，
-      // 「重试」按钮会永远拿到同一个已拒绝的 Promise，只能刷新整页才能恢复。
+      // A rejected Promise must not stay in the cache: otherwise, after one
+      // network blip, the "retry" button keeps getting the same rejected
+      // Promise and only a full page refresh can recover.
       cached = null;
       throw error;
     });
   return cached;
 }
 
-/** 清空目录缓存。紧急停用或 ETag 变化后需要重新拉取时使用。 */
+/** Clear the catalog cache. Used after an emergency takedown or an ETag
+ * change when a fresh fetch is required. */
 export function clearTemplateCatalogCache(): void {
   cached = null;
 }
@@ -61,7 +63,7 @@ export function channelName(channel: SubmissionChannel): string {
 
 export function entryLabel(entry: TemplateEntry, locale: string): string {
   const label = entry.revision.label;
-  return label[locale] ?? label.zh ?? label.en ?? entry.revision.revisionId;
+  return label[locale] ?? label.en ?? label.zh ?? entry.revision.revisionId;
 }
 
 export function uniqueJurisdictions(catalog: TemplateCatalog): string[] {

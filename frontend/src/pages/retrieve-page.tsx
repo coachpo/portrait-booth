@@ -1,7 +1,9 @@
 /**
- * 取回页面（SAV-007：KEY 只进 POST body，不进 URL）。
- * 输入取回码 → resolve → 照片摘要与预览 + 下载（token 只存在于内存）。
- * 删除入口也在这里：删除密钥一旦离开暂存页，别处就再也用不上了。
+ * Retrieve page (SAV-007: the KEY only ever enters a POST body, never a
+ * URL). Enter the retrieval code → resolve → photo summary and preview +
+ * download (the token exists only in memory).
+ * The delete entry also lives here: once the delete secret leaves the
+ * staging page, nowhere else can use it.
  */
 
 import { useEffect, useState } from "react";
@@ -33,9 +35,9 @@ type DeleteStage =
 
 function resolveErrorMessage(err: unknown): string {
   if (err instanceof ApiError && err.status === 404) {
-    return "照片不可用：取回码无效、已过期或已删除。";
+    return "photo unavailable: the retrieval code is invalid, expired, or the photo was deleted.";
   }
-  return err instanceof Error ? err.message : "取回失败，请重试";
+  return err instanceof Error ? err.message : "retrieval failed, please retry";
 }
 
 export function RetrievePage() {
@@ -44,8 +46,9 @@ export function RetrievePage() {
   const [deleteSecret, setDeleteSecret] = useState("");
   const [deleteStage, setDeleteStage] = useState<DeleteStage>({ kind: "idle" });
 
-  // 唯一的 blob URL 释放点：URL 被覆盖、删除/失败回 idle、组件卸载时都由
-  // effect cleanup 撤销，不再散落 revoke 调用
+  // The single blob URL release point: on URL overwrite, delete/failure back
+  // to idle, and unmount, the effect cleanup revokes - no scattered revoke
+  // calls
   const previewUrl = stage.kind === "resolved" ? stage.photoUrl : null;
   useEffect(() => {
     if (!previewUrl) return;
@@ -56,11 +59,15 @@ export function RetrievePage() {
 
   const resolve = async () => {
     if (!complete) {
-      setStage({ kind: "error", message: `取回码应为 ${KEY_LENGTH} 位字母或数字` });
+      setStage({
+        kind: "error",
+        message: `the retrieval code must be ${KEY_LENGTH} letters or digits`,
+      });
       return;
     }
-    // 复位删除区：它到达 done 之后没有任何其它复位路径，同一会话里取回第二张
-    // 照片时删除表单会一直停在「已提交删除」，输入框与按钮都不再渲染。
+    // Reset the delete section: after done it has no other reset path, so
+    // retrieving a second photo in the same session would leave the delete
+    // form stuck at "delete submitted" with no inputs or buttons rendered.
     setDeleteStage({ kind: "idle" });
     setStage({ kind: "resolving" });
     try {
@@ -94,25 +101,27 @@ export function RetrievePage() {
     try {
       await deletePhoto(key, deleteSecret);
       setDeleteStage({ kind: "done" });
-      // 删除后这张照片不该还能取回：回到 idle，预览 URL 由上面的 effect 撤销
+      // After deletion this photo must not be retrievable: go back to idle;
+      // the preview URL is revoked by the effect above
       setStage({ kind: "idle" });
     } catch (err) {
       setDeleteStage({
         kind: "error",
-        message: err instanceof Error ? err.message : "删除失败，请重试",
+        message: err instanceof Error ? err.message : "delete failed, please retry",
       });
     }
   };
 
   return (
-    <section aria-label="取回照片">
-      <h1>取回照片</h1>
+    <section aria-label="Retrieve photo">
+      <h1>Retrieve photo</h1>
       <p className="muted">
-        输入暂存时生成的 {KEY_LENGTH} 位取回码；取回码只发送到服务器，不会出现在地址栏。
+        Enter the {KEY_LENGTH}-character code generated when staging; the code is sent only to the
+        server and never appears in the address bar.
       </p>
       <div className="filter-row">
         <label>
-          取回码
+          Retrieval code
           <input
             type="text"
             inputMode="text"
@@ -135,7 +144,7 @@ export function RetrievePage() {
           onClick={() => void resolve()}
           disabled={stage.kind === "resolving" || !complete}
         >
-          {stage.kind === "resolving" ? "正在查找…" : "取回"}
+          {stage.kind === "resolving" ? "Looking up…" : "Retrieve"}
         </button>
       </div>
       {stage.kind === "error" && (
@@ -145,11 +154,11 @@ export function RetrievePage() {
       )}
       {stage.kind === "resolved" && (
         <div className="source-preview">
-          <img src={stage.photoUrl} alt="取回的照片" />
+          <img src={stage.photoUrl} alt="Retrieved photo" />
           <dl className="final-details">
             {stage.width && stage.height && (
               <div>
-                <dt>像素</dt>
+                <dt>Pixels</dt>
                 <dd>
                   {stage.width}×{stage.height}
                 </dd>
@@ -157,50 +166,55 @@ export function RetrievePage() {
             )}
             {stage.byteLength && (
               <div>
-                <dt>大小</dt>
+                <dt>Size</dt>
                 <dd>{(stage.byteLength / 1024).toFixed(1)} KB</dd>
               </div>
             )}
             <div>
-              <dt>格式</dt>
+              <dt>Format</dt>
               <dd>{stage.mime}</dd>
             </div>
             {stage.template && (
               <div>
-                <dt>模板</dt>
+                <dt>Template</dt>
                 <dd>
                   {stage.template.id}@{stage.template.version}
                 </dd>
               </div>
             )}
             <div>
-              <dt>服务器到期时间</dt>
-              <dd>{new Date(stage.expiresAt).toLocaleString("zh-CN")}</dd>
+              <dt>Server expiry time</dt>
+              <dd>{new Date(stage.expiresAt).toLocaleString("en-US")}</dd>
             </div>
           </dl>
-          <p className="muted">下载凭证仅本次有效；再次取回需要重新输入取回码。</p>
+          <p className="muted">
+            The download credential is valid only for this fetch; retrieving again requires
+            re-entering the code.
+          </p>
           <div className="step-actions">
             <button type="button" className="primary" onClick={download}>
-              下载照片
+              Download photo
             </button>
           </div>
         </div>
       )}
 
-      <section aria-label="删除照片">
-        <h2>立即删除</h2>
+      <section aria-label="Delete photo">
+        <h2>Delete now</h2>
         <p className="muted">
-          用暂存时生成的删除密钥立即删除这张照片，不必等到期。删除后无法恢复。
+          Use the delete secret from staging to delete this photo immediately, without waiting for
+          expiry. Deletion cannot be undone.
         </p>
         {deleteStage.kind === "done" ? (
           <p role="status" className="muted">
-            已提交删除。为不泄露照片是否存在，删除接口对任何输入都返回相同结果。
+            Delete submitted. To avoid leaking whether a photo exists, the delete endpoint returns
+            the same result for any input.
           </p>
         ) : (
           <>
             <div className="filter-row">
               <label>
-                删除密钥
+                Delete secret
                 <input
                   type="text"
                   autoCorrect="off"
@@ -217,10 +231,10 @@ export function RetrievePage() {
                     onClick={() => void remove()}
                     disabled={!complete || !deleteSecret}
                   >
-                    确认删除
+                    Confirm delete
                   </button>
                   <button type="button" onClick={() => setDeleteStage({ kind: "idle" })}>
-                    取消
+                    Cancel
                   </button>
                 </>
               ) : (
@@ -229,7 +243,7 @@ export function RetrievePage() {
                   onClick={() => setDeleteStage({ kind: "confirm" })}
                   disabled={!complete || !deleteSecret || deleteStage.kind === "deleting"}
                 >
-                  {deleteStage.kind === "deleting" ? "正在删除…" : "删除这张照片"}
+                  {deleteStage.kind === "deleting" ? "Deleting…" : "Delete this photo"}
                 </button>
               )}
             </div>

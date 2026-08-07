@@ -1,16 +1,21 @@
 /**
- * Landmarker 实例管理（GDE-005/006/007）。
+ * Landmarker instance management (GDE-005/006/007).
  *
- * 推理跑在主线程。SPEC §4.4 正文提到 Worker，但 GDE-001~010 的验收表没有一条要求它，
- * GDE-006 反而要求「无 WebGL/WASM/Worker 的降级测试可完成全流程」——
- * 主线程实现是已评估的有意偏差，重新评审条件记在 STATUS.md。
+ * Inference runs on the main thread. SPEC §4.4's prose mentions a Worker, but
+ * no acceptance item in GDE-001~010 requires it; GDE-006 instead requires
+ * that "the degraded path without WebGL/WASM/Worker can complete the full
+ * flow" - the main-thread implementation is an evaluated, deliberate
+ * deviation, with the re-review condition recorded in STATUS.md.
  *
- * 两个实例分工明确：
- * - VIDEO 实例长驻，服务实时预览，时间戳必须严格单调递增；
- * - IMAGE 实例独立，服务静态复检。VIDEO 模式带跨帧 ROI 回环
- *   （PreviousLoopbackCalculator + AssociationNormRectCalculator），
- *   复用它会把最后一帧预览的 ROI 先验带进静态复检，
- *   与 GDE-005「不使用最后一次预览推理的旧结果」的立法意图冲突。
+ * The two instances have clear roles:
+ * - The VIDEO instance is long-lived and serves the live preview; timestamps
+ *   must be strictly monotonic;
+ * - The IMAGE instance is independent and serves the static recheck. VIDEO
+ *   mode carries a cross-frame ROI loop
+ *   (PreviousLoopbackCalculator + AssociationNormRectCalculator),
+ *   and reusing it would leak the last preview frame's ROI prior into the
+ *   static recheck, conflicting with GDE-005's intent of "don't use stale
+ *   results from the last preview inference".
  */
 
 import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
@@ -22,8 +27,9 @@ export const MODEL_URL = new URL("/assets/models/face_landmarker.task", window.l
 export const WASM_PATH = new URL("/assets/models/wasm", window.location.origin).href;
 
 /**
- * 检测置信度阈值。这些是占位值，没有经过固定样本校准——
- * 与 QualityConfig 一样带 testSetVersion，禁止对外表述为官方容差。
+ * Detection confidence thresholds. These are placeholder values, not
+ * calibrated against a fixed sample set - like QualityConfig they carry a
+ * testSetVersion and must never be presented as official tolerances.
  */
 export const LANDMARKER_CONFIDENCE = {
   testSetVersion: "uncalibrated-v1",
@@ -32,11 +38,11 @@ export const LANDMARKER_CONFIDENCE = {
   minTrackingConfidence: 0.5,
 } as const;
 
-/** SPEC §4.4 固定为 2：多脸只用于提示，不做多脸处理。 */
+/** SPEC §4.4 pins this to 2: multiple faces are only a hint, never multi-face processing. */
 export const NUM_FACES = 2;
 
 export interface VideoLandmarker {
-  /** 同步推理一帧。调用方负责帧率门控——这里不再做「忙则丢帧」。 */
+  /** Synchronously infer one frame. Callers own frame-rate gating - no more "drop frames when busy" here. */
   detectVideo(frame: HTMLVideoElement | ImageBitmap, timestampMs: number): FaceObservation[];
 }
 
@@ -56,7 +62,7 @@ const browserDeps: Deps = {
 
 let deps: Deps = browserDeps;
 
-/** 仅供测试注入。 */
+/** For test injection only. */
 export function setLandmarkerDeps(next: Partial<Deps>): void {
   deps = { ...browserDeps, ...next };
 }
@@ -64,8 +70,9 @@ export function setLandmarkerDeps(next: Partial<Deps>): void {
 let videoInstance: Promise<FaceLandmarker> | null = null;
 let imageInstance: Promise<FaceLandmarker> | null = null;
 
-// detectForVideo 要求时间戳严格递增。整个进程共用一个计数器，
-// 避免 performance.now()（约 1e4）与 Date.now()（约 1.75e12）混用导致 wasm 抛错。
+// detectForVideo requires strictly increasing timestamps. One process-wide
+// counter avoids mixing performance.now() (~1e4) with Date.now() (~1.75e12),
+// which would make wasm throw.
 let lastTimestamp = 0;
 
 function monotonic(timestampMs: number): number {
@@ -80,7 +87,7 @@ async function create(runningMode: "VIDEO" | "IMAGE"): Promise<FaceLandmarker> {
     runningMode,
     numFaces: NUM_FACES,
     outputFacialTransformationMatrixes: true,
-    // §4.4 固定为 false。开启它才有 blendshapes，但那不是本产品需要的信号。
+    // §4.4 pins this to false. Enabling it would produce blendshapes, but that is not a signal this product needs.
     outputFaceBlendshapes: false,
     minFaceDetectionConfidence: LANDMARKER_CONFIDENCE.minFaceDetectionConfidence,
     minFacePresenceConfidence: LANDMARKER_CONFIDENCE.minFacePresenceConfidence,
@@ -101,12 +108,14 @@ function toObservations(result: DetectionResult): FaceObservation[] {
   }));
 }
 
-/** 取得长驻的 VIDEO 实例。多次调用共享同一个底层 landmarker。 */
+/** Get the long-lived VIDEO instance. Multiple calls share the same underlying landmarker. */
 export async function acquireVideoLandmarker(): Promise<VideoLandmarker> {
   if (videoInstance === null) {
-    // 失败不缓存，否则一次网络抖动就永久关闭姿态指导。
-    // 但只能清掉**自己**：一次慢速创建失败时，槽位里可能已经换成了后来那次
-    // 成功创建的实例，无条件置空会把它的句柄丢掉，那个实例永远不会被 close。
+    // Failures are not cached, otherwise one network blip would permanently
+    // disable pose guidance. But only **itself** may be cleared: when a slow
+    // creation fails, the slot may already hold a later successful instance,
+    // and clearing unconditionally would drop that instance's handle so it is
+    // never closed.
     const pending: Promise<FaceLandmarker> = create("VIDEO").catch((error: unknown) => {
       if (videoInstance === pending) videoInstance = null;
       throw error;
@@ -123,7 +132,7 @@ export async function acquireVideoLandmarker(): Promise<VideoLandmarker> {
   };
 }
 
-/** 取得独立的 IMAGE 实例，用于静态复检。 */
+/** Get a separate IMAGE instance for the static recheck. */
 export async function acquireImageLandmarker(): Promise<ImageLandmarker> {
   if (imageInstance === null) {
     const pending: Promise<FaceLandmarker> = create("IMAGE").catch((error: unknown) => {
@@ -141,11 +150,13 @@ export async function acquireImageLandmarker(): Promise<ImageLandmarker> {
 }
 
 /**
- * 释放两个实例。离开拍摄流程时调用。
+ * Release both instances. Call when leaving the capture flow.
  *
- * 生命周期刻意保持最简：没有引用计数与 TTL。那套机制自身引入的失败模式
- * （漏 release 泄漏 wasm 堆与 GL 上下文、宽限期内 use-after-close 被空 catch 吞掉）
- * 比它解决的问题更贵；有证据表明重挂载造成可感知开销时再加。
+ * Lifecycle is deliberately minimal: no reference counting or TTL. The
+ * failure modes that mechanism introduces itself (a missed release leaking
+ * the wasm heap and GL context, use-after-close inside the grace period being
+ * swallowed by an empty catch) cost more than the problem it solves; add it
+ * when evidence shows remounting causes noticeable overhead.
  */
 export function releaseLandmarkers(): void {
   releaseVideoLandmarker();
@@ -171,7 +182,7 @@ function closeWhenSettled(instance: Promise<FaceLandmarker> | null): void {
   );
 }
 
-/** 仅供测试：重置单例与时间戳计数器。 */
+/** For tests only: reset the singletons and the timestamp counter. */
 export function resetLandmarkersForTest(): void {
   videoInstance = null;
   imageInstance = null;

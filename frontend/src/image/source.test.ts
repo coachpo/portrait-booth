@@ -77,7 +77,8 @@ function makeDeps(opts: { rawW: number; rawH: number; failFirstDecode?: boolean 
 
 const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 
-/** vi.fn 的 Mock 类型与 SourceImageDeps 参数逆变不兼容，测试经此处 cast 调用。 */
+/** vi.fn's Mock type is contravariant-incompatible with SourceImageDeps's
+ * parameters; tests call through this cast. */
 function load(file: File, deps: FakeDeps) {
   return loadSourceImage(file, undefined, deps as unknown as SourceImageDeps);
 }
@@ -163,7 +164,8 @@ describe("loadSourceImage normalization (SRC-003)", () => {
     const deps = makeDeps({ rawW: 300, rawH: 400, failFirstDecode: true });
     const source = await load(file, deps);
 
-    // 第一次失败（options 不支持）→ 第二次裸解码成功 → 第三次归一化 canvas
+    // First call fails (options unsupported) → second bare decode
+    // succeeds → third normalizes via canvas
     expect(source.orientation).toBe(1);
     expect(source.width).toBe(300);
     expect(source.height).toBe(400);

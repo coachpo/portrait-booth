@@ -1,7 +1,8 @@
 /**
- * 终态渲染（OUT-001~006）。
- * 单次渲染生成不可变 FinalArtifact（sRGB JPEG blob + 内存 manifest）；
- * 预览与导出共用 renderMatrix，本模块只做一次最终绘制。
+ * Final render (OUT-001~006).
+ * A single render produces an immutable FinalArtifact (sRGB JPEG blob + an
+ * in-memory manifest); preview and export share renderMatrix, and this
+ * module draws only the one final pass.
  */
 
 import {
@@ -27,11 +28,14 @@ export interface FinalManifest {
   flipX: boolean;
 }
 
-/** EDT-009 的实测结果：JPEG 不保留 alpha，只能在编码前的画布上看。 */
+/** EDT-009's measured result: JPEG does not preserve alpha, so it can only
+ * be inspected on the canvas before encoding. */
 export interface CoverageReport {
-  /** 实际扫描的像素数；0 表示画布像素不可读，检查结果为 unknown */
+  /** Number of pixels actually scanned; 0 means the canvas pixels are
+   * unreadable and the check result is unknown */
   scannedPixels: number;
-  /** alpha 未满的像素数：裁剪框超出源图时，这些位置编码后会变成黑角 */
+  /** Pixels whose alpha is not full: when the crop frame leaves the source,
+   * these become black corners after encoding */
   transparentPixels: number;
 }
 
@@ -47,7 +51,8 @@ export interface RenderDeps {
   canvasContext: (canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null;
   toBlob: (canvas: HTMLCanvasElement, type: string, quality: number) => Promise<Blob | null>;
   randomId: () => string;
-  /** 读取整幅画布的 RGBA 像素；不可读时返回 null（跨源污染等）。 */
+  /** Read the full canvas RGBA pixels; null when unreadable (cross-origin
+   * taint, etc.). */
   readPixels: (
     ctx: CanvasRenderingContext2D,
     width: number,
@@ -78,10 +83,13 @@ export const browserRenderDeps: RenderDeps = {
   },
 };
 
-// canvas.toBlob 的 quality 由 HTML 规范定义在 0.0–1.0；越界值 UA 一律忽略并回落到
-// 默认 0.92，于是整个二分会反复编码出同一份字节，OUT-003 的体积搜索完全失效。
-// A2：与服务端 backend/app/image_validate.py 的 MIN/MAX_REENCODE_QUALITY
-// （PIL 整数 40–92，换算成 0.4–0.95）共享同一质量区间，两端改动必须同步。
+// canvas.toBlob's quality is defined by the HTML spec as 0.0–1.0; UAs ignore
+// out-of-range values and fall back to the default 0.92, so the whole binary
+// search re-encodes the same bytes and OUT-003's size search is dead.
+// A2: shares the same quality range with the server's
+// backend/app/image_validate.py MIN/MAX_REENCODE_QUALITY
+// (PIL integers 40–92, converted to 0.4–0.95); changing either end requires
+// syncing both sides.
 const MIN_QUALITY = 0.4;
 const MAX_QUALITY = 0.95;
 const QUALITY_STEPS = 10;
@@ -112,7 +120,8 @@ export async function renderFinalArtifact(
   template: TemplateEntry,
   transform: EditTransform,
   deps: RenderDeps = browserRenderDeps,
-  /** ranged_pixels 模板的用户选定尺寸；空/非法回落 default（P6） */
+  /** The user-selected size for ranged_pixels templates; empty/invalid falls
+   * back to default (P6) */
   selectedSize?: OutputSizeOption | null,
 ): Promise<FinalArtifact> {
   const rev = template.revision;
@@ -139,18 +148,20 @@ export async function renderFinalArtifact(
       ppi = rev.output.printPpi;
       break;
     default:
-      throw new RenderError("render-failed", "该模板不需要本地终态渲染");
+      throw new RenderError("render-failed", "this template does not need local final rendering");
   }
 
   const out: Rect = { width: widthPx, height: heightPx };
   const src: Rect = { width: source.width, height: source.height };
 
-  // 最后一道断言：编辑器应已用 fitTransform 把变换投影回合法区域。
-  // 走到这里仍越界，说明裁剪框有一角落在源图之外，成品会带黑角——宁可报错也不出图。
+  // Final assertion: the editor should have projected the transform back
+  // into the valid region via fitTransform. Getting here still out of bounds
+  // means a crop corner sits outside the source and the artifact would carry
+  // black corners - better to error than to produce it.
   if (!isValidTransform(transform, src, out)) {
     throw new RenderError(
       "crop-out-of-bounds",
-      "裁剪框超出源图边界，成品会出现空白或黑角；请缩小裁剪范围或减小旋转角度",
+      "the crop frame is outside the source image, so the artifact would have blank or black corners; shrink the crop or reduce the rotation angle",
     );
   }
 
@@ -158,7 +169,7 @@ export async function renderFinalArtifact(
 
   const canvas = deps.createCanvas(widthPx, heightPx);
   const ctx = deps.canvasContext(canvas);
-  if (!ctx) throw new RenderError("render-failed", "无法创建渲染画布");
+  if (!ctx) throw new RenderError("render-failed", "cannot create the render canvas");
   ctx.setTransform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
   ctx.drawImage(source.bitmap, 0, 0, source.width, source.height);
 
@@ -176,7 +187,7 @@ export async function renderFinalArtifact(
     } catch {
       throw new RenderError(
         "ppi-failed",
-        "当前浏览器编码的 JPEG 无法写入打印密度，这个纸质模板暂时无法在本机生成成品，请更换浏览器后重试",
+        "the current browser's encoded JPEG cannot carry the print density, so this paper template cannot produce an artifact on this device for now; please try another browser",
       );
     }
   }
@@ -199,14 +210,16 @@ export async function renderFinalArtifact(
   };
 }
 
-/** EDT-009：在编码前扫描画布 alpha。JPEG 丢弃 alpha，编码后再查已经查不到。 */
+/** EDT-009: scan the canvas alpha before encoding. JPEG drops alpha, so
+ * after encoding it is no longer inspectable. */
 function scanCoverage(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   deps: RenderDeps,
 ): CoverageReport {
-  // setTransform 之后 getImageData 仍按设备像素取整幅画布，不受当前变换影响
+  // After setTransform, getImageData still reads the whole canvas in device
+  // pixels, unaffected by the current transform
   const data = deps.readPixels(ctx, width, height);
   if (!data || data.length < width * height * 4) {
     return { scannedPixels: 0, transparentPixels: 0 };
@@ -220,11 +233,12 @@ function scanCoverage(
 
 async function encode(canvas: HTMLCanvasElement, quality: number, deps: RenderDeps): Promise<Blob> {
   const blob = await deps.toBlob(canvas, "image/jpeg", quality);
-  if (!blob) throw new RenderError("render-failed", "编码器不可用");
+  if (!blob) throw new RenderError("render-failed", "encoder unavailable");
   return blob;
 }
 
-/** OUT-003：有界二分质量搜索，不可改变规定像素；无法满足时清晰报错。 */
+/** OUT-003: bounded binary quality search; the mandated pixels must not
+ * change; a clear error when unsatisfiable. */
 async function searchQuality(
   canvas: HTMLCanvasElement,
   maxBytes: number,
@@ -249,12 +263,13 @@ async function searchQuality(
     if (hi - lo <= QUALITY_EPSILON) break;
   }
   if (!best) {
-    // 二分从中点起步，下界本身从未被试过；放弃前补一次最低质量
+    // The binary search starts from the midpoint, so the lower bound itself
+    // is never tried; before giving up, try the minimum quality once
     const floor = await encode(canvas, MIN_QUALITY, deps);
     if (floor.size <= maxBytes) return floor;
     throw new RenderError(
       "size-limit",
-      `无法在 ${maxBytes} 字节内编码，建议更换更高压缩容差的源图`,
+      `cannot encode within ${maxBytes} bytes; consider a source image with more compression headroom`,
     );
   }
   return best;

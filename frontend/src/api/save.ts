@@ -1,7 +1,9 @@
 /**
- * save/retrieve API 客户端（SPEC §6.2~§6.5）。
- * KEY/secret 只进 POST body 或内存；幂等键每次新建（会话内重试复用）。
- * 会话 Cookie 由浏览器同源自动携带（Path=/api/v1/saves）。
+ * save/retrieve API client (SPEC §6.2~§6.5).
+ * KEY/secret only ever enter a POST body or memory; a fresh idempotency key
+ * per save (reused across in-session retries).
+ * The session cookie is carried automatically same-origin
+ * (Path=/api/v1/saves).
  */
 
 export interface SaveResponse {
@@ -43,13 +45,13 @@ async function jsonOrThrow(resp: Response): Promise<unknown> {
   try {
     body = await resp.json();
   } catch {
-    // 非 JSON 响应视为无 body
+    // A non-JSON response counts as having no body
   }
   if (!resp.ok) {
     const err = (body ?? null) as { error?: { code?: string; message?: string } } | null;
     throw new ApiError(
       err?.error?.code ?? "UNKNOWN",
-      err?.error?.message ?? `请求失败（HTTP ${resp.status}）`,
+      err?.error?.message ?? `request failed (HTTP ${resp.status})`,
       resp.status,
     );
   }
@@ -100,7 +102,7 @@ export async function downloadPhoto(token: string): Promise<Blob> {
   });
   if (!resp.ok) {
     await jsonOrThrow(resp);
-    throw new ApiError("UNKNOWN", "下载失败", resp.status);
+    throw new ApiError("UNKNOWN", "download failed", resp.status);
   }
   return resp.blob();
 }

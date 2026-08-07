@@ -32,7 +32,7 @@ function face(
   };
 }
 
-/** 构造带眼/下巴关键点的观察：宽度比例 + 中心偏移 */
+/** Build an observation with eye/chin landmarks: width ratio + center offset */
 function landmarksFace(
   widthRatio: number,
   offset: { x: number; y: number },
@@ -50,7 +50,7 @@ function landmarksFace(
   };
 }
 
-/** 带指定角度的位置合规人脸 */
+/** A position-compliant face with the given angles */
 function anglesFace(
   angles: { yaw: number; pitch: number; roll: number },
   widthRatio = 0.3,
@@ -67,11 +67,15 @@ const cos = (d: number) => Math.cos(deg(d));
 const sin = (d: number) => Math.sin(deg(d));
 
 /**
- * 直接由 Ry/Rx/Rz 的定义手写的**列主序**矩阵：col_j = (R0j, R1j, R2j)。
+ * Hand-written **column-major** matrices straight from the Ry/Rx/Rz
+ * definitions: col_j = (R0j, R1j, R2j).
  *
- * 这些是打破自证循环的锚点。用 composeRotationMatrix 去验 decomposeRotationMatrix
- * 时，两边同时按行主序理解矩阵，测试照样全绿——只有写死的矩阵能抓到这种一致的错误。
- * 按行主序读下面任何一个样本，得到的都是符号相反或轴对调的角度。
+ * These are the anchors that break the self-referential loop. Using
+ * composeRotationMatrix to verify decomposeRotationMatrix
+ * has both sides reading the matrix row-major and tests stay green - only
+ * written-out matrices can catch that consistent error.
+ * Reading any sample below row-major yields angles with flipped signs or
+ * swapped axes.
  */
 const COLUMN_MAJOR_SAMPLES: Array<{
   name: string;
@@ -130,8 +134,9 @@ describe("decomposeRotationMatrix (GDE-003)", () => {
   });
 
   describe("divides out the uniform scale", () => {
-    // facialTransformationMatrixes 的左上 3×3 是「旋转 × 均匀缩放」，
-    // 缩放来自把标准脸模型对齐到当前人脸，量级常见于 1.0–2.0。
+    // The top-left 3×3 of facialTransformationMatrixes is "rotation ×
+    // uniform scale"; the scale comes from aligning the canonical face
+    // model to the current face, commonly 1.0–2.0.
     for (const scale of [1.2, 1.6, 2.4]) {
       it(`recovers the same angles at scale ${scale}`, () => {
         const scaled = COLUMN_MAJOR_SAMPLES.map((s) => ({
@@ -148,7 +153,8 @@ describe("decomposeRotationMatrix (GDE-003)", () => {
     }
 
     it("would saturate pitch without the scale division", () => {
-      // 不除缩放时 asin 的入参是 1.6·sin20 ≈ 0.547，读出约 33°而不是 20°
+      // Without dividing out the scale, asin's input is 1.6·sin20 ≈ 0.547,
+      // reading about 33° instead of 20°
       const m = composeRotationMatrix({ yaw: 0, pitch: 20, roll: 0 }, 1.6);
       expect(matrixScale(m)).toBeCloseTo(1.6, 6);
       expect(decomposeRotationMatrix(m).pitch).toBeCloseTo(20, 4);
@@ -156,7 +162,7 @@ describe("decomposeRotationMatrix (GDE-003)", () => {
 
     it("saturates instead of returning NaN for a degenerate matrix", () => {
       const m = composeRotationMatrix({ yaw: 0, pitch: 0, roll: 0 });
-      m[9] = -5; // |R12| > scale：clamp 必须兜住 asin 的定义域
+      m[9] = -5; // |R12| > scale: clamp must keep asin within its domain
       expect(Number.isNaN(decomposeRotationMatrix(m).pitch)).toBe(false);
     });
   });
@@ -194,15 +200,18 @@ describe("selectPrimaryFace", () => {
   });
 
   it("prefers the wider, more centered face", () => {
-    // 回归：这里曾按 score 排序，但 §4.4 把 outputFaceBlendshapes 固定为 false，
-    // score 恒为 undefined，排序全程等价、退化成「取第一张脸」。
+    // Regression: this used to sort by score, but §4.4 pins
+    // outputFaceBlendshapes to false, so score was always undefined, the
+    // ordering was equivalent throughout, and it degenerated to "take the
+    // first face".
     const background = landmarksFace(0.1, { x: 0.3, y: 0.2 }, 0);
     const subject = landmarksFace(0.35, { x: 0, y: 0 }, 1);
     expect(selectPrimaryFace([background, subject])?.faceIndex).toBe(1);
   });
 
   it("keeps the same subject across frames using the previous center", () => {
-    // 两张脸大小接近时，没有先验就会逐帧来回跳
+    // With two similar-sized faces, without the prior the primary face
+    // switches back and forth each frame
     const left = landmarksFace(0.3, { x: -0.2, y: 0 }, 0);
     const right = landmarksFace(0.3, { x: 0.2, y: 0 }, 1);
     expect(selectPrimaryFace([left, right], { x: 0.3, y: 0.4 })?.faceIndex).toBe(0);
@@ -260,19 +269,22 @@ describe("PoseTracker (GDE-001/004)", () => {
   describe("hysteresis (GDE-004)", () => {
     it("uses the tighter threshold before settling", () => {
       const tracker = new PoseTracker();
-      // 首帧无历史，EMA 直接取当前角度：16° 远超 7° 的进入阈值
+      // First frame has no history, so the EMA takes the current angle: 16° is
+      // far above the 7° entry threshold
       expect(tracker.update([anglesFace({ yaw: 16, pitch: 0, roll: 0 })], 0).status).toBe(
         "unstable",
       );
     });
 
     it("holds ready through a small wobble once settled", () => {
-      // 回归：滞回系数曾是 0.7——进入 ready 后阈值反而收紧 30%，
-      // 卡在边界的用户会在 ready 与 unstable 之间来回跳，
-      // 正是滞回本该消除的现象。
+      // Regression: the hysteresis factor used to be 0.7 - after entering
+      // ready the thresholds tightened by 30%, so a user at the boundary
+      // bounced between ready and unstable, exactly what hysteresis is
+      // supposed to eliminate.
       const tracker = new PoseTracker();
       expect(tracker.update([landmarksFace(0.3, { x: 0, y: 0 })], 0).status).toBe("ready");
-      // EMA 后为 8°：高于 7° 的进入阈值，但低于 7×1.3 的退出阈值
+      // After EMA it is 8°: above the 7° entry threshold but below the 7×1.3
+      // exit threshold
       const state = tracker.update([anglesFace({ yaw: 16, pitch: 0, roll: 0 })], 100);
       expect(state.status).toBe("ready");
     });
@@ -288,8 +300,9 @@ describe("PoseTracker (GDE-001/004)", () => {
 
   describe("guidance wording (GDE-002)", () => {
     it("gives the same body-direction instruction regardless of mirroring", () => {
-      // 回归：旧实现用 mirrored 翻转身体方向，等价于断言「换个摄像头人就转了个身」，
-      // 两个分支里必然有一支是错的。
+      // Regression: the old implementation used mirrored to flip body
+      // direction, equivalent to asserting "switching cameras turns the
+      // person around"; one of the two branches is necessarily wrong.
       const plain = new PoseTracker({ mirrored: false });
       const mirrored = new PoseTracker({ mirrored: true });
       const observation = [anglesFace({ yaw: 16, pitch: 0, roll: 0 })];
@@ -305,9 +318,11 @@ describe("PoseTracker (GDE-001/004)", () => {
     });
 
     it("sends a subject standing to their own left back to the right", () => {
-      // 回归：这一条曾写反，用户照做后脸继续往同一方向走，位置永远收敛不了。
-      // MediaPipe 读的是未镜像的原始帧：被摄者向自己的左侧移动时脸往画面右侧走，
-      // 所以 center.x > 0.5 表示人已经偏在自己的左侧。
+      // Regression: this one used to be inverted, so the user followed
+      // the hint and the face kept drifting in the same direction, never
+      // converging. MediaPipe reads the unmirrored raw frame: when the
+      // subject moves to their own left the face moves right on screen, so
+      // center.x > 0.5 means the person is already off to their own left.
       const tracker = new PoseTracker();
       const state = tracker.update([landmarksFace(0.3, { x: 0.3, y: 0 })], 0);
       expect(state.status).toBe("out-of-position");
@@ -321,9 +336,12 @@ describe("PoseTracker (GDE-001/004)", () => {
     });
 
     it("tells a subject who is looking down to raise their head", () => {
-      // 回归：pitch 方向与本文件自述的坐标约定相反，正在低头的用户被要求继续低头。
-      // pitch = asin(-R12/s) 绕 +X 轴，+X 指向被摄者左侧、+Z 朝向相机，
-      // 绕 +X 正转把 +Z 转到 -Y，即脸朝下——所以 pitch > 0 是低头。
+      // Regression: pitch direction contradicted this file's own
+      // coordinate convention - a user looking down was told to keep looking
+      // down. pitch = asin(-R12/s) is about the +X axis, with +X pointing to
+      // the subject's left and +Z toward the camera; positive rotation about
+      // +X turns the forward +Z toward -Y, i.e. face down - so pitch > 0
+      // means looking down.
       const tracker = new PoseTracker();
       const state = tracker.update([anglesFace({ yaw: 0, pitch: 12, roll: 0 })], 0);
       expect(state.status).toBe("unstable");
@@ -339,13 +357,15 @@ describe("PoseTracker (GDE-001/004)", () => {
     it("labels the ready state as an uncalibrated heuristic", () => {
       const tracker = new PoseTracker();
       expect(tracker.update([landmarksFace(0.3, { x: 0, y: 0 })], 0).guidanceHints).toEqual([]);
-      expect(formatGuidance("ready", [], "zh")).toContain("非官方容差");
+      expect(formatGuidance("ready", [], "en")).toContain("not official tolerance");
     });
   });
 
   describe("multi-face and unusable frames", () => {
     it("still tracks the primary face while reporting multi-face", () => {
-      // 回归：多脸时状态先被置成 multi-face 并 return，关联与平滑的结果永远用不上
+      // Regression: with multiple faces the status was set to multi-face
+      // and returned early, so association and smoothing results were never
+      // used
       const tracker = new PoseTracker();
       const subject = landmarksFace(0.35, { x: 0, y: 0 }, 0);
       const bystander = landmarksFace(0.1, { x: 0.3, y: 0.2 }, 1);
@@ -380,7 +400,8 @@ describe("PoseTracker (GDE-001/004)", () => {
 });
 
 describe("analyzeQuality (GDE-010)", () => {
-  // jsdom 无 canvas 2d：注入 fake deps，用纯数据模拟像素
+  // jsdom has no canvas 2d: inject fake deps and simulate pixels with pure
+  // data
   function makeDeps(fill: (x: number, y: number) => [number, number, number], w = 512, h = 512) {
     const data = new Uint8ClampedArray(w * h * 4);
     for (let y = 0; y < h; y++) {
@@ -417,28 +438,28 @@ describe("analyzeQuality (GDE-010)", () => {
     const { deps } = makeDeps(() => [0, 0, 0]);
     const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
     expect(result.status).toBe("warn");
-    expect(result.issues.some((i) => i.includes("曝光不足"))).toBe(true);
+    expect(result.issues.some((i) => i.includes("underexposed"))).toBe(true);
     expect(result.metrics.darkClipRatio).toBeGreaterThan(0.9);
   });
 
   it("warns on a mostly white image (over-exposed)", () => {
     const { deps } = makeDeps(() => [255, 255, 255]);
     const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
-    expect(result.issues.some((i) => i.includes("曝光过度"))).toBe(true);
+    expect(result.issues.some((i) => i.includes("overexposed"))).toBe(true);
     expect(result.metrics.brightClipRatio).toBeGreaterThan(0.9);
   });
 
   it("warns on a flat image (blurred)", () => {
     const { deps } = makeDeps(() => [128, 128, 128]);
     const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
-    expect(result.issues.some((i) => i.includes("模糊"))).toBe(true);
+    expect(result.issues.some((i) => i.includes("blurry"))).toBe(true);
     expect(result.metrics.sharpness).toBeLessThan(QUALITY_CONFIG.sharpnessMin);
   });
 
   it("reports no issue for a textured well-exposed image", () => {
     const { deps } = makeDeps((x, y) => ((x / 8 + y / 8) % 2 < 1 ? [60, 60, 60] : [200, 200, 200]));
     const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
-    expect(result.issues.some((i) => i.includes("明显问题"))).toBe(true);
+    expect(result.issues.some((i) => i.includes("no obvious issues"))).toBe(true);
   });
 
   it("reports unknown for unreadable input", () => {
@@ -449,29 +470,31 @@ describe("analyzeQuality (GDE-010)", () => {
   });
 
   it("measures the background outside the ROI and flags uneven halves (O2)", () => {
-    // 左半 luma 40 带条纹、右半 200 带条纹：仅均值不同，避免触发拉普拉斯模糊
+    // Left half luma 40 with stripes, right half 200 with stripes: only
+    // the means differ, avoiding the Laplacian blur trigger
     const { deps } = makeDeps((x) => {
       const stripe = ((x / 8) % 2 < 1 ? 0 : 30) as number;
       return x < 256
         ? [40 + stripe, 40 + stripe, 40 + stripe]
         : [200 + stripe, 200 + stripe, 200 + stripe];
     });
-    // ROI 只覆盖中央 1/3：左右两半都在背景里
+    // The ROI covers only the central third: both halves are background
     const roi = { x: 1 / 3, y: 1 / 3, width: 1 / 3, height: 1 / 3 };
     const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps, roi);
     expect(result.metrics.background).not.toBeNull();
     expect(result.metrics.background!.leftRightDiff).toBeGreaterThan(100);
-    // 整图回退（不传 ROI）：不计算背景
+    // Whole-image fallback (no ROI passed): background is not computed
     const fallback = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
     expect(fallback.metrics.background).toBeNull();
   });
 
   it("keeps the whole-image fallback silent about the background (O2)", () => {
-    // 条纹图铺满整张画布且不传 ROI：不得产出任何背景 issue（回归：整图
-    // 背景统计会给它打出「不均」，正向文案不再入列）
+    // Stripe image fills the whole canvas with no ROI: must not produce
+    // any background issue (regression: whole-image background stats would
+    // flag it "uneven" and the positive copy would drop out of the list)
     const { deps } = makeDeps((x, y) => ((x / 8 + y / 8) % 2 < 1 ? [60, 60, 60] : [200, 200, 200]));
     const result = analyzeQuality(fakeBitmap(), QUALITY_CONFIG, deps);
-    expect(result.issues.some((i) => i.includes("明显问题"))).toBe(true);
+    expect(result.issues.some((i) => i.includes("no obvious issues"))).toBe(true);
     expect(result.metrics.background).toBeNull();
   });
 });

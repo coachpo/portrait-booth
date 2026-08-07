@@ -1,6 +1,7 @@
 /**
- * 实时姿态指导（GDE-001/002/004/006）。
- * 显示状态文字与独立图形（不只依赖颜色）；模型失败时仅提示不可用，不阻止拍摄。
+ * Real-time pose guidance (GDE-001/002/004/006).
+ * Shows status text plus an independent graphic (not color alone); on model
+ * failure it only says guidance is unavailable and never blocks capture.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -24,7 +25,7 @@ const STATUS_COLOR: Record<PoseState["status"], string> = {
   ready: "ok",
 };
 
-/** 状态不能只靠颜色承载（WCAG 1.4.1）：每种状态配一个不同形状的符号。 */
+/** Status must not be carried by color alone (WCAG 1.4.1): each status gets a differently shaped symbol. */
 const STATUS_GLYPH: Record<PoseState["status"], string> = {
   "no-face": "○",
   "multi-face": "◫",
@@ -33,10 +34,10 @@ const STATUS_GLYPH: Record<PoseState["status"], string> = {
   ready: "●",
 };
 
-/** ≈12 Hz，落在 §4.4 的 8–15 FPS 中段。 */
+/** ≈12 Hz, in the middle of §4.4's 8–15 FPS range. */
 const MIN_INTERVAL_MS = 83;
 
-/** rVFC 在部分浏览器上缺席（§10.2 能力检测）；缺席时回退到 rAF。 */
+/** rVFC is absent in some browsers (§10.2 capability detection); falls back to rAF when absent. */
 function asRvfcVideo(video: HTMLVideoElement | null): HTMLVideoElement | null {
   if (!video) return null;
   return "requestVideoFrameCallback" in video ? video : null;
@@ -52,7 +53,7 @@ function sameGuidance(a: PoseState | null, b: PoseState): boolean {
   );
 }
 
-/** hints 按值比较：先比长度，再逐项比较，顺序敏感（O4）。 */
+/** Compare hints by value: length first, then item by item, order sensitive (O4). */
 function sameHints(a: PoseState["guidanceHints"], b: PoseState["guidanceHints"]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -80,9 +81,11 @@ export function PoseGuide({ videoRef, mirrored }: PoseGuideProps) {
       const video = videoRef.current;
       if (cancelled || !client || !video || video.videoWidth === 0) return;
       const now = performance.now();
-      // 显式帧率门控。旧实现靠 landmarker 内的 busy 标志「忙则丢帧」，
-      // 但推理是同步的，函数返回时 busy 必然已复位——那个分支永远不成立，
-      // 于是推理按显示帧率跑满，主线程被 30–50 ms 的任务塞住。
+      // Explicit frame-rate gating. The old implementation relied on the
+      // landmarker's busy flag to "drop frames when busy", but inference is
+      // synchronous - by the time the function returns, busy is already
+      // reset, so that branch never fired and inference ran at full display
+      // rate, jamming the main thread with 30–50 ms tasks.
       if (now - lastInferAt < MIN_INTERVAL_MS) return;
       lastInferAt = now;
       const faces = measureInference(() => client!.detectVideo(video, now));
@@ -120,19 +123,21 @@ export function PoseGuide({ videoRef, mirrored }: PoseGuideProps) {
 
     return () => {
       cancelled = true;
-      // rVFC 循环必须显式取消。旧实现只 cancelAnimationFrame，
-      // rVFC 分支的回调会一直自我续订：组件卸载后仍在推理，
-      // 每切换一次摄像头就再叠加一条循环。
+      // The rVFC loop must be explicitly cancelled. The old implementation
+      // only called cancelAnimationFrame, so the rVFC branch kept
+      // re-scheduling itself: inference continued after unmount and each
+      // camera switch stacked another loop.
       if (rvfc && vfcHandle) rvfc.cancelVideoFrameCallback(vfcHandle);
       if (raf) cancelAnimationFrame(raf);
       releaseVideoLandmarker();
     };
   }, [videoRef]);
 
-  // 必须定义在推理 effect 之后：React 按定义顺序执行 effect，
-  // 挂载时 tracker 先被创建，这里再把当前镜像标记同步进去。
-  // mirrored 只改 tracker 的一个字段，放进上面的依赖数组会让每次前后摄切换
-  // 都重新下载并初始化模型。
+  // Must be defined after the inference effect: React runs effects in
+  // definition order, so on mount the tracker is created first and the
+  // current mirror flag is synced in here. mirrored only changes one field
+  // of the tracker; putting it in the dependency array above would re-fetch
+  // and re-init the model on every front/rear camera switch.
   useEffect(() => {
     trackerRef.current?.setMirrored(mirrored);
   }, [mirrored]);
@@ -140,14 +145,14 @@ export function PoseGuide({ videoRef, mirrored }: PoseGuideProps) {
   if (available === false) {
     return (
       <p className="muted" role="status">
-        自动姿态指导不可用（模型加载失败），仍可手动拍摄。
+        Automatic pose guidance unavailable (model failed to load); manual capture still works.
       </p>
     );
   }
   if (available === null) {
     return (
       <p className="muted" aria-live="polite">
-        正在加载姿态模型…
+        Loading pose model…
       </p>
     );
   }
@@ -163,12 +168,13 @@ export function PoseGuide({ videoRef, mirrored }: PoseGuideProps) {
       <span className="pose-dot" aria-hidden="true">
         {STATUS_GLYPH[state.status]}
       </span>
-      {/* 只有指令进 aria-live：倒计时每帧都变，播报它会把读屏用户淹没 */}
+      {/* Only guidance text goes into aria-live: the countdown changes every
+      frame and announcing it would drown screen-reader users */}
       <span role="status" aria-live="polite">
         {formatGuidance(state.status, state.guidanceHints, uiLocale())}
       </span>
-      {countdown !== null && <span aria-hidden="true">（保持 {countdown} 秒）</span>}
-      {state.shootable && <span aria-hidden="true"> 可以拍摄。</span>}
+      {countdown !== null && <span aria-hidden="true"> (hold {countdown}s)</span>}
+      {state.shootable && <span aria-hidden="true"> Ready to shoot.</span>}
     </div>
   );
 }

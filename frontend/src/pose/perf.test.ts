@@ -40,7 +40,7 @@ describe("inference stats", () => {
     for (let i = 0; i < 1000; i++) recordInference(i);
     const stats = inferenceStats()!;
     expect(stats.count).toBe(240);
-    // 只保留最近 240 个样本：最小值必然来自尾部窗口
+    // Only the most recent 240 samples are kept: the minimum must come from the tail window
     expect(stats.max).toBe(999);
   });
 
@@ -57,7 +57,7 @@ describe("inference stats", () => {
 
 describe("long task observation", () => {
   it("returns null instead of pretending to measure when unsupported", () => {
-    // jsdom 没有 longtask entry type：必须说“测不了”，而不是报 0 条长任务
+    // jsdom has no longtask entry type: must say "cannot measure" rather than report 0 long tasks
     const observed = observeLongTasks();
     if (observed === null) {
       expect(observed).toBeNull();

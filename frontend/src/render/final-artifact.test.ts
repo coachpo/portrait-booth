@@ -5,7 +5,8 @@ import type { TemplateEntry } from "../lib/templates/types";
 import type { SourceImage } from "../image/source";
 import { renderFinalArtifact, RenderError, type RenderDeps } from "./final-artifact";
 
-/** 最小 JPEG（带 JFIF APP0），用于密度改写与字节扫描；noJfif 时跳过 APP0 段 */
+/** Minimal JPEG (with JFIF APP0) for density rewriting and byte scanning;
+ * skips the APP0 segment when noJfif is set */
 function jpegBytes(noJfif = false): Uint8Array {
   const app0 = [0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 1, 0, 96, 0, 96, 0, 0];
   const seg = (marker: number, payload: number[]): number[] => [
@@ -29,7 +30,7 @@ function template(overrides: Partial<TemplateEntry["revision"]> = {}): TemplateE
       id: "fi",
       version: 3,
       schemaVersion: 1,
-      label: { zh: "芬兰警方证件" },
+      label: { en: "Finnish police document" },
       jurisdiction: "FI",
       documentType: "id",
       submissionChannel: "digital_upload",
@@ -86,10 +87,12 @@ const source = {
 } as unknown as SourceImage;
 
 /**
- * 构造 toBlob：字节长度 = base + quality 驱动的大小关系。
+ * Build toBlob: byte length = base + a quality-driven size relation.
  *
- * 这里刻意复现真实 UA 的行为——canvas.toBlob 的 quality 必须落在 0.0–1.0，
- * 越界值被忽略并回落到默认 0.92。旧实现传 40–95，于是每次迭代都编码出同一份字节。
+ * This deliberately reproduces real UA behavior - canvas.toBlob quality must
+ * be in 0.0–1.0, and out-of-range values are ignored and fall back to the
+ * default 0.92. The old implementation passed 40–95, so every iteration
+ * encoded the same bytes.
  */
 function makeDeps(
   opts: {
@@ -152,7 +155,7 @@ describe("renderFinalArtifact (OUT-001/002/005)", () => {
     expect(artifact.manifest.mime).toBe("image/jpeg");
     expect(artifact.manifest.orientationNormalized).toBe(true);
     expect(artifact.manifest.flipX).toBe(false);
-    // src 800×600 → out 500×653：cover = 653/600 ≈ 1.08833，x 居中偏移 = (500-800*cs)/2
+    // src 800×600 → out 500×653: cover = 653/600 ≈ 1.08833; x centering offset = (500-800*cs)/2
     expect(artifact.manifest.matrix[0]).toBeCloseTo(1.088333, 5);
     expect(artifact.manifest.matrix[1]).toBe(0);
     expect(artifact.manifest.matrix[2]).toBe(0);
@@ -216,7 +219,8 @@ describe("renderFinalArtifact quality search (OUT-003)", () => {
   });
 
   it("only ever passes quality values inside the 0.0–1.0 range", async () => {
-    // 回归：旧实现把 40–95 直接交给 toBlob，HTML 规范要求 0.0–1.0
+    // Regression: the old implementation handed 40–95 to toBlob; the HTML
+    // spec requires 0.0–1.0
     const { deps, qualities } = makeDeps({ sizeAt: (q) => 1000 + q * 1000 });
     await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
     expect(qualities.length).toBeGreaterThan(1);
@@ -227,8 +231,9 @@ describe("renderFinalArtifact quality search (OUT-003)", () => {
   });
 
   it("finds a fitting quality where the UA default alone would not fit", async () => {
-    // 越界 quality 会被 UA 回落到 0.92 → 1920 字节，十次迭代都超限；
-    // 真正生效的搜索能一路降到 0.4 附近，拿到 1400 字节的成品。
+    // An out-of-range quality falls back to 0.92 → 1920 bytes, over the
+    // limit in all ten iterations; a working search drops toward 0.4 and
+    // produces a 1400-byte artifact.
     const { deps, qualities } = makeDeps({ sizeAt: (q) => 1000 + q * 1000 });
     const artifact = await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
     expect(artifact.blob.size).toBeLessThanOrEqual(1500);
@@ -236,7 +241,8 @@ describe("renderFinalArtifact quality search (OUT-003)", () => {
   });
 
   it("produces different byte sizes across iterations", async () => {
-    // 旧实现下每次迭代 UA 都用同一个默认质量，二分退化成十次重复编码
+    // Under the old implementation every iteration used the same UA default
+    // quality, degrading the binary search to ten identical encodings
     const sizes = new Set<number>();
     const { deps } = makeDeps({
       sizeAt: (q) => {
@@ -257,7 +263,8 @@ describe("renderFinalArtifact quality search (OUT-003)", () => {
   });
 
   it("still accepts an artifact that only fits at the lowest quality", async () => {
-    // 二分从中点起步，下界本身从未被试过：这里 1400 只在 q=0.4 时达成
+    // The binary search starts from the midpoint, so the lower bound is
+    // never tried: here 1400 is only reached at q=0.4
     const { deps } = makeDeps({ sizeAt: (q) => (q <= 0.4 ? 1400 : 1600) });
     const artifact = await renderFinalArtifact(source, sizeLimited(1500), IDENTITY_TRANSFORM, deps);
     expect(artifact.blob.size).toBe(1400);
@@ -267,7 +274,8 @@ describe("renderFinalArtifact quality search (OUT-003)", () => {
 describe("renderFinalArtifact crop coverage (EDT-003/EDT-009)", () => {
   it("refuses to render a transform whose crop leaves the source image", async () => {
     const { deps } = makeDeps();
-    // 源图 cover 后刚好贴合输出，任意旋转都会把裁剪框的角甩出源图
+    // The source covers the output exactly; any rotation throws the crop
+    // frame corners outside the source
     const tilted = { ...IDENTITY_TRANSFORM, rotationDeg: 5 };
     await expect(renderFinalArtifact(source, template(), tilted, deps)).rejects.toMatchObject({
       kind: "crop-out-of-bounds",
@@ -339,7 +347,7 @@ describe("renderFinalArtifact print density (OUT-006)", () => {
     const promise = renderFinalArtifact(source, t, IDENTITY_TRANSFORM, deps);
     await expect(promise).rejects.toMatchObject({ kind: "ppi-failed" });
     await expect(promise).rejects.toBeInstanceOf(RenderError);
-    await expect(promise).rejects.toThrow(/无法写入打印密度/);
+    await expect(promise).rejects.toThrow(/print density/);
   });
 });
 

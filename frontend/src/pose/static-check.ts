@@ -1,6 +1,7 @@
 /**
- * 静态复检（GDE-005/009）。
- * 拍摄/上传后对固定位图重跑姿态与质量检查，不使用预览阶段的旧结果。
+ * Static recheck (GDE-005/009).
+ * After capture/upload, reruns pose and quality checks on the fixed bitmap;
+ * never reuses stale results from the preview phase.
  */
 
 import {
@@ -26,13 +27,13 @@ import {
 import { PoseTracker, selectPrimaryFace, type FaceObservation, type PoseState } from "./tracking";
 
 export interface StaticCheckResult {
-  /** 姿态复检（模型不可用时为 null） */
+  /** Pose recheck (null when the model is unavailable) */
   pose: PoseState | null;
-  /** 曝光/清晰度启发式（始终可运行） */
+  /** Exposure/sharpness heuristics (always runnable) */
   quality: QualityResult;
-  /** 姿态模型是否可用 */
+  /** Whether the pose model is available */
   poseAvailable: boolean;
-  /** 眼/嘴几何启发式；未检查为 null */
+  /** Eye/mouth geometry heuristics; null when not checked */
   faceGeometry: { eyesClosed: boolean; mouthOpen: boolean } | null;
 }
 
@@ -47,22 +48,27 @@ export async function runStaticCheck(
 ): Promise<StaticCheckResult> {
   let pose: PoseState | null = null;
   let poseAvailable = false;
-  // 主脸只选一次：几何与姿态必须描述同一张脸（SPEC 固定 numFaces=2）
+  // Select the primary face once: geometry and pose must describe the same
+  // face (SPEC pins numFaces=2)
   let primary: FaceObservation | null = null;
   try {
-    // 独立的 IMAGE 实例：VIDEO 模式带跨帧 ROI 回环，复用它会把最后一帧预览的
-    // ROI 先验带进复检，与 GDE-005「不使用最后一次预览推理的旧结果」冲突。
+    // A separate IMAGE instance: VIDEO mode carries a cross-frame ROI loop,
+    // and reusing it would leak the last preview frame's ROI prior into the
+    // recheck, conflicting with GDE-005 "don't use stale results from the last
+    // preview inference".
     const landmarker = await acquireImageLandmarker();
     const faces = landmarker.detectImage(bitmap);
     poseAvailable = true;
     primary = selectPrimaryFace(faces);
     pose = new PoseTracker().update(primary ? [primary] : [], 0);
   } catch {
-    // GDE-006：模型失败只关闭自动指导。几何在块外计算：几何越界/除零
-    // 抛出的异常不得被记成模型不可用。
+    // GDE-006: a model failure only disables automatic guidance. Geometry is
+    // computed outside the block: exceptions from geometry out-of-bounds or
+    // division by zero must not be recorded as "model unavailable".
   }
 
-  // 几何与 ROI：块外计算（landmark 索引缺失/坐标重合时安全回落 null）
+  // Geometry and ROI: computed outside the block (safely falls back to null
+  // when landmark indices are missing or coordinates coincide)
   let faceGeometry: StaticCheckResult["faceGeometry"] = null;
   let roi: FaceRoi | null = null;
   if (primary) {
@@ -81,31 +87,32 @@ export async function runStaticCheck(
   return { pose, quality, poseAvailable, faceGeometry };
 }
 
-/** 复检结果 → 用户可读警告（无警告返回 null）。 */
+/** Recheck result → user-readable warnings (null when none). */
 export function staticCheckWarnings(result: StaticCheckResult): string[] {
   const warnings: string[] = [];
   if (result.pose && result.pose.status !== "ready") {
     warnings.push(
-      `姿态复检未通过：${formatGuidance(result.pose.status, result.pose.guidanceHints, uiLocale())}`,
+      `pose recheck failed: ${formatGuidance(result.pose.status, result.pose.guidanceHints, uiLocale())}`,
     );
   }
   if (result.faceGeometry?.eyesClosed) {
-    warnings.push("疑似闭眼：眼睛张开的程度低于启发式阈值");
+    warnings.push("eyes may be closed: eye-opening is below the heuristic threshold");
   }
   if (result.faceGeometry?.mouthOpen) {
-    warnings.push("疑似张嘴：嘴部张开的程度高于启发式阈值");
+    warnings.push("mouth may be open: mouth-opening is above the heuristic threshold");
   }
   for (const issue of result.quality.issues) {
-    if (!issue.includes("未发现明显问题")) warnings.push(issue);
+    if (!issue.includes("no obvious issues")) warnings.push(issue);
   }
   return warnings;
 }
 
-/** 复检结果 → 未检查项名称（review 页三态用；GDE-008：未检查必须明说）。 */
+/** Recheck result → names of unchecked items (review page's three states;
+ * GDE-008: unchecked must be stated explicitly). */
 export function staticCheckUnknowns(result: StaticCheckResult): string[] {
   const unknowns: string[] = [];
-  if (!result.poseAvailable) unknowns.push("姿态复检");
-  if (result.faceGeometry === null) unknowns.push("人脸几何（眼/嘴）");
-  if (result.quality.metrics.background === null) unknowns.push("背景均匀度");
+  if (!result.poseAvailable) unknowns.push("pose recheck");
+  if (result.faceGeometry === null) unknowns.push("face geometry (eyes/mouth)");
+  if (result.quality.metrics.background === null) unknowns.push("background uniformity");
   return unknowns;
 }

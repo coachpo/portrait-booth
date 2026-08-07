@@ -1,7 +1,8 @@
 /**
- * 源照片载入（SRC-001~005, §8.1）。
- * 顺序：大小限制 → 文件头解析（尺寸/格式/EXIF）→ 解码前限制 → 解码 →
- * EXIF 归一化 + 预算内缩放 → 归一化位图。选择文件不产生任何网络请求（SRC-005）。
+ * Source photo loading (SRC-001~005, §8.1).
+ * Order: size limits → header parsing (dimensions/format/EXIF) → pre-decode
+ * limits → decode → EXIF normalization + budgeted scaling → normalized
+ * bitmap. Selecting a file makes no network requests (SRC-005).
  */
 
 import { normalizedSize, orientationTransform, withScale } from "./exif";
@@ -10,13 +11,13 @@ import type { ImageFormat } from "./header";
 import type { StaticCheckResult } from "../pose/static-check";
 
 export interface SourceLimits {
-  /** 单文件字节上限（SRC-002 默认 15 MB） */
+  /** Per-file byte cap (SRC-002 default 15 MB) */
   maxBytes: number;
-  /** 像素上限（默认 24 MP） */
+  /** Pixel cap (default 24 MP) */
   maxMegapixels: number;
-  /** 任一边上限（默认 8,000 px） */
+  /** Per-edge cap (default 8,000 px) */
   maxEdgePx: number;
-  /** 归一化工作位图上限（§8.1.2 单工作位图 ≤16 MP） */
+  /** Normalized working-bitmap cap (§8.1.2: a single working bitmap ≤16 MP) */
   maxWorkMegapixels: number;
 }
 
@@ -27,7 +28,7 @@ export const DEFAULT_SOURCE_LIMITS: SourceLimits = {
   maxWorkMegapixels: 16,
 };
 
-/** 全部 RGBA 位图/Canvas 并存总预算（§8.1.2 默认 128 MiB） */
+/** Total budget for all coexisting RGBA bitmaps/canvases (§8.1.2 default 128 MiB) */
 export const TOTAL_BITMAP_BUDGET_BYTES = 128 * 1024 * 1024;
 
 export type SourceErrorKind =
@@ -49,20 +50,20 @@ export class SourceLoadError extends Error {
 export interface SourceImage {
   file: Blob;
   format: Exclude<ImageFormat, "heif">;
-  /** 文件头中的 EXIF orientation（1–8，无信息为 1） */
+  /** EXIF orientation from the file header (1–8; 1 when absent) */
   orientation: number;
-  /** 解码前（文件头）像素尺寸 */
+  /** Pixel dimensions from the header (pre-decode) */
   rawWidth: number;
   rawHeight: number;
-  /** 归一化 + 预算缩放后的工作位图尺寸 */
+  /** Working bitmap size after normalization + budgeted scaling */
   width: number;
   height: number;
   bitmap: ImageBitmap;
-  /** 预览用 Object URL（§8.1.2 原始 Blob 留会话内存） */
+  /** Object URL for preview (§8.1.2: the original Blob stays in session memory) */
   previewUrl: string;
-  /** 拍摄/上传后的静态复检结果（GDE-005/009；可能缺失） */
+  /** Static recheck result after capture/upload (GDE-005/009; may be absent) */
   staticChecks?: StaticCheckResult;
-  /** 释放位图与 Object URL（§8.1.5）；调用后对象不可再用 */
+  /** Release the bitmap and Object URL (§8.1.5); the object must not be used after */
   dispose(): void;
 }
 
@@ -86,7 +87,7 @@ export const browserDeps: SourceImageDeps = {
   canvasContext: (canvas) => canvas.getContext("2d"),
 };
 
-/** 文件头读取窗口：覆盖所有目标格式的尺寸/方向字段 */
+/** File-header read window: covers all target formats' dimension/orientation fields */
 const HEADER_READ_BYTES = 64 * 1024;
 
 export async function loadSourceImage(
@@ -97,7 +98,7 @@ export async function loadSourceImage(
   if (file.size > limits.maxBytes) {
     throw new SourceLoadError(
       "file-too-large",
-      `文件大小 ${formatBytes(file.size)} 超过上限 ${formatBytes(limits.maxBytes)}`,
+      `file size ${formatBytes(file.size)} exceeds the limit ${formatBytes(limits.maxBytes)}`,
     );
   }
 
@@ -105,39 +106,43 @@ export async function loadSourceImage(
     new Uint8Array(await file.slice(0, HEADER_READ_BYTES).arrayBuffer()),
   );
   if (!head) {
-    throw new SourceLoadError("unsupported-format", "无法识别的图片格式，仅支持 JPEG、PNG、WebP");
+    throw new SourceLoadError(
+      "unsupported-format",
+      "unrecognized image format; only JPEG, PNG, and WebP are supported",
+    );
   }
   if (head.format === "heif") {
     throw new SourceLoadError(
       "heif-unsupported",
-      "不支持 HEIC/HEIF 格式：请将照片转换为 JPEG/PNG/WebP 后重试，或改用摄像头拍摄",
+      "HEIC/HEIF is not supported: convert the photo to JPEG/PNG/WebP and retry, or use camera capture instead",
     );
   }
   if (head.width * head.height > limits.maxMegapixels * 1e6) {
     throw new SourceLoadError(
       "dimension-too-large",
-      `像素 ${head.width}×${head.height}（${((head.width * head.height) / 1e6).toFixed(1)} MP）超过上限 ${limits.maxMegapixels} MP`,
+      `pixels ${head.width}×${head.height} (${((head.width * head.height) / 1e6).toFixed(1)} MP) exceed the ${limits.maxMegapixels} MP cap`,
     );
   }
   if (Math.max(head.width, head.height) > limits.maxEdgePx) {
     throw new SourceLoadError(
       "dimension-too-large",
-      `边长 ${Math.max(head.width, head.height)} px 超过上限 ${limits.maxEdgePx} px`,
+      `edge ${Math.max(head.width, head.height)} px exceeds the ${limits.maxEdgePx} px cap`,
     );
   }
 
   let bitmap: ImageBitmap;
   let orientation = head.orientation;
   try {
-    // 先不应用 EXIF，由本模块统一归一化（行为跨浏览器一致）
+    // EXIF is not applied yet; this module normalizes centrally (consistent behavior across browsers)
     bitmap = await deps.createImageBitmap(file, { imageOrientation: "none" });
   } catch {
     try {
-      // 旧浏览器不支持 imageOrientation 选项：让浏览器应用 EXIF，视位图为已归一化
+      // Older browsers lack the imageOrientation option: let the browser
+      // apply EXIF and treat the bitmap as already normalized
       bitmap = await deps.createImageBitmap(file);
       orientation = 1;
     } catch {
-      throw new SourceLoadError("decode-failed", "无法解码图片");
+      throw new SourceLoadError("decode-failed", "image cannot be decoded");
     }
   }
 
@@ -151,7 +156,7 @@ export async function loadSourceImage(
 
   const canvas = deps.createCanvas(width, height);
   const ctx = deps.canvasContext(canvas);
-  if (!ctx) throw new SourceLoadError("decode-failed", "无法解码图片");
+  if (!ctx) throw new SourceLoadError("decode-failed", "image cannot be decoded");
   ctx.setTransform(
     withScale(orientationTransform(orientation, bitmap.width, bitmap.height), scale),
   );
@@ -162,7 +167,7 @@ export async function loadSourceImage(
   try {
     normalizedBitmap = await deps.createImageBitmap(canvas);
   } catch {
-    throw new SourceLoadError("decode-failed", "无法解码图片");
+    throw new SourceLoadError("decode-failed", "image cannot be decoded");
   }
 
   const previewUrl = URL.createObjectURL(file);
@@ -184,17 +189,18 @@ export async function loadSourceImage(
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
-  "file-too-large": "文件大小超过上限（15 MB），请压缩或换一张照片。",
-  "dimension-too-large": "照片像素超过上限（24 MP 或边长 8,000 px），请换一张照片。",
-  "unsupported-format": "无法识别的图片格式，仅支持 JPEG、PNG、WebP。",
+  "file-too-large": "file size exceeds the limit (15 MB); compress or choose another photo.",
+  "dimension-too-large":
+    "photo pixels exceed the limit (24 MP or 8,000 px per edge); choose another photo.",
+  "unsupported-format": "unrecognized image format; only JPEG, PNG, and WebP are supported.",
   "heif-unsupported":
-    "不支持 HEIC/HEIF 格式。请将照片转换为 JPEG/PNG/WebP 后重试，或改用摄像头拍摄。",
-  "decode-failed": "图片解码失败，文件可能已损坏。",
+    "HEIC/HEIF is not supported. Convert the photo to JPEG/PNG/WebP and retry, or use camera capture instead.",
+  "decode-failed": "image decoding failed; the file may be corrupt.",
 };
 
 export function sourceErrorMessage(err: unknown): string {
   if (err instanceof SourceLoadError) return ERROR_MESSAGES[err.kind] ?? err.message;
-  return "读取文件失败，请重试。";
+  return "failed to read the file; please retry.";
 }
 
 export function formatBytes(bytes: number): string {

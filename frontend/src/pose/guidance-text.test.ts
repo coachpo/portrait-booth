@@ -4,48 +4,56 @@ import { ALL_GUIDANCE_HINTS, formatGuidance } from "./guidance-text";
 import type { GuidanceHint } from "./tracking";
 
 describe("formatGuidance (O4)", () => {
-  it("joins out-of-position hints with full-width commas and a period (O4)", () => {
-    expect(formatGuidance("out-of-position", ["move-closer", "move-own-right"], "zh")).toBe(
-      "人脸位置需调整：请靠近一些，请向你自己的右侧移动。",
+  it("joins out-of-position hints with comma-space and a period (O4)", () => {
+    expect(formatGuidance("out-of-position", ["move-closer", "move-own-right"], "en")).toBe(
+      "Face position needs adjustment: move a little closer, move to your own right.",
     );
   });
 
   it("returns the whole sentence for terminal states without empty fragments (O4)", () => {
-    expect(formatGuidance("no-face", [], "zh")).toBe("未检测到人脸：请进入画面。");
-    expect(formatGuidance("multi-face", [], "zh")).toBe("检测到多张人脸：请确保画面中只有一个人。");
-    // ready 文案必须保留「非官方容差」（与 checks 的 HEURISTIC_NOTICE 措辞不同，不得合并）
-    expect(formatGuidance("ready", [], "zh")).toBe(
-      "姿势稳定，可以拍摄（启发式判断，非官方容差）。",
+    expect(formatGuidance("no-face", [], "en")).toBe(
+      "No face detected: please step into the frame.",
+    );
+    expect(formatGuidance("multi-face", [], "en")).toBe(
+      "Multiple faces detected: please make sure only one person is in the frame.",
+    );
+    // ready copy must keep "not official tolerance" (wording differs from
+    // checks' HEURISTIC_NOTICE; must not be merged)
+    expect(formatGuidance("ready", [], "en")).toBe(
+      "Pose stable, ready to shoot (heuristic judgment, not official tolerance).",
     );
   });
 
   it("formats unstable hints in yaw/pitch/roll order (O4)", () => {
     expect(
-      formatGuidance("unstable", ["turn-own-right", "raise-head", "level-own-left"], "zh"),
-    ).toBe("姿势需调整：请向你自己的右侧转一点，请抬头一点，请把头向你自己的左侧摆正。");
-    expect(formatGuidance("unstable", [], "zh")).toBe("姿势需调整：请保持当前姿势。");
+      formatGuidance("unstable", ["turn-own-right", "raise-head", "level-own-left"], "en"),
+    ).toBe(
+      "Pose needs adjustment: turn slightly to your own right, raise your head a little, tilt your head to your own left to level it.",
+    );
+    expect(formatGuidance("unstable", [], "en")).toBe("Pose needs adjustment: hold this pose.");
   });
 
-  it("falls back to zh for unknown locales (O4)", () => {
-    expect(formatGuidance("ready", [], "en")).toBe(
-      "姿势稳定，可以拍摄（启发式判断，非官方容差）。",
+  it("falls back to en for unknown locales (O4)", () => {
+    expect(formatGuidance("ready", [], "zh")).toBe(
+      "Pose stable, ready to shoot (heuristic judgment, not official tolerance).",
     );
   });
 
-  it("covers every hint with a Chinese phrase (O4)", () => {
+  it("covers every hint with an English phrase (O4)", () => {
     for (const hint of ALL_GUIDANCE_HINTS) {
-      const text = formatGuidance("unstable", [hint], "zh");
-      expect(text.length).toBeGreaterThan("姿势需调整：".length);
+      const text = formatGuidance("unstable", [hint], "en");
+      expect(text.length).toBeGreaterThan("Pose needs adjustment: ".length);
     }
-    // 全部 hint 都应在映射表内（Record<联合类型> 编译期已穷尽；这里做运行期兜底）
+    // Every hint must be inside the mapping table (Record<union type> is
+    // exhaustive at compile time; this is a runtime backstop)
     const all: GuidanceHint[] = [...ALL_GUIDANCE_HINTS];
     const unique = new Set(all);
     expect(unique.size).toBe(all.length);
   });
 
   it("keeps the shell for out-of-position fallback hint (O4)", () => {
-    expect(formatGuidance("out-of-position", ["adjust-position"], "zh")).toBe(
-      "人脸位置需调整：请调整站位。",
+    expect(formatGuidance("out-of-position", ["adjust-position"], "en")).toBe(
+      "Face position needs adjustment: adjust your position.",
     );
   });
 });

@@ -20,9 +20,9 @@ export interface FinalPageProps {
   staged: StagedReceipt | null;
   stagedStale: boolean;
   onStaged: (receipt: StagedReceipt | null) => void;
-  /** ranged_pixels 模板的用户选定尺寸（P6） */
+  /** The user-selected size for ranged_pixels templates (P6) */
   selectedSize?: OutputSizeOption | null;
-  /** 体积超限时降回默认尺寸重新生成 */
+  /** Regenerate at the default size when the artifact exceeds the limit */
   onUseDefaultSize?: () => void;
 }
 
@@ -33,7 +33,7 @@ function todayStamp(): string {
   return `${d.getFullYear()}${m}${day}`;
 }
 
-/** OUT-008：文件名不含姓名或 KEY */
+/** OUT-008: the filename contains neither name nor KEY */
 function exportFilename(template: TemplateEntry): string {
   const rev = template.revision;
   return `${rev.jurisdiction.toLowerCase()}-${rev.documentType}-${rev.submissionChannel}-${todayStamp()}.jpg`;
@@ -44,36 +44,39 @@ export interface PhysicalSizeInfo {
   printReady: boolean;
 }
 
-/** OUT-006：毫米数值必须与打印结论绑定在同一处，不得裸展示 */
+/** OUT-006: the millimeter value must stay bound to the print conclusion at
+ * one place; never shown bare */
 export function physicalSizeInfo(template: TemplateEntry): PhysicalSizeInfo | null {
   const out = template.revision.output;
   if (out.kind !== "physical_raster") return null;
   return {
-    mm: `${out.widthMm}×${out.heightMm} 毫米`,
+    mm: `${out.widthMm}×${out.heightMm} mm`,
     printReady: isPrintReady(template),
   };
 }
 
-/** TMP-002 披露块：来源、限制短语、复核注记三个子块各自判空，全空则不渲染 */
+/** TMP-002 disclosure block: the source / restriction-phrases / review-notes
+ * sub-blocks each render when non-empty; the whole block is skipped when all
+ * are empty */
 function TemplateDisclosure({ entry }: { entry: TemplateEntry }) {
   const rev = entry.revision;
   const restrictions = capabilityRestrictions(rev.capabilities);
   const notes = sourceNotesFor(rev, uiLocale());
   if (rev.sources.length === 0 && restrictions.length === 0 && notes.length === 0) return null;
   return (
-    <section className="template-disclosure" aria-label="模板披露">
-      <h3>模板披露</h3>
+    <section className="template-disclosure" aria-label="Template disclosure">
+      <h3>Template disclosure</h3>
       {rev.sources.length > 0 && (
         <div>
-          <h4>来源</h4>
+          <h4>Sources</h4>
           <ul>
             {rev.sources.map((s) => (
               <li key={s.id}>
                 <a href={s.url} target="_blank" rel="noreferrer noopener">
-                  {s.title}（{s.authority}）
+                  {s.title} ({s.authority})
                 </a>
-                {s.sourceUpdatedAt && <span className="muted"> 更新于 {s.sourceUpdatedAt}</span>}
-                <span className="muted"> 访问于 {s.accessedAt}</span>
+                {s.sourceUpdatedAt && <span className="muted"> updated {s.sourceUpdatedAt}</span>}
+                <span className="muted"> accessed {s.accessedAt}</span>
               </li>
             ))}
           </ul>
@@ -81,11 +84,11 @@ function TemplateDisclosure({ entry }: { entry: TemplateEntry }) {
       )}
       {restrictions.length > 0 && (
         <div>
-          <h4>模板限制</h4>
+          <h4>Template restrictions</h4>
           <ul>
             {restrictions.map((r) => (
               <li key={r.id}>
-                <strong>{r.level === "forbidden" ? "禁止" : "警告"}：</strong>
+                <strong>{r.level === "forbidden" ? "Forbidden" : "Warning"}: </strong>
                 {r.text}
               </li>
             ))}
@@ -94,7 +97,7 @@ function TemplateDisclosure({ entry }: { entry: TemplateEntry }) {
       )}
       {notes.length > 0 && (
         <div>
-          <h4>模板复核记录</h4>
+          <h4>Template review record</h4>
           <ul>
             {notes.map((n, i) => (
               <li key={i}>{n}</li>
@@ -133,10 +136,13 @@ export function FinalPage({
   }, [previewUrl]);
 
   useEffect(() => {
-    // 每次渲染前清空旧值：失败态不留上一次成品，成功态不留上一次错误/重试按钮。
-    // 必须同步写在 effect 体最前（写进 then/catch 或另开 effect 都清不掉旧值），
-    // react-hooks/set-state-in-effect 的告警是此处有意例外（工单 A3 指定写法）
-    /* eslint-disable react-hooks/set-state-in-effect -- 同步清空旧渲染结果 */
+    // Clear stale values before every render: the failure state keeps no
+    // previous artifact, the success state keeps no previous error/retry
+    // button. This must be written synchronously at the very top of the
+    // effect body (writing in then/catch or a separate effect cannot clear
+    // the old values); the react-hooks/set-state-in-effect warning is an
+    // intentional exception here (ticket A3's mandated pattern)
+    /* eslint-disable react-hooks/set-state-in-effect -- synchronously clear stale render results */
     setError(null);
     setErrorKind(null);
     setArtifact(null);
@@ -147,13 +153,14 @@ export function FinalPage({
       .then(async (a) => {
         if (cancelled) return;
         setArtifact(a);
-        // 静态复检已经跑出真实结果，检查摘要必须用它，而不是写「后续版本提供」
+        // The static recheck already produced real results; the summary must
+        // use them instead of writing "provided in a later version"
         setChecks(await buildChecks(a, template, source.staticChecks ?? null, selectedSize));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setErrorKind(err instanceof RenderError ? err.kind : null);
-        setError(err instanceof Error ? err.message : "终态渲染失败");
+        setError(err instanceof Error ? err.message : "final render failed");
       });
     return () => {
       cancelled = true;
@@ -163,7 +170,8 @@ export function FinalPage({
   const filename = exportFilename(template);
   const physical = physicalSizeInfo(template);
   const rev = template.revision;
-  // 体积超限时的降档目标：模板默认尺寸（P6 坑 8：重试跑同一尺寸必然再次失败）
+  // Downgrade target on size-limit: the template's default size (P6 ticket
+  // 8: retrying the same size fails again by construction)
   const defaultSize = resolveOutputSize(rev, null);
   const canDowngrade =
     errorKind === "size-limit" &&
@@ -184,70 +192,70 @@ export function FinalPage({
   };
 
   return (
-    <section aria-label="终态照片">
-      <h2>终态照片</h2>
+    <section aria-label="Final photo">
+      <h2>Final photo</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, uiLocale())}（{jurisdictionName(rev.jurisdiction)}）
+        Selected template: {entryLabel(template, uiLocale())} ({jurisdictionName(rev.jurisdiction)})
       </p>
       {error && (
         <div role="alert" className="template-error">
           <p>{error}</p>
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-            重试
+            Retry
           </button>
           {canDowngrade && (
             <button type="button" onClick={onUseDefaultSize}>
-              改用 {defaultSize.width}×{defaultSize.height} 重新生成
+              Regenerate at {defaultSize.width}×{defaultSize.height}
             </button>
           )}
         </div>
       )}
-      {!artifact && !error && <p aria-live="polite">正在渲染终态照片…</p>}
+      {!artifact && !error && <p aria-live="polite">Rendering final photo…</p>}
       {artifact && (
         <>
           <div className="source-preview">
-            <img src={previewUrl ?? undefined} alt="终态照片预览" />
+            <img src={previewUrl ?? undefined} alt="Final photo preview" />
           </div>
           <dl className="final-details">
             <div>
-              <dt>像素</dt>
+              <dt>Pixels</dt>
               <dd>
                 {artifact.manifest.widthPx}×{artifact.manifest.heightPx}
               </dd>
             </div>
             {physical && (
               <div>
-                <dt>物理尺寸</dt>
+                <dt>Physical size</dt>
                 <dd>
                   {physical.mm}
                   {physical.printReady
-                    ? "（可按实际尺寸打印）"
-                    : "（参考图：打印密度未经校准打印验证）"}
+                    ? " (printable at actual size)"
+                    : " (reference image: print density not verified by calibrated print)"}
                 </dd>
               </div>
             )}
             <div>
-              <dt>格式</dt>
+              <dt>Format</dt>
               <dd>JPEG · sRGB</dd>
             </div>
             <div>
-              <dt>大小</dt>
+              <dt>Size</dt>
               <dd>{(artifact.blob.size / 1024).toFixed(1)} KB</dd>
             </div>
             <div>
-              <dt>模板版本</dt>
+              <dt>Template version</dt>
               <dd>
                 {rev.id}@{rev.version}
               </dd>
             </div>
             <div>
-              <dt>本项目复核日期</dt>
+              <dt>Review date for this project</dt>
               <dd>{template.publication.verifiedAt}</dd>
             </div>
             {transform.rotationDeg !== 0 && (
               <div>
-                <dt>旋转</dt>
-                <dd>{transform.rotationDeg}°（仅纠正画布方向）</dd>
+                <dt>Rotation</dt>
+                <dd>{transform.rotationDeg}° (orientation correction only)</dd>
               </div>
             )}
           </dl>
@@ -257,33 +265,36 @@ export function FinalPage({
                 <li key={c.id} className={`check-${c.status}`}>
                   <strong>{c.label}：</strong>
                   {statusText(c.status)}
-                  {c.detail && <span className="muted">（{c.detail}）</span>}
+                  {c.detail && <span className="muted"> ({c.detail})</span>}
                 </li>
               ))}
             </ul>
           )}
           <TemplateDisclosure entry={template} />
           <p className="muted">
-            姿态、曝光与清晰度为启发式判断，未经官方容差校准，不代表签发机关一定受理。
-            若因医疗或身体原因无法保持标准姿态，仍可继续导出；部分签发机关提供医疗或残障例外。
+            Pose, exposure, and sharpness are heuristic judgments, not calibrated to official
+            tolerances, and do not guarantee acceptance by the issuing authority. If a medical or
+            physical condition prevents holding the standard pose, you may still export; some
+            issuing authorities offer medical or disability exceptions.
           </p>
           {template.publication.status !== "active" && (
             <p className="warn-text">{template.publication.statusReason}</p>
           )}
         </>
       )}
-      {/* 出口无条件渲染：渲染失败时也有回编辑/重开的确定路径 */}
+      {/* Exits render unconditionally: even on render failure there is a
+      deterministic path back to edit or restart */}
       <div className="step-actions">
         {artifact && (
           <button type="button" className="primary" onClick={download}>
-            下载 {filename}
+            Download {filename}
           </button>
         )}
         <button type="button" onClick={onBack}>
-          返回编辑
+          Back to edit
         </button>
         <button type="button" onClick={onRestart}>
-          重新开始
+          Restart
         </button>
       </div>
       {artifact && (
@@ -302,14 +313,14 @@ export function FinalPage({
 function statusText(status: CheckItem["status"]): string {
   switch (status) {
     case "pass":
-      return "通过";
+      return "Passed";
     case "warn":
-      return "警告";
+      return "Warning";
     case "fail":
-      return "未通过";
+      return "Failed";
     case "unknown":
-      return "未检查";
+      return "Not checked";
     case "manual":
-      return "需人工确认";
+      return "Needs manual confirmation";
   }
 }

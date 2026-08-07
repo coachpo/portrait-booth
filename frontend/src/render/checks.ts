@@ -1,8 +1,10 @@
 /**
- * 终态检查摘要（OUT-007, GDE-008）。
- * 区分 pass/warn/fail/unknown/manual。姿态与曝光取自静态复检的真实结果；
- * 复检未运行或模型不可用时才是 unknown，不再无条件写「后续版本提供」。
- * 模板 captureRules 中 evaluation 为 manual 的强制项显示为「需人工确认」。
+ * Final check summary (OUT-007, GDE-008).
+ * Distinguishes pass/warn/fail/unknown/manual. Pose and exposure come from
+ * the static recheck's real results; only when the recheck did not run or
+ * the model is unavailable do they become unknown - never an unconditional
+ * "provided in a later version". Mandatory captureRules items with
+ * evaluation manual show as "needs manual confirmation".
  */
 
 import { resolveOutputSize, type OutputSizeOption } from "../editor/edit-transform";
@@ -23,23 +25,26 @@ export interface CheckItem {
   detail?: string;
 }
 
-/** 启发式检查的统一声明：这些阈值未经官方校准，不构成受理承诺。 */
-export const HEURISTIC_NOTICE = "启发式判断，未经官方容差校准";
+/** Unified disclaimer for heuristic checks: these thresholds are not
+ * officially calibrated and constitute no acceptance promise. */
+export const HEURISTIC_NOTICE = "heuristic judgment, not calibrated to official tolerance";
 
 export async function buildChecks(
   artifact: FinalArtifact,
   template: TemplateEntry,
   staticChecks?: StaticCheckResult | null,
-  /** ranged_pixels 模板的用户选定尺寸；不传回落 default（P6） */
+  /** The user-selected size for ranged_pixels templates; defaults when omitted (P6) */
   selectedSize?: OutputSizeOption | null,
 ): Promise<CheckItem[]> {
   const rev = template.revision;
   const bytes = new Uint8Array(await artifact.blob.arrayBuffer());
   const checks: CheckItem[] = [];
 
-  // OUT-002：精确像素。expected 来自「选定尺寸」独立路径，越界/破比例的
-  // 选择会被 resolveOutputSize 回落 default——manifest 与 expected 永远不会
-  // 退化成自己跟自己比；对 exact/ranged/physical 三种 kind 一律生效。
+  // OUT-002: exact pixels. expected comes from the "selected size"
+  // independent path; out-of-range/broken-aspect selections fall back to
+  // default via resolveOutputSize - manifest and expected can never degrade
+  // into comparing against themselves; applies to all three kinds
+  // exact/ranged/physical.
   const expected = resolveOutputSize(rev, selectedSize);
   const sizeOk =
     expected !== null &&
@@ -47,116 +52,123 @@ export async function buildChecks(
     artifact.manifest.heightPx === expected.height;
   checks.push({
     id: "exact-pixels",
-    label: "像素尺寸",
+    label: "Pixel size",
     status: sizeOk ? "pass" : "fail",
     detail: sizeOk
-      ? `${artifact.manifest.widthPx}×${artifact.manifest.heightPx} 像素（精确匹配）`
-      : `输出 ${artifact.manifest.widthPx}×${artifact.manifest.heightPx}，模板要求 ${expected?.width}×${expected?.height}`,
+      ? `${artifact.manifest.widthPx}×${artifact.manifest.heightPx} pixels (exact match)`
+      : `output ${artifact.manifest.widthPx}×${artifact.manifest.heightPx}; template requires ${expected?.width}×${expected?.height}`,
   });
 
-  // OUT-005：JPEG/sRGB
+  // OUT-005: JPEG/sRGB
   checks.push({
     id: "format",
-    label: "格式",
+    label: "Format",
     status: artifact.blob.type === "image/jpeg" ? "pass" : "fail",
-    detail: "JPEG · sRGB（画布渲染，无色彩配置）",
+    detail: "JPEG · sRGB (canvas-rendered, no color profile)",
   });
 
-  // OUT-004：元数据剥离
+  // OUT-004: metadata stripping
   checks.push({
     id: "metadata",
-    label: "元数据",
+    label: "Metadata",
     status: hasExifSegment(bytes) ? "fail" : "pass",
-    detail: hasExifSegment(bytes) ? "检测到 EXIF，应已剥离" : "EXIF/GPS/嵌入缩略图已剥离",
+    detail: hasExifSegment(bytes)
+      ? "EXIF detected; it should have been stripped"
+      : "EXIF/GPS/embedded thumbnail stripped",
   });
 
-  // OUT-003：文件大小
+  // OUT-003: file size
   const maxBytes = rev.outputFile?.sizeLimit?.maxBytes;
   if (maxBytes) {
     checks.push({
       id: "file-size",
-      label: "文件大小",
+      label: "File size",
       status: artifact.blob.size <= maxBytes ? "pass" : "fail",
       detail: `${Math.round(artifact.blob.size / 1024)} KB ≤ ${Math.round(maxBytes / 1024)} KB`,
     });
   }
 
-  // OUT-006：纸质模板 PPI
+  // OUT-006: paper-template PPI
   if (rev.output.kind === "physical_raster") {
     const density = readJpegDensity(bytes);
     const ok = density?.units === 1 && density.xdensity === rev.output.printPpi;
     checks.push({
       id: "print-density",
-      label: "打印密度",
+      label: "Print density",
       status: ok ? "pass" : "fail",
       detail: ok
         ? isPrintReady(template)
-          ? `${rev.output.printPpi} dpi（JFIF APP0）；已通过校准打印验证`
-          : `${rev.output.printPpi} dpi（JFIF APP0）；PPI 来源 ${rev.output.ppiProvenance}，未经校准打印验证`
-        : `密度 ${density ? `${density.xdensity} dpi` : "缺失"}，模板要求 ${rev.output.printPpi} dpi`,
+          ? `${rev.output.printPpi} dpi (JFIF APP0); verified by calibrated print`
+          : `${rev.output.printPpi} dpi (JFIF APP0); PPI source ${rev.output.ppiProvenance}, not verified by calibrated print`
+        : `density ${density ? `${density.xdensity} dpi` : "missing"}; template requires ${rev.output.printPpi} dpi`,
     });
   }
 
-  // EDT-009：裁剪区无透明像素。
-  // 这一项曾是字面量 pass：配合「细微旋转把裁剪框甩出源图」，
-  // 用户会看到检查全绿、同时拿到一张带黑角的成品。
+  // EDT-009: crop area has no transparent pixels.
+  // This used to be a literal pass: combined with "a slight rotation throws
+  // the crop frame outside the source", users saw all-green checks while
+  // receiving an artifact with black corners.
   const { scannedPixels, transparentPixels } = artifact.coverage;
   if (scannedPixels === 0) {
     checks.push({
       id: "no-alpha",
-      label: "裁剪区完整性",
+      label: "Crop integrity",
       status: "unknown",
-      detail: "画布像素不可读，未能验证裁剪区是否被完整覆盖",
+      detail: "canvas pixels unreadable; could not verify the crop area is fully covered",
     });
   } else if (transparentPixels === 0) {
     checks.push({
       id: "no-alpha",
-      label: "裁剪区完整性",
+      label: "Crop integrity",
       status: "pass",
-      detail: `已扫描 ${scannedPixels.toLocaleString("zh-CN")} 个像素，无透明边缘`,
+      detail: `scanned ${scannedPixels.toLocaleString("en-US")} pixels; no transparent edges`,
     });
   } else {
     const ratio = (transparentPixels / scannedPixels) * 100;
     checks.push({
       id: "no-alpha",
-      label: "裁剪区完整性",
+      label: "Crop integrity",
       status: "fail",
-      detail: `${transparentPixels.toLocaleString("zh-CN")} 个像素未被源图覆盖（${ratio.toFixed(2)}%），成品会出现空白或黑角`,
+      detail: `${transparentPixels.toLocaleString("en-US")} pixels not covered by the source (${ratio.toFixed(2)}%); the artifact will have blank or black corners`,
     });
   }
 
-  // EDT-004：源图有效分辨率。
-  // 渲染矩阵的线性部分把源图像素映射到输出像素，行列式开方即放大倍率；
-  // 大于 1 说明输出像素多于源图真正提供的信息，模板的最小像素要求实际未被满足。
+  // EDT-004: effective source resolution.
+  // The render matrix's linear part maps source pixels to output pixels; the
+  // square root of its determinant is the upscale factor. Above 1, the output
+  // has more pixels than the source truly provides, so the template's minimum
+  // pixel requirement is not actually met.
   const [ma, mb, mc, md] = artifact.manifest.matrix;
   const upscale = Math.sqrt(Math.abs(ma * md - mb * mc));
   checks.push({
     id: "source-resolution",
-    label: "源图分辨率",
+    label: "Source resolution",
     status: upscale > 1.001 ? "warn" : "pass",
     detail:
       upscale > 1.001
-        ? `源图被放大 ${upscale.toFixed(2)} 倍以填满输出，实际清晰度低于 ${artifact.manifest.widthPx}×${artifact.manifest.heightPx} 所暗示的水平`
-        : "源图分辨率不低于模板输出要求",
+        ? `source upscaled ${upscale.toFixed(2)}× to fill the output; actual sharpness is below what ${artifact.manifest.widthPx}×${artifact.manifest.heightPx} implies`
+        : "source resolution is not below the template's output requirement",
   });
 
-  // GDE-008：姿态复检结果直接进摘要
+  // GDE-008: pose recheck results go straight into the summary
   checks.push(poseCheck(staticChecks));
   checks.push(exposureCheck(staticChecks));
-  // GDE-008：背景均匀度自动信号——永不 pass，未测量必须明说未检查
+  // GDE-008: the background-uniformity automatic signal never passes; when
+  // not measured it must explicitly say unchecked
   checks.push(backgroundCheck(staticChecks));
 
-  // TMP-003：reference_only 模板不可提交
+  // TMP-003: reference_only templates are not submittable
   if (template.publication.status !== "active") {
     checks.push({
       id: "publication",
-      label: "模板发布状态",
+      label: "Template publication status",
       status: "warn",
       detail: template.publication.statusReason,
     });
   }
 
-  // GDE-008：captureRules 里的强制拍摄要求模型判不了，逐条暴露为人工确认或未检查
+  // GDE-008: mandatory capture requirements in captureRules cannot be judged
+  // by the model; expose each one as manual confirmation or unchecked
   checks.push(...captureRuleChecks(rev));
 
   return checks;
@@ -166,35 +178,38 @@ function poseCheck(staticChecks?: StaticCheckResult | null): CheckItem {
   if (!staticChecks || !staticChecks.poseAvailable || !staticChecks.pose) {
     return {
       id: "pose",
-      label: "姿态检查",
+      label: "Pose check",
       status: "unknown",
       detail: staticChecks
-        ? "姿态模型不可用，本次未做姿态复检"
-        : "本次未运行姿态复检（可返回重新拍摄以启用）",
+        ? "pose model unavailable; no pose recheck was run this time"
+        : "pose recheck not run this time (go back and reshoot to enable it)",
     };
   }
   const pose = staticChecks.pose;
   if (pose.status === "ready") {
     return {
       id: "pose",
-      label: "姿态检查",
+      label: "Pose check",
       status: "pass",
-      detail: `头部角度在容差内（${HEURISTIC_NOTICE}）`,
+      detail: `head angles within tolerance (${HEURISTIC_NOTICE})`,
     };
   }
   return {
     id: "pose",
-    label: "姿态检查",
+    label: "Pose check",
     status: "warn",
-    detail: `${formatGuidance(pose.status, pose.guidanceHints, uiLocale())}（${HEURISTIC_NOTICE}）`,
+    detail: `${formatGuidance(pose.status, pose.guidanceHints, uiLocale())} (${HEURISTIC_NOTICE})`,
   };
 }
 
 /**
- * 纸质模板是否可标注「可按实际尺寸打印」（OUT-006）。
- * 结论被建模在 publication.status 上：只有模板通过校准打印测试转 active，
- * 且 PPI 取值经官方入口确认（portal_verified）才成立；两者是合取，
- * 只看 ppiProvenance 会把 reference_only 的模板误标成可打印。
+ * Whether a paper template may be labeled "printable at actual size"
+ * (OUT-006).
+ * The conclusion is modeled on publication.status: it holds only when the
+ * template passed calibrated print tests and went active, and the PPI value
+ * was confirmed through the official entry (portal_verified); the two are a
+ * conjunction, and looking only at ppiProvenance would mislabel
+ * reference_only templates as printable.
  */
 export function isPrintReady(template: TemplateEntry): boolean {
   const out = template.revision.output;
@@ -210,87 +225,96 @@ function exposureCheck(staticChecks?: StaticCheckResult | null): CheckItem {
   if (!quality || quality.status === "unknown") {
     return {
       id: "exposure",
-      label: "曝光与清晰度",
+      label: "Exposure & sharpness",
       status: "unknown",
-      detail: quality ? quality.issues.join(";") : "本次未运行曝光与清晰度复检",
+      detail: quality
+        ? quality.issues.join(";")
+        : "exposure and sharpness recheck not run this time",
     };
   }
-  const problems = quality.issues.filter((issue) => !issue.includes("未发现明显问题"));
+  const problems = quality.issues.filter((issue) => !issue.includes("no obvious issues"));
   if (problems.length === 0) {
     return {
       id: "exposure",
-      label: "曝光与清晰度",
+      label: "Exposure & sharpness",
       status: "pass",
-      detail: `未发现明显问题（${HEURISTIC_NOTICE}）`,
+      detail: `no obvious issues (${HEURISTIC_NOTICE})`,
     };
   }
   return {
     id: "exposure",
-    label: "曝光与清晰度",
+    label: "Exposure & sharpness",
     status: "warn",
-    detail: `${problems.join(";")}（${HEURISTIC_NOTICE}）`,
+    detail: `${problems.join(";")} (${HEURISTIC_NOTICE})`,
   };
 }
 
 /**
- * 背景均匀度（GDE-008）。与模板的 background captureRules（evaluation:
- * manual）无关：这是叠加的自动信号，永不返回 pass——有指标且未超阈时
- * 仍是 unknown，detail 写明仍需人工确认，不得让用户以为「背景已被检查过」。
+ * Background uniformity (GDE-008). Unrelated to the template's background
+ * captureRules (evaluation: manual): this is a layered automatic signal that
+ * never returns pass - with metrics under the thresholds it stays unknown
+ * with the detail saying manual confirmation is still required, so users
+ * never believe "the background was checked".
  */
 function backgroundCheck(staticChecks?: StaticCheckResult | null): CheckItem {
   const bg = staticChecks?.quality.metrics.background;
   if (!bg) {
     return {
       id: "background",
-      label: "背景检查",
+      label: "Background check",
       status: "unknown",
-      detail: "未检查：背景均匀度需人工确认",
+      detail: "not checked: background uniformity requires manual confirmation",
     };
   }
   const problems: string[] = [];
   if (bg.lumaStd > QUALITY_CONFIG.backgroundLumaStdMax) {
-    problems.push(`背景亮度不均（标准差 ${bg.lumaStd.toFixed(1)}）`);
+    problems.push(`uneven background brightness (stddev ${bg.lumaStd.toFixed(1)})`);
   }
   if (bg.blockRange > QUALITY_CONFIG.backgroundBlockRangeMax) {
-    problems.push(`背景明暗分布不均（分块极差 ${bg.blockRange.toFixed(1)}）`);
+    problems.push(`uneven light/dark distribution (block range ${bg.blockRange.toFixed(1)})`);
   }
   if (bg.leftRightDiff > QUALITY_CONFIG.shadowLeftRightDiffMax) {
-    problems.push(`背景左右阴影不平衡（差 ${bg.leftRightDiff.toFixed(1)}）`);
+    problems.push(`unbalanced left/right shadows (diff ${bg.leftRightDiff.toFixed(1)})`);
   }
   if (bg.topBottomDiff > QUALITY_CONFIG.shadowTopBottomDiffMax) {
-    problems.push(`背景上下阴影不平衡（差 ${bg.topBottomDiff.toFixed(1)}）`);
+    problems.push(`unbalanced top/bottom shadows (diff ${bg.topBottomDiff.toFixed(1)})`);
   }
   if (problems.length === 0) {
     return {
       id: "background",
-      label: "背景检查",
+      label: "Background check",
       status: "unknown",
-      detail: `自动信号未发现异常，背景仍需人工确认（${HEURISTIC_NOTICE}）`,
+      detail: `automatic signal found no anomaly; background still requires manual confirmation (${HEURISTIC_NOTICE})`,
     };
   }
   return {
     id: "background",
-    label: "背景检查",
+    label: "Background check",
     status: "warn",
-    detail: `${problems.join(";")}（需人工确认；${HEURISTIC_NOTICE}）`,
+    detail: `${problems.join(";")} (needs manual confirmation; ${HEURISTIC_NOTICE})`,
   };
 }
 
 /**
- * captureRules → 检查摘要（GDE-008）。
- * 模板里的 check 字段被真实数据当分类桶乱用（fi-police 的「不得修改外观」
- * 挂在 check: "background" 下），所以 label 固定为「拍摄要求」，不用 check
- * 推导；evaluation 为 manual 的规则机器原则上判不了，显示为「需人工确认」，
- * 其余一律 unknown，绝不伪造 pass。
+ * captureRules → check summary (GDE-008).
+ * The check field in templates is misused as a classification bucket by the
+ * real data (fi-police's "no appearance alteration" sits under check:
+ * "background"), so the label is fixed as "capture requirement" rather than
+ * derived from check; rules with evaluation manual cannot in principle be
+ * judged by a machine and show as "needs manual confirmation", all others
+ * are unknown - a pass is never fabricated.
  */
 function captureRuleChecks(rev: TemplateRevision): CheckItem[] {
   const rules = Array.isArray(rev.captureRules) ? rev.captureRules : [];
   return rules.map((rule) => ({
     id: `capture:${rule.id}`,
-    label: rule.enforcement !== "mandatory" ? "拍摄要求（建议）" : "拍摄要求",
+    label:
+      rule.enforcement !== "mandatory"
+        ? "Capture requirement (recommended)"
+        : "Capture requirement",
     status: rule.evaluation === "manual" ? "manual" : "unknown",
     detail: rule.sourceLiteral
-      ? `官方原文：${rule.sourceLiteral}`
-      : `要求：${String(rule.expected)}`,
+      ? `official source: ${rule.sourceLiteral}`
+      : `requirement: ${String(rule.expected)}`,
   }));
 }

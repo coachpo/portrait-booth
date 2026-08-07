@@ -13,7 +13,7 @@ const template = {
     id: "us",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "美国签证" },
+    label: { en: "US visa" },
     jurisdiction: "US",
     documentType: "visa",
     submissionChannel: "digital_upload",
@@ -54,8 +54,9 @@ const template = {
   },
 } as unknown as TemplateEntry;
 
-// P7 换模板夹具：宽模板 A（600×800、mirror 允许）走「选择这个模板」；
-// 原模板 B（600×600、mirror 禁止）走「选择方形模板」
+// P7 template-switch fixtures: wide template A (600×800, mirror allowed)
+// via "Select this template"; base template B (600×600, mirror forbidden)
+// via "Select the square template"
 const wideTemplate = {
   ...template,
   revision: {
@@ -70,7 +71,8 @@ const wideTemplate = {
   },
 } as unknown as TemplateEntry;
 
-// 前置约束模板：requires* 布尔为 true（来源步骤应显示提示）
+// Prerequisite-constraint template: requires* booleans true (the source
+// step should show the hints)
 const restrictedTemplate = {
   ...template,
   revision: {
@@ -84,7 +86,8 @@ const restrictedTemplate = {
   },
 } as unknown as TemplateEntry;
 
-// 构图锁定模板：crop forbidden（换模板时继承的构图必须作废）
+// Composition-locked template: crop forbidden (inherited composition must
+// be voided on switch)
 const lockedTemplate = {
   ...template,
   revision: {
@@ -115,16 +118,16 @@ vi.mock("./template-step", () => ({
   TemplateStep: ({ onSelect }: { onSelect: (t: TemplateEntry) => void }) => (
     <>
       <button type="button" onClick={() => onSelect(wideTemplate)}>
-        选择这个模板
+        Select this template
       </button>
       <button type="button" onClick={() => onSelect(template)}>
-        选择方形模板
+        Select the square template
       </button>
       <button type="button" onClick={() => onSelect(restrictedTemplate)}>
-        选择受限模板
+        Select the restricted template
       </button>
       <button type="button" onClick={() => onSelect(lockedTemplate)}>
-        选择锁定模板
+        Select the locked template
       </button>
     </>
   ),
@@ -134,10 +137,10 @@ vi.mock("./source-step", () => ({
   SourceStep: ({ onReady, onBack }: { onReady: (s: SourceImage) => void; onBack: () => void }) => (
     <>
       <button type="button" onClick={() => onReady(fakeSource())}>
-        完成上传
+        Complete upload
       </button>
       <button type="button" onClick={onBack}>
-        上传步骤返回
+        Upload step back
       </button>
     </>
   ),
@@ -146,7 +149,7 @@ vi.mock("./source-step", () => ({
 vi.mock("./capture-step", () => ({
   CaptureStep: ({ onReady }: { onReady: (s: SourceImage) => void }) => (
     <button type="button" onClick={() => onReady(fakeSource())}>
-      完成拍摄
+      Complete capture
     </button>
   ),
 }));
@@ -170,8 +173,8 @@ vi.mock("../editor/editor-step", async () => {
       onBack: (s: EditorState) => void;
     }) => (
       <>
-        <p>编辑器：缩放 {initialState?.transform.scale ?? "初始"}</p>
-        <p>撤销栈 {initialState?.history.undo.length ?? 0}</p>
+        <p>Editor: zoom {initialState?.transform.scale ?? "initial"}</p>
+        <p>Undo stack {initialState?.history.undo.length ?? 0}</p>
         <p data-testid="editor-translateX">{initialState?.transform.translateX ?? 0}</p>
         <p data-testid="editor-flipX">{initialState?.transform.flipX ? "on" : "off"}</p>
         <button
@@ -186,7 +189,7 @@ vi.mock("../editor/editor-step", async () => {
             )
           }
         >
-          完成编辑
+          Complete edit
         </button>
         <button
           type="button"
@@ -206,7 +209,7 @@ vi.mock("../editor/editor-step", async () => {
             )
           }
         >
-          完成编辑带平移
+          Complete edit with pan
         </button>
         <button
           type="button"
@@ -223,13 +226,13 @@ vi.mock("../editor/editor-step", async () => {
             )
           }
         >
-          完成编辑开镜像
+          Complete edit with mirror
         </button>
         <button
           type="button"
           onClick={() => onBack(editorMockState.lastDone ?? INITIAL_EDITOR_STATE)}
         >
-          编辑器返回
+          Editor back
         </button>
       </>
     ),
@@ -256,15 +259,15 @@ vi.mock("../render/final-page", () => {
       onStaged: (r: { saved: typeof saved; idempotencyKey: string } | null) => void;
     }) => (
       <>
-        <p>终态页</p>
+        <p>Final page</p>
         <button type="button" onClick={onBack}>
-          返回编辑
+          Back to edit
         </button>
         <button type="button" onClick={onRestart}>
-          重新开始
+          Restart
         </button>
         <button type="button" onClick={() => onStaged({ saved, idempotencyKey: "k" })}>
-          模拟暂存成功
+          Simulate staged
         </button>
       </>
     ),
@@ -275,20 +278,21 @@ function click(name: string) {
   fireEvent.click(screen.getByRole("button", { name }));
 }
 
-/** 带真实 Layout 导航与路由拦截图腾的挂载（useBlocker 需要数据路由上下文） */
+/** Mount with the real Layout navigation and route-blocker scaffold
+ * (useBlocker needs a data-router context) */
 function mount() {
   const router = createMemoryRouter(routes, { initialEntries: ["/create"] });
   render(<RouterProvider router={router} />);
   return router;
 }
 
-/** 走到编辑器之前的公共路径 */
+/** The common path to the editor */
 function walkToEditor() {
   mount();
-  click("选择这个模板");
-  click("上传照片");
-  click("完成上传");
-  click("使用这张照片");
+  click("Select this template");
+  click("Upload photo");
+  click("Complete upload");
+  click("Use this photo");
 }
 
 beforeEach(() => {
@@ -296,126 +300,131 @@ beforeEach(() => {
   editorMockState.lastDone = null;
 });
 
-describe("CreatePage 状态机", () => {
+describe("CreatePage state machine", () => {
   it("shows a progress bar with the current step", () => {
     mount();
-    const bar = screen.getByRole("list", { name: "创建进度" });
+    const bar = screen.getByRole("list", { name: "Creation progress" });
     expect(bar).toBeInTheDocument();
-    expect(screen.getByText("1. 选择模板").getAttribute("aria-current")).toBe("step");
+    expect(screen.getByText("1. Choose template").getAttribute("aria-current")).toBe("step");
   });
 
-  it("inserts a review step between capture and the editor (SPEC 流程)", () => {
-    // 回归：拍摄或上传后曾直接跳进编辑器，用户没有确认或重拍的机会
+  it("inserts a review step between capture and the editor (SPEC flow)", () => {
+    // Regression: after capture or upload it used to jump straight into the
+    // editor with no chance to confirm or retake
     mount();
-    click("选择这个模板");
-    click("使用摄像头拍摄");
-    click("完成拍摄");
-    expect(screen.getByRole("heading", { name: "确认这张照片" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重新拍摄" })).toBeInTheDocument();
+    click("Select this template");
+    click("Use camera capture");
+    click("Complete capture");
+    expect(screen.getByRole("heading", { name: "Confirm this photo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retake" })).toBeInTheDocument();
   });
 
   it("labels the retake action by where the photo came from", () => {
     walkToEditor();
-    click("编辑器返回");
-    expect(screen.getByRole("button", { name: "重新选择文件" })).toBeInTheDocument();
+    click("Editor back");
+    expect(screen.getByRole("button", { name: "Choose another file" })).toBeInTheDocument();
   });
 
   it("keeps transform and undo history when returning from the final page", () => {
-    // 回归：从终态返回编辑会丢掉全部裁剪参数与撤销栈，等于从头再来一遍
+    // Regression: returning from final to edit used to drop all crop
+    // parameters and the undo stack, restarting from scratch
     walkToEditor();
-    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+    expect(screen.getByText("Editor: zoom initial")).toBeInTheDocument();
 
-    click("完成编辑");
-    expect(screen.getByText("终态页")).toBeInTheDocument();
+    click("Complete edit");
+    expect(screen.getByText("Final page")).toBeInTheDocument();
 
-    click("返回编辑");
-    expect(screen.getByText("编辑器：缩放 1.75")).toBeInTheDocument();
-    expect(screen.getByText("撤销栈 1")).toBeInTheDocument();
+    click("Back to edit");
+    expect(screen.getByText("Editor: zoom 1.75")).toBeInTheDocument();
+    expect(screen.getByText("Undo stack 1")).toBeInTheDocument();
   });
 
   it("keeps the photo when stepping back from the editor to review", () => {
     walkToEditor();
-    click("编辑器返回");
-    expect(screen.getByRole("heading", { name: "确认这张照片" })).toBeInTheDocument();
+    click("Editor back");
+    expect(screen.getByRole("heading", { name: "Confirm this photo" })).toBeInTheDocument();
     expect(dispose).not.toHaveBeenCalled();
   });
 
   it("drops the editor state when the photo itself is replaced", () => {
     walkToEditor();
-    click("完成编辑");
-    click("返回编辑");
-    expect(screen.getByText("编辑器：缩放 1.75")).toBeInTheDocument();
+    click("Complete edit");
+    click("Back to edit");
+    expect(screen.getByText("Editor: zoom 1.75")).toBeInTheDocument();
 
-    click("编辑器返回");
-    click("重新选择文件");
+    click("Editor back");
+    click("Choose another file");
     expect(dispose).toHaveBeenCalled();
-    click("完成上传");
-    click("使用这张照片");
-    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+    click("Complete upload");
+    click("Use this photo");
+    expect(screen.getByText("Editor: zoom initial")).toBeInTheDocument();
   });
 
   it("returns to the template step on restart", () => {
     walkToEditor();
-    click("完成编辑");
-    click("重新开始");
-    expect(screen.getByRole("button", { name: "选择这个模板" })).toBeInTheDocument();
-    expect(screen.getByText("1. 选择模板").getAttribute("aria-current")).toBe("step");
+    click("Complete edit");
+    click("Restart");
+    expect(screen.getByRole("button", { name: "Select this template" })).toBeInTheDocument();
+    expect(screen.getByText("1. Choose template").getAttribute("aria-current")).toBe("step");
   });
 
   it("advances the progress bar as the flow moves forward", () => {
     walkToEditor();
-    expect(screen.getByText("4. 编辑").getAttribute("aria-current")).toBe("step");
-    expect(screen.getByText("1. 选择模板").className).toContain("done");
+    expect(screen.getByText("4. Edit").getAttribute("aria-current")).toBe("step");
+    expect(screen.getByText("1. Choose template").className).toContain("done");
   });
 });
 
-describe("离开创建流程的拦截（A11）", () => {
-  it.each(["取回照片", "隐私说明", "Portrait Booth", "隐私与留存说明"])(
+describe("leave-flow interception (A11)", () => {
+  it.each(["Retrieve photo", "Privacy", "Portrait Booth", "Privacy & retention"])(
     "blocks leaving via the %s link and keeps the flow intact",
     (exit) => {
-      // 回归：四个出口任一点击即静默卸载，照片/裁剪/撤销栈全部蒸发
+      // Regression: any of the four exits used to silently unmount,
+      // evaporating photo/crop/undo stack
       walkToEditor();
 
       fireEvent.click(screen.getByRole("link", { name: exit }));
-      // 编辑步骤仍在、资源未释放、出现应用内确认块
-      expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+      // The edit step is still there, nothing is disposed, and an in-app
+      // confirm block appears
+      expect(screen.getByText("Editor: zoom initial")).toBeInTheDocument();
       expect(dispose).not.toHaveBeenCalled();
-      expect(screen.getByRole("alertdialog")).toHaveTextContent(/未保存/);
+      expect(screen.getByRole("alertdialog")).toHaveTextContent(/unsaved/i);
 
-      fireEvent.click(screen.getByRole("button", { name: "留在本页" }));
+      fireEvent.click(screen.getByRole("button", { name: "Stay on this page" }));
       expect(screen.queryByRole("alertdialog")).toBeNull();
-      expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+      expect(screen.getByText("Editor: zoom initial")).toBeInTheDocument();
       expect(dispose).not.toHaveBeenCalled();
     },
   );
 
   it("releases resources only after confirming the leave", () => {
     walkToEditor();
-    fireEvent.click(screen.getByRole("link", { name: "取回照片" }));
+    fireEvent.click(screen.getByRole("link", { name: "Retrieve photo" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(dispose).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "继续离开" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue leaving" }));
     expect(dispose).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("heading", { name: "取回照片" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Retrieve photo" })).toBeInTheDocument();
   });
 
   it("names the retrieval code and delete secret in the staged leave confirmation", () => {
-    // 已暂存时确认文案必须点名取回码与删除密钥无法找回，并就地提供回执下载
+    // When staged, the confirmation copy must name the retrieval code and
+    // delete secret as unrecoverable and offer the receipt download in place
     mount();
-    click("选择这个模板");
-    click("上传照片");
-    click("完成上传");
-    click("使用这张照片");
-    click("完成编辑");
-    fireEvent.click(screen.getByRole("button", { name: "模拟暂存成功" }));
+    click("Select this template");
+    click("Upload photo");
+    click("Complete upload");
+    click("Use this photo");
+    click("Complete edit");
+    fireEvent.click(screen.getByRole("button", { name: "Simulate staged" }));
 
-    fireEvent.click(screen.getByRole("link", { name: "取回照片" }));
+    fireEvent.click(screen.getByRole("link", { name: "Retrieve photo" }));
     const dialog = screen.getByRole("alertdialog");
-    expect(dialog).toHaveTextContent("取回码");
-    expect(dialog).toHaveTextContent("删除密钥");
-    expect(dialog).toHaveTextContent("无法找回");
-    expect(screen.getByRole("button", { name: /下载回执/ })).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("retrieval code");
+    expect(dialog).toHaveTextContent("delete secret");
+    expect(dialog).toHaveTextContent("cannot be recovered");
+    expect(screen.getByRole("button", { name: /download receipt/i })).toBeInTheDocument();
   });
 
   it("does not silently drop the flow on the browser back gesture", async () => {
@@ -424,99 +433,105 @@ describe("离开创建流程的拦截（A11）", () => {
       initialIndex: 1,
     });
     render(<RouterProvider router={router} />);
-    click("选择这个模板");
-    click("上传照片");
-    click("完成上传");
-    click("使用这张照片");
+    click("Select this template");
+    click("Upload photo");
+    click("Complete upload");
+    click("Use this photo");
 
     await act(async () => {
       await router.navigate(-1);
     });
-    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+    expect(screen.getByText("Editor: zoom initial")).toBeInTheDocument();
     expect(dispose).not.toHaveBeenCalled();
-    expect(screen.getByRole("alertdialog")).toHaveTextContent(/未保存/);
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(/unsaved/i);
   });
 
   it("does not block when navigating to the same route", () => {
-    // 防过度修复：已在 /create 时点「创建照片」不弹确认
+    // Anti-overfix: clicking "Create photo" while already on /create shows no confirm
     walkToEditor();
-    fireEvent.click(screen.getByRole("link", { name: "创建照片" }));
+    fireEvent.click(screen.getByRole("link", { name: "Create photo" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(dispose).not.toHaveBeenCalled();
-    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+    expect(screen.getByText("Editor: zoom initial")).toBeInTheDocument();
   });
 });
 
-describe("会话内更换模板（P7）", () => {
+describe("same-session template switch (P7)", () => {
   function toReviewWithEdits(editButton: string) {
     walkToEditor();
-    click(editButton); // 提交一个编辑状态 → 终态
-    click("返回编辑"); // 回到编辑器，initialState 带上该状态
-    click("编辑器返回"); // 回确认页，状态经 onBack 写回
+    click(editButton); // submit an edit state → final
+    click("Back to edit"); // back to the editor; initialState carries the state
+    click("Editor back"); // back to confirm; state written back via onBack
   }
 
   it("keeps the photo and editor state when switching templates", () => {
-    // 回归：状态机里没有换模板这条转移，想换模板只能走会 dispose 源照片的返回链
-    toReviewWithEdits("完成编辑");
+    // Regression: the state machine had no template-switch transition;
+    // switching meant the back chain that disposes the source photo
+    toReviewWithEdits("Complete edit");
 
-    click("更换模板");
-    click("选择这个模板");
+    click("Switch template");
+    click("Select this template");
     expect(dispose).not.toHaveBeenCalled();
 
-    click("使用这张照片");
-    expect(screen.getByText("编辑器：缩放 1.75")).toBeInTheDocument();
-    expect(screen.getByText("撤销栈 1")).toBeInTheDocument();
+    click("Use this photo");
+    expect(screen.getByText("Editor: zoom 1.75")).toBeInTheDocument();
+    expect(screen.getByText("Undo stack 1")).toBeInTheDocument();
   });
 
   it("reprojects the kept transform to the new output size", () => {
-    // 不投影就会把只在 600×800 下合法的平移原样带进 600×600，终态页撞越界
-    toReviewWithEdits("完成编辑带平移"); // translateX 0.15，宽模板下合法（上限约 0.1667）
+    // Without projection, the pan valid only at 600×800 would be carried
+    // into 600×600 and hit out-of-bounds at the final page
+    toReviewWithEdits("Complete edit with pan"); // translateX 0.15, valid under the wide template (ceiling ≈ 0.1667)
 
-    click("更换模板");
-    click("选择方形模板"); // 600×600：平移必须归零
+    click("Switch template");
+    click("Select the square template"); // 600×600: pan must zero out
 
-    click("使用这张照片");
+    click("Use this photo");
     expect(screen.getByTestId("editor-translateX").textContent).toBe("0");
   });
 
   it("clears the mirror forbidden by the new template and shows a notice", () => {
-    // A（mirror allowed）下开镜像，切到 B（mirror forbidden）必须取消并说明
-    toReviewWithEdits("完成编辑开镜像");
+    // Mirror enabled under A (mirror allowed); switching to B (mirror
+    // forbidden) must cancel it and say so
+    toReviewWithEdits("Complete edit with mirror");
 
-    click("更换模板");
-    click("选择方形模板");
-    expect(screen.getByRole("status")).toHaveTextContent("新模板禁止镜像，已取消水平镜像");
+    click("Switch template");
+    click("Select the square template");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "the new template forbids mirroring; horizontal mirror was cancelled",
+    );
 
-    click("使用这张照片");
+    click("Use this photo");
     expect(screen.getByTestId("editor-flipX").textContent).toBe("off");
   });
 
   it("abandons the template switch without losing anything", () => {
-    toReviewWithEdits("完成编辑");
+    toReviewWithEdits("Complete edit");
 
-    click("更换模板");
-    click("返回（保留当前模板）");
+    click("Switch template");
+    click("Back (keep current template)");
     expect(dispose).not.toHaveBeenCalled();
 
-    click("使用这张照片");
-    expect(screen.getByText("编辑器：缩放 1.75")).toBeInTheDocument();
-    expect(screen.getByText("撤销栈 1")).toBeInTheDocument();
+    click("Use this photo");
+    expect(screen.getByText("Editor: zoom 1.75")).toBeInTheDocument();
+    expect(screen.getByText("Undo stack 1")).toBeInTheDocument();
   });
 
   it("shows source requirements on the source step (P2)", () => {
     mount();
-    click("选择受限模板");
-    expect(screen.getByText(/认证摄影师拍摄/)).toBeInTheDocument();
-    expect(screen.getByText(/原始相机文件/)).toBeInTheDocument();
+    click("Select the restricted template");
+    expect(screen.getByText(/certified photographer/i)).toBeInTheDocument();
+    expect(screen.getByText(/original camera file/i)).toBeInTheDocument();
   });
 
   it("discards inherited compose when the new template forbids cropping (P2)", () => {
-    // 构图锁定不能被继承的构图绕过：换到 crop forbidden 模板必须重置
-    toReviewWithEdits("完成编辑");
-    click("更换模板");
-    click("选择锁定模板");
-    expect(screen.getByRole("status")).toHaveTextContent("新模板禁止调整构图");
-    click("使用这张照片");
-    expect(screen.getByText("编辑器：缩放 初始")).toBeInTheDocument();
+    // The composition lock must not be bypassed by an inherited
+    // composition: switching to a crop-forbidden template must reset
+    toReviewWithEdits("Complete edit");
+    click("Switch template");
+    click("Select the locked template");
+    expect(screen.getByRole("status")).toHaveTextContent("forbids adjusting composition");
+    click("Use this photo");
+    expect(screen.getByText("Editor: zoom initial")).toBeInTheDocument();
   });
 });

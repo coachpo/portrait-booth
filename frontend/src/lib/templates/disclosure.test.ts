@@ -20,7 +20,7 @@ function revision(overrides: Partial<TemplateRevision> = {}): TemplateRevision {
     id: "t",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "测试" },
+    label: { en: "test" },
     jurisdiction: "XX",
     documentType: "id",
     submissionChannel: "digital_upload",
@@ -53,9 +53,10 @@ describe("capabilityRestrictions", () => {
     expect(forbidden).toHaveLength(1);
     expect(warn[0].level).toBe("warn");
     expect(forbidden[0].level).toBe("forbidden");
-    // 措辞必须不同：warn 是「未获官方认可」，forbidden 是「禁止」
+    // Wording must differ: warn is "not officially endorsed", forbidden is
+    // "prohibited"
     expect(warn[0].text).not.toBe(forbidden[0].text);
-    expect(forbidden[0].text).toContain("禁止");
+    expect(forbidden[0].text).toContain("forbids");
   });
 
   it("covers the three prerequisite fields", () => {
@@ -76,20 +77,19 @@ describe("capabilityRestrictions", () => {
 describe("sourceNotesFor", () => {
   it("returns all entries of the requested locale without merging", () => {
     const rev = revision({
-      sourceNotes: { zh: ["一条", "两条"], en: ["one", "two", "three"] },
+      sourceNotes: { en: ["one", "two", "three"] },
     });
-    expect(sourceNotesFor(rev, "zh")).toEqual(["一条", "两条"]);
     expect(sourceNotesFor(rev, "en")).toEqual(["one", "two", "three"]);
   });
 
-  it("falls back zh → en → first key", () => {
+  it("falls back en → zh → first key", () => {
     expect(sourceNotesFor(revision({ sourceNotes: { en: ["e"] } }), "fr")).toEqual(["e"]);
     expect(sourceNotesFor(revision({ sourceNotes: { ja: ["j"] } }), "zh")).toEqual(["j"]);
   });
 
   it("tolerates undefined, empty, and missing locales", () => {
-    expect(sourceNotesFor(revision(), "zh")).toEqual([]);
-    expect(sourceNotesFor(revision({ sourceNotes: {} }), "zh")).toEqual([]);
-    expect(sourceNotesFor(revision({ sourceNotes: { ja: [] } }), "zh")).toEqual([]);
+    expect(sourceNotesFor(revision(), "en")).toEqual([]);
+    expect(sourceNotesFor(revision({ sourceNotes: {} }), "en")).toEqual([]);
+    expect(sourceNotesFor(revision({ sourceNotes: { ja: [] } }), "en")).toEqual([]);
   });
 });

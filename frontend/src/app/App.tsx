@@ -9,8 +9,9 @@ import { TemplateDetailPage } from "../pages/template-detail-page";
 import { Layout } from "./layout";
 
 /**
- * 路由表（数据路由形态）：main.tsx 与测试共用同一份定义。
- * 数据路由是 useBlocker 的前置条件——声明式 <BrowserRouter> 下直接调用会抛错。
+ * Route table (data-router form): shared between main.tsx and tests.
+ * Data routers are a prerequisite of useBlocker - calling it under the
+ * declarative <BrowserRouter> throws.
  */
 export const routes: RouteObject[] = [
   {
@@ -21,7 +22,7 @@ export const routes: RouteObject[] = [
       { path: "/retrieve", element: <RetrievePage /> },
       { path: "/privacy", element: <PrivacyPage /> },
       { path: "/templates/:revisionId", element: <TemplateDetailPage /> },
-      // 兜底路由：没有它时未匹配地址渲染成一块空白页
+      // Fallback route: without it, unmatched addresses render a blank page
       { path: "*", element: <NotFoundPage /> },
     ],
   },

@@ -1,7 +1,8 @@
 /**
- * EXIF orientation 1–8 归一化（SRC-003）。
- * 归一化通过仿射变换实现：目标像素坐标 = M · 源像素坐标。
- * 变换与编辑坐标完全解耦——编辑器只看到归一化后的位图。
+ * EXIF orientation 1–8 normalization (SRC-003).
+ * Normalization is an affine transform: target pixel coords = M · source
+ * pixel coords. The transform is fully decoupled from edit coordinates - the
+ * editor only ever sees the normalized bitmap.
  */
 
 export interface Transform2D {
@@ -30,8 +31,9 @@ export function normalizedSize(
 }
 
 /**
- * 把 raw 位图（未应用方向）绘制到归一化 canvas 所需的 setTransform 参数。
- * 目标 canvas 尺寸必须为 normalizedSize(rawW, rawH)。
+ * setTransform parameters for drawing the raw bitmap (orientation
+ * unapplied) into the normalized canvas. The target canvas size must be
+ * normalizedSize(rawW, rawH).
  */
 export function orientationTransform(orientation: number, rawW: number, rawH: number): Transform2D {
   switch (orientation) {
@@ -56,7 +58,8 @@ export function orientationTransform(orientation: number, rawW: number, rawH: nu
   }
 }
 
-/** 在归一化变换之后叠加均匀缩放（先方向归一化，再缩小到预算内）。 */
+/** Compose a uniform scale on top of the normalization transform (orient
+ * first, then shrink into budget). */
 export function withScale(t: Transform2D, scale: number): Transform2D {
   return {
     a: t.a * scale,

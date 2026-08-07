@@ -36,9 +36,9 @@ describe("cover math (§4.5.1)", () => {
 
   it("centers a wider source", () => {
     const m = renderMatrix(IDENTITY_TRANSFORM, SRC, OUT);
-    expect(at(m, 0, 0)).toEqual([-50, 0]); // 源左边缘 → 画布外左侧
-    expect(at(m, 100, 50)).toEqual([50, 50]); // 源中心 → 画布中心
-    expect(at(m, 200, 100)).toEqual([150, 100]); // 源右边缘 → 画布外右侧
+    expect(at(m, 0, 0)).toEqual([-50, 0]); // source left edge → outside the canvas on the left
+    expect(at(m, 100, 50)).toEqual([50, 50]); // source center → canvas center
+    expect(at(m, 200, 100)).toEqual([150, 100]); // source right edge → outside the canvas on the right
   });
 
   it("scales up a taller source to cover", () => {
@@ -52,16 +52,16 @@ describe("renderMatrix composition (cover → scale → flipX → rotation → t
   it("applies user scale relative to cover around the canvas center", () => {
     const t: EditTransform = { ...IDENTITY_TRANSFORM, scale: 2 };
     const m = renderMatrix(t, SRC, OUT);
-    expect(at(m, 0, 0)).toEqual([-150, -50]); // 源左边缘 → 画布左外
-    expect(at(m, 100, 50)).toEqual([50, 50]); // 中心不动
+    expect(at(m, 0, 0)).toEqual([-150, -50]); // source left edge → outside the canvas left
+    expect(at(m, 100, 50)).toEqual([50, 50]); // center stays put
     expect(at(m, 200, 100)).toEqual([250, 150]);
   });
 
   it("mirrors horizontally around the canvas center", () => {
     const t: EditTransform = { ...IDENTITY_TRANSFORM, flipX: true };
     const m = renderMatrix(t, SRC, OUT);
-    expect(at(m, 0, 0)).toEqual([150, 0]); // 源左边缘 → 画布右外
-    expect(at(m, 100, 50)).toEqual([50, 50]); // 中心不动
+    expect(at(m, 0, 0)).toEqual([150, 0]); // source left edge → outside the canvas right
+    expect(at(m, 100, 50)).toEqual([50, 50]); // center stays put
     expect(at(m, 200, 100)).toEqual([-50, 100]);
   });
 
@@ -76,9 +76,9 @@ describe("renderMatrix composition (cover → scale → flipX → rotation → t
     const t: EditTransform = { ...IDENTITY_TRANSFORM, rotationDeg: 90 };
     const m = renderMatrix(t, SRC, OUT);
     const [cx, cy] = at(m, 100, 50);
-    expect(cx).toBeCloseTo(50, 9); // 中心不动
+    expect(cx).toBeCloseTo(50, 9); // center stays put
     expect(cy).toBeCloseTo(50, 9);
-    // 源 (0,0) → cover+scale(-50,0) → 绕中心旋转 → (0,150)
+    // source (0,0) → cover+scale(-50,0) → rotate about center → (0,150)
     const [x, y] = at(m, 0, 0);
     expect(x).toBeCloseTo(0, 9);
     expect(y).toBeCloseTo(150, 9);
@@ -93,7 +93,8 @@ describe("renderMatrix composition (cover → scale → flipX → rotation → t
       flipX: true,
     };
     const m = renderMatrix(t, SRC, OUT);
-    // 源中心 (100,50) → cover 到画布中心 → 所有绕中心操作不变 → 仅平移生效
+    // source center (100,50) → cover to canvas center → all center-about
+    // operations unchanged → only translation applies
     expect(at(m, 100, 50)).toEqual([75, 60]);
   });
 });
@@ -150,7 +151,8 @@ describe("clampTranslation (EDT-003)", () => {
   it("clamps toward the nearest boundary along the center ray", () => {
     const t: EditTransform = { ...IDENTITY_TRANSFORM, translateX: 0.8 };
     const c = clampTranslation(t, SRC, OUT);
-    // 恰好 cover 时 x 方向最多平移 0.5（源宽 200，画布 100，cover 1x）
+    // At exactly-cover, x can translate at most 0.5 (source width 200,
+    // canvas 100, cover 1x)
     expect(c.translateX).toBeCloseTo(0.5, 3);
     expect(isValidTransform(c, SRC, OUT)).toBe(true);
   });
@@ -190,7 +192,8 @@ describe("normalizeRotationDeg", () => {
 });
 
 describe("minScaleForRotation (EDT-003)", () => {
-  // 源图 cover 后在高度上刚好贴合输出，任何非零角度都会把裁剪框的角甩出源图
+  // After cover the source exactly fits the output height; any nonzero
+  // angle throws the crop corners outside the source
   const TIGHT_SRC = { width: 800, height: 600 };
   const TIGHT_OUT = { width: 500, height: 653 };
 
@@ -223,8 +226,9 @@ describe("minScaleForRotation (EDT-003)", () => {
   });
 
   it("returns null when the allowed scale ceiling cannot cover the rotation", () => {
-    // EDT-004 会因源图分辨率不足而收紧上限；上限不够时必须说“救不回来”，
-    // 而不是返回一个仍然越界的 scale
+    // EDT-004 tightens the ceiling when source resolution is insufficient;
+    // when the ceiling is not enough it must say "unsavable" instead of
+    // returning a scale that is still out of bounds
     expect(
       minScaleForRotation({ ...IDENTITY_TRANSFORM, rotationDeg: 10 }, TIGHT_SRC, TIGHT_OUT, 1.05),
     ).toBeNull();
@@ -272,7 +276,7 @@ describe("allowedOutputSizes / resolveOutputSize (P6)", () => {
       id: "visa",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "美国签证" },
+      label: { en: "US visa" },
       jurisdiction: "US",
       documentType: "visa",
       submissionChannel: "digital_upload",
@@ -326,8 +330,8 @@ describe("allowedOutputSizes / resolveOutputSize (P6)", () => {
           { widthPx: 600, heightPx: 600 },
           { widthPx: 800, heightPx: 800 },
           { widthPx: 1200, heightPx: 1200 },
-          { widthPx: 1400, heightPx: 1400 }, // 越界
-          { widthPx: 900, heightPx: 700 }, // 破 1:1
+          { widthPx: 1400, heightPx: 1400 }, // out of range
+          { widthPx: 900, heightPx: 700 }, // breaks 1:1
         ],
       }),
     );
@@ -372,7 +376,8 @@ describe("allowedOutputSizes / resolveOutputSize (P6)", () => {
     const r = ranged({
       allowedSizes: [{ widthPx: 800, heightPx: 800 }],
     });
-    // 800 在白名单内但既不是 default 也不是 max：allowedSizes 分支必须采纳
+    // 800 is in the whitelist but is neither default nor max: the
+    // allowedSizes branch must adopt it
     expect(resolveOutputSize(r, { width: 800, height: 800 })).toEqual({
       width: 800,
       height: 800,
@@ -398,7 +403,7 @@ describe("reprojectEditorState", () => {
       id: "t",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "测试" },
+      label: { en: "test" },
       jurisdiction: "XX",
       documentType: "id",
       submissionChannel: "digital_upload",
@@ -433,7 +438,8 @@ describe("reprojectEditorState", () => {
       transform: { translateX: 0.15, translateY: 0, scale: 1, rotationDeg: 0, flipX: false },
       history: { undo: [], redo: [] },
     };
-    // 对照组：原变换在宽模板下确实合法（translateX 上限约 0.1667）
+    // Control: the original transform is genuinely valid under the wide
+    // template (translateX ceiling ≈ 0.1667)
     expect(isValidTransform(state.transform, SRC_1200, { width: 600, height: 800 })).toBe(true);
 
     const { state: next, notes } = reprojectEditorState(state, SRC_1200, square);
@@ -472,7 +478,7 @@ describe("reprojectEditorState", () => {
     expect(next.history.redo).toHaveLength(1);
     for (const t of [...next.history.undo, ...next.history.redo]) {
       expect(isValidTransform(t, SRC_1200, { width: 600, height: 600 })).toBe(true);
-      expect(t.flipX).toBe(false); // 镜像一并归一化
+      expect(t.flipX).toBe(false); // mirror normalized too
     }
   });
 

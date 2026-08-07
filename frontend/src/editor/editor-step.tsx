@@ -27,9 +27,11 @@ import {
 export interface EditorStepProps {
   source: SourceImage;
   template: TemplateEntry;
-  /** 上次离开编辑器时的状态；不传则从初始变换开始 */
+  /** State from the last time the editor was left; starts from the
+   * initial transform when absent */
   initialState?: EditorState | null;
-  /** ranged_pixels 模板的用户选定输出尺寸；不传用模板默认（P6） */
+  /** The user-selected output size for ranged_pixels templates; template
+   * default when absent (P6) */
   size?: OutputSizeOption | null;
   onDone: (state: EditorState) => void;
   onBack: (state: EditorState) => void;
@@ -37,7 +39,7 @@ export interface EditorStepProps {
 
 const UNDO_LIMIT = 50;
 
-/** 单次平移按钮的步长（归一化到输出尺寸） */
+/** Step size of one pan button press (normalized to output size) */
 const NUDGE_STEP = 0.02;
 
 const BAND_FILL = "rgba(56, 189, 248, 0.18)";
@@ -45,10 +47,11 @@ const BAND_EDGE = "rgba(56, 189, 248, 0.9)";
 const ELLIPSE_STROKE = "rgba(255, 255, 255, 0.75)";
 
 /**
- * 把模板的允许区间画到画布上（EDT-008）。
+ * Draw the template's allowed ranges onto the canvas (EDT-008).
  *
- * 在这之前编辑器只画了一组通用三分线——与任何模板规则都无关，
- * cropRules / overlay 里那些经过来源核对的数字在界面上完全不可见。
+ * Before this, the editor only drew a generic rule-of-thirds grid - unrelated
+ * to any template rules; the source-verified numbers in cropRules / overlay
+ * were completely invisible in the UI.
  */
 function drawTemplateOverlay(
   ctx: CanvasRenderingContext2D,
@@ -91,17 +94,19 @@ function drawTemplateOverlay(
         ctx.stroke();
       }
     } else if (guide.kind === "size-y") {
-      // 允许尺寸是长度约束而不是位置约束，画成右侧标尺：从同一起点出发的两条
-      // 线段，长度分别是允许的最小值与最大值。
-      // 画成 (max − min) 的单根线是错的——那是容差宽度，对 25–35 mm 的头高
-      // 只有 10 mm 长，用户照着它把头调成允许尺寸的三分之一。
+      // Allowed size is a length constraint, not a position constraint; draw
+      // it as a ruler on the right: two segments from the same start, whose
+      // lengths are the allowed minimum and maximum.
+      // A single (max − min) line is wrong - that is the tolerance width; for
+      // a 25–35 mm head height it is only 10 mm long, and users would size
+      // their head to a third of the allowed size.
       const x = out.width - 10;
       for (const length of [guide.fromPx, guide.toPx]) {
         ctx.beginPath();
         ctx.moveTo(x, 8);
         ctx.lineTo(x, 8 + length);
         ctx.stroke();
-        // 端点横杠，让两条线的终点可分辨
+        // End-cap ticks make the two segments' endpoints distinguishable
         ctx.beginPath();
         ctx.moveTo(x - 6, 8 + length);
         ctx.lineTo(x + 4, 8 + length);
@@ -138,7 +143,8 @@ export function EditorStep({
   const policy = editorPolicy(template.revision);
   const [transform, setTransform] = useState<EditTransform>(() => {
     if (out !== null && policy.composeLocked && initialState) {
-      // 构图锁定兜底：继承的 scale/translate 不得带入，仅保留旋转/镜像并按新模板适配
+      // Composition-lock backstop: inherited scale/translate must not carry
+      // over; only rotation/mirror are kept and re-fitted to the new template
       return fitTransform(
         {
           ...IDENTITY_TRANSFORM,
@@ -153,7 +159,9 @@ export function EditorStep({
   });
   const [history, setHistory] = useState<History>(initialState?.history ?? { undo: [], redo: [] });
   const [autoScaled, setAutoScaled] = useState(false);
-  // 带外来 transform 挂载（会话内换模板后回到编辑）时，越界护栏也要在挂载时求值一次
+  // With an external transform mounted (returning to edit after a
+  // same-session template switch), the out-of-bounds guard must also be
+  // evaluated once at mount
   const [outOfBounds, setOutOfBounds] = useState(() => {
     if (out === null) return false;
     const t = initialState?.transform;
@@ -175,8 +183,10 @@ export function EditorStep({
     [source.width, source.height],
   );
 
-  // EDT-004：cover 本身就大于 1 时，源图分辨率已低于模板输出要求。
-  // 这里不锁死缩放——分辨率不足时用户仍然需要能调整构图——而是给出不可忽略的警告。
+  // EDT-004: when cover itself is above 1, the source resolution is already
+  // below the template's output requirement. Zoom is not locked here - users
+  // still need to adjust composition when resolution is insufficient - but a
+  // cannot-be-ignored warning is shown.
   const coverUpscale = useMemo(() => (out ? coverScale(src, out) : 1), [src, out]);
   const guides = useMemo(
     () => (out ? buildOverlayGuides(template.revision, out) : []),
@@ -186,8 +196,10 @@ export function EditorStep({
 
   const apply = useCallback(
     (next: EditTransform) => {
-      // 只夹平移不够：旋转绕画布中心，任意角度都会把裁剪框的角甩出源图，
-      // 成品四角留下透明像素并在 JPEG 编码后变成黑角。fitTransform 会先补足所需 scale。
+      // Clamping translation alone is not enough: rotation is about the canvas
+      // center, so any angle throws the crop corners outside the source,
+      // leaving transparent pixels at the artifact corners that become black
+      // after JPEG encoding. fitTransform first adds the needed scale.
       const fitted = fitTransform(next, src, out!);
       setAutoScaled(fitted.scale > next.scale + 1e-6);
       setOutOfBounds(!isValidTransform(fitted, src, out!));
@@ -238,7 +250,8 @@ export function EditorStep({
     (clockwise: boolean) => {
       if (!out) return;
       if (policy.rotateLocked) return;
-      // 旋转 90° 后 cover 比例可能变化，自动抬升 scale 保证覆盖（EDT-003）
+      // After a 90° rotation the cover ratio may change; raise scale
+      // automatically to keep coverage (EDT-003)
       const rotated = { width: src.height, height: src.width };
       const csOld = coverScale(src, out);
       const csNew = coverScale(rotated, out);
@@ -256,7 +269,7 @@ export function EditorStep({
     apply({ ...transform, flipX: !transform.flipX });
   }, [apply, policy.mirrorLocked, transform]);
 
-  // 预览绘制：预览与导出共用 renderMatrix（§4.5.1）
+  // Preview drawing: preview and export share renderMatrix (§4.5.1)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !out) return;
@@ -267,7 +280,7 @@ export function EditorStep({
     const m = renderMatrix(transform, src, out);
     ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
     ctx.drawImage(source.bitmap, 0, 0, source.width, source.height);
-    // 蒙版（EDT-008）：裁剪框边框 + 模板的允许区间
+    // Mask (EDT-008): crop-frame border + the template's allowed ranges
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.strokeStyle = "rgba(255,255,255,0.85)";
     ctx.lineWidth = 2;
@@ -290,10 +303,11 @@ export function EditorStep({
 
   if (!out) {
     return (
-      <section aria-label="编辑">
-        <h2>编辑照片</h2>
+      <section aria-label="Edit">
+        <h2>Edit photo</h2>
         <p className="muted">
-          模板「{entryLabel(template, uiLocale())}」由官方门户处理裁剪，无需本地编辑。
+          Template "{entryLabel(template, uiLocale())}" is cropped by the official portal; no local
+          editing needed.
         </p>
         <div className="step-actions">
           <button
@@ -301,10 +315,10 @@ export function EditorStep({
             className="primary"
             onClick={() => onDone(initialState ?? INITIAL_EDITOR_STATE)}
           >
-            继续
+            Continue
           </button>
           <button type="button" onClick={() => onBack(INITIAL_EDITOR_STATE)}>
-            返回
+            Back
           </button>
         </div>
       </section>
@@ -337,7 +351,7 @@ export function EditorStep({
     if (!pointersRef.current.has(e.pointerId)) return;
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    // 双指捏合缩放
+    // Two-finger pinch zoom
     if (pointersRef.current.size >= 2 && pinchRef.current) {
       const distance = pointerDistance();
       if (distance > 0 && pinchRef.current.distance > 0) {
@@ -352,8 +366,9 @@ export function EditorStep({
 
     if (!dragRef.current) return;
     const cur = transformRef.current;
-    // 归一化的分母必须是画布的**显示**尺寸。用输出像素做分母时，
-    // 画布被 CSS 压到 360px 宽的移动端上，图像只跟着手指走 0.6 倍。
+    // The normalization denominator must be the canvas **display** size.
+    // Using output pixels as the denominator, on mobile where CSS squeezes
+    // the canvas to 360px wide, the image follows the finger at 0.6×.
     const rect = e.currentTarget.getBoundingClientRect();
     const dx = (e.clientX - dragRef.current.x) / (rect.width || out.width);
     const dy = (e.clientY - dragRef.current.y) / (rect.height || out.height);
@@ -367,7 +382,7 @@ export function EditorStep({
     if (pointersRef.current.size === 0) dragRef.current = null;
   };
 
-  /** EDT-007 / WCAG 2.5.7：拖动之外的等效操作 */
+  /** EDT-007 / WCAG 2.5.7: equivalent single-point operations beyond drag */
   const nudge = (dx: number, dy: number) => {
     if (policy.composeLocked) return;
     const cur = transformRef.current;
@@ -375,7 +390,8 @@ export function EditorStep({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // 构图锁定：方向键与 +/- 缩放停用（撤销/重做保留），并阻止方向键滚动页面
+    // Composition lock: arrow keys and +/- zoom are disabled (undo/redo
+    // kept), and arrow keys are prevented from scrolling the page
     if (
       policy.composeLocked &&
       ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "+", "=", "-"].includes(e.key)
@@ -430,11 +446,12 @@ export function EditorStep({
   };
 
   return (
-    <section aria-label="编辑">
-      <h2>编辑照片</h2>
+    <section aria-label="Edit">
+      <h2>Edit photo</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, uiLocale())}（{out.width}×{out.height} 像素）。
-        旋转用于纠正扫描或相机画布方向，不代表姿态合规（EDT-006）。
+        Selected template: {entryLabel(template, uiLocale())} ({out.width}×{out.height} pixels).
+        Rotation corrects scan or camera canvas orientation and does not imply pose compliance
+        (EDT-006).
       </p>
       <div className="editor-layout">
         <div className="editor-preview">
@@ -444,7 +461,9 @@ export function EditorStep({
             height={out.height}
             tabIndex={0}
             aria-label={
-              policy.composeLocked ? "照片预览（构图已锁定）" : "照片预览，可拖移调整位置"
+              policy.composeLocked
+                ? "Photo preview (composition locked)"
+                : "Photo preview; drag to adjust position"
             }
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -454,8 +473,8 @@ export function EditorStep({
           />
           <p className="muted">
             {policy.composeLocked
-              ? "模板禁止调整构图：缩放、平移与方向键均已停用。"
-              : "拖移调整位置，双指捏合缩放；方向键微调（Shift 大步）、+/- 缩放、Ctrl+Z 撤销。"}
+              ? "This template forbids adjusting the composition: zoom, pan, and arrow keys are disabled."
+              : "Drag to adjust position, pinch to zoom; arrow keys nudge (Shift for larger steps), +/- zoom, Ctrl+Z undo."}
           </p>
 
           {guides.length > 0 && (
@@ -466,32 +485,34 @@ export function EditorStep({
                   checked={showOverlay}
                   onChange={(e) => setShowOverlay(e.target.checked)}
                 />
-                显示模板参考区间
+                Show template reference ranges
               </label>
               <details className="sources">
-                <summary>模板允许区间（{guides.length} 项）</summary>
+                <summary>Template allowed ranges ({guides.length} items)</summary>
                 <ul>
                   {guides.map((g) => (
                     <li key={g.ruleId}>
                       {g.label}
-                      {g.enforcement !== "mandatory" && "（建议）"}
-                      {g.sourceLiteral && <span className="muted">：{g.sourceLiteral}</span>}
+                      {g.enforcement !== "mandatory" && " (recommended)"}
+                      {g.sourceLiteral && <span className="muted">: {g.sourceLiteral}</span>}
                     </li>
                   ))}
                 </ul>
                 <p className="muted">
-                  参考区间由模板的官方来源换算而来，用于对位；是否受理仍以签发机关为准。
+                  Reference ranges are converted from the template's official sources for alignment;
+                  acceptance remains at the issuing authority's discretion.
                 </p>
               </details>
             </>
           )}
 
-          {/* EDT-007 / WCAG 2.5.7：拖动之外必须有等效的单点操作 */}
-          <div className="nudge-pad" role="group" aria-label="平移照片">
+          {/* EDT-007 / WCAG 2.5.7: equivalent single-point operations must
+          exist beyond drag */}
+          <div className="nudge-pad" role="group" aria-label="Pan photo">
             <button
               type="button"
               onClick={() => nudge(0, -NUDGE_STEP)}
-              aria-label="上移"
+              aria-label="Move up"
               disabled={policy.composeLocked}
             >
               ↑
@@ -499,7 +520,7 @@ export function EditorStep({
             <button
               type="button"
               onClick={() => nudge(-NUDGE_STEP, 0)}
-              aria-label="左移"
+              aria-label="Move left"
               disabled={policy.composeLocked}
             >
               ←
@@ -510,7 +531,7 @@ export function EditorStep({
                 if (policy.composeLocked) return;
                 apply({ ...transform, translateX: 0, translateY: 0 });
               }}
-              aria-label="居中"
+              aria-label="Center"
               disabled={policy.composeLocked}
             >
               ⌾
@@ -518,7 +539,7 @@ export function EditorStep({
             <button
               type="button"
               onClick={() => nudge(NUDGE_STEP, 0)}
-              aria-label="右移"
+              aria-label="Move right"
               disabled={policy.composeLocked}
             >
               →
@@ -526,7 +547,7 @@ export function EditorStep({
             <button
               type="button"
               onClick={() => nudge(0, NUDGE_STEP)}
-              aria-label="下移"
+              aria-label="Move down"
               disabled={policy.composeLocked}
             >
               ↓
@@ -534,7 +555,7 @@ export function EditorStep({
           </div>
           <div className="filter-row">
             <label>
-              水平位置（−0.5～0.5）
+              Horizontal position (−0.5 to 0.5)
               <input
                 type="number"
                 min={-0.5}
@@ -545,12 +566,12 @@ export function EditorStep({
                   if (policy.composeLocked) return;
                   apply({ ...transform, translateX: Number(e.target.value) });
                 }}
-                aria-label="水平位置数值"
+                aria-label="Horizontal position value"
                 disabled={policy.composeLocked}
               />
             </label>
             <label>
-              垂直位置（−0.5～0.5）
+              Vertical position (−0.5 to 0.5)
               <input
                 type="number"
                 min={-0.5}
@@ -561,7 +582,7 @@ export function EditorStep({
                   if (policy.composeLocked) return;
                   apply({ ...transform, translateY: Number(e.target.value) });
                 }}
-                aria-label="垂直位置数值"
+                aria-label="Vertical position value"
                 disabled={policy.composeLocked}
               />
             </label>
@@ -570,7 +591,7 @@ export function EditorStep({
         <div className="editor-controls">
           <div className="filter-group">
             <label>
-              缩放（1 = 恰好覆盖）
+              Zoom (1 = exactly covering)
               <input
                 type="range"
                 min={MIN_SCALE}
@@ -593,12 +614,12 @@ export function EditorStep({
                   if (policy.composeLocked) return;
                   apply({ ...transform, scale: Number(e.target.value) });
                 }}
-                aria-label="缩放数值"
+                aria-label="Zoom value"
                 disabled={policy.composeLocked}
               />
             </label>
             <label>
-              旋转（度）
+              Rotation (degrees)
               <input
                 type="range"
                 min={-90}
@@ -624,7 +645,7 @@ export function EditorStep({
                   if (policy.rotateLocked) return;
                   apply({ ...transform, rotationDeg: Number(e.target.value) });
                 }}
-                aria-label="旋转数值"
+                aria-label="Rotation value"
                 disabled={policy.rotateLocked}
               />
             </label>
@@ -635,46 +656,52 @@ export function EditorStep({
               type="button"
               onClick={() => rotate90(true)}
               disabled={policy.rotateLocked}
-              title={policy.rotateLocked ? "模板禁止旋转" : "顺时针旋转 90°"}
+              title={
+                policy.rotateLocked ? "This template forbids rotation" : "Rotate 90° clockwise"
+              }
             >
-              旋转 90°
+              Rotate 90°
             </button>
             <button
               type="button"
               onClick={toggleFlip}
               disabled={policy.mirrorLocked}
-              title={policy.mirrorLocked ? "模板禁止镜像" : "水平镜像"}
+              title={
+                policy.mirrorLocked ? "This template forbids mirroring" : "Mirror horizontally"
+              }
             >
-              水平镜像
+              Mirror horizontally
             </button>
             <button type="button" onClick={undo} disabled={history.undo.length === 0}>
-              撤销
+              Undo
             </button>
             <button type="button" onClick={redo} disabled={history.redo.length === 0}>
-              重做
+              Redo
             </button>
             <button type="button" onClick={reset} disabled={transform === IDENTITY_TRANSFORM}>
-              重置
+              Reset
             </button>
           </div>
           {effectiveUpscale > 1.001 && (
             <p className="warn-text" role="alert">
-              源图分辨率不足：当前构图需要把源图放大 {effectiveUpscale.toFixed(2)} 倍才能填满{" "}
-              {out.width}×{out.height}，成品清晰度会明显下降。
+              Source resolution insufficient: the current composition needs to upscale the source{" "}
+              {effectiveUpscale.toFixed(2)}× to fill {out.width}×{out.height} and the artifact
+              sharpness will visibly drop.
               {coverUpscale > 1.001
-                ? "这张照片本身就小于模板输出，建议改用分辨率更高的照片。"
-                : "缩小放大倍率即可消除本条警告。"}
+                ? "This photo is already smaller than the template output; consider a higher-resolution photo."
+                : "Reducing the zoom removes this warning."}
             </p>
           )}
           {outOfBounds && (
             <p className="warn-text" role="alert">
-              当前旋转角度需要更大的放大倍率，但源图分辨率不允许。
-              请减小旋转角度，或改用分辨率更高的照片。
+              The current rotation angle needs a larger zoom, but the source resolution does not
+              allow it. Reduce the rotation angle or use a higher-resolution photo.
             </p>
           )}
           {autoScaled && !outOfBounds && (
             <p className="muted" role="status">
-              已自动放大以填满裁剪框——当前旋转角度下不放大会在成品边角留下空白。
+              Auto-zoomed to fill the crop frame - without it, the current rotation angle would
+              leave blank corners on the artifact.
             </p>
           )}
           <PolicyNotices policy={policy} />
@@ -684,12 +711,16 @@ export function EditorStep({
               className="primary"
               onClick={() => onDone({ transform, history })}
               disabled={outOfBounds}
-              title={outOfBounds ? "裁剪框超出源图，成品会有空白边角" : undefined}
+              title={
+                outOfBounds
+                  ? "crop frame outside the source; the artifact would have blank corners"
+                  : undefined
+              }
             >
-              下一步（终态检查）
+              Next (final checks)
             </button>
             <button type="button" onClick={() => onBack({ transform, history })}>
-              返回重新选择照片
+              Back to choose another photo
             </button>
           </div>
         </div>

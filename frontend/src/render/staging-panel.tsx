@@ -1,7 +1,9 @@
 /**
- * 暂存面板（SAV-001/006/§11）。
- * 选择暂存前必须显示上传目的、留存时长与预计到期并取得明确确认；
- * 保存成功后显示服务端权威 expiresAt、KEY 与独立删除密钥。
+ * Staging panel (SAV-001/006/§11).
+ * Before staging, the upload purpose, retention duration, and expected
+ * expiry must be shown and explicitly confirmed; after a successful save the
+ * server-authoritative expiresAt, KEY, and the separate delete secret are
+ * displayed.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -31,9 +33,10 @@ export interface StagedReceipt {
 export interface StagingPanelProps {
   artifact: FinalArtifact;
   template: TemplateEntry;
-  /** 已暂存回执：非空时面板直接回到 done 态，不再发第二次上传 */
+  /** Staged receipt: when non-null the panel goes straight back to the done
+   * state without a second upload */
   staged: StagedReceipt | null;
-  /** 回执对应的照片与当前屏幕上的成品是否已不一致 */
+  /** Whether the receipt's photo no longer matches the artifact on screen */
   stagedStale: boolean;
   onStaged: (receipt: StagedReceipt | null) => void;
 }
@@ -51,21 +54,24 @@ function formatExpiry(iso: string): string {
   return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")} ${`${d.getHours()}`.padStart(2, "0")}:${`${d.getMinutes()}`.padStart(2, "0")}`;
 }
 
-/** 删除回执：刷新页面后仍能找回删除权的唯一载体 */
-// 与组件同文件导出供 CreatePage 复用（工单约定不新建模块）；
-// react-refresh 规则对「组件文件导出工具函数」的告警是此处有意例外
+/** Delete receipt: the only carrier that still recovers the delete right
+ * after a page refresh */
+// Exported from the same file as the component for CreatePage to reuse
+// (ticket convention: no new module); the react-refresh warning about
+// exporting utility functions from a component file is an intentional
+// exception here
 // eslint-disable-next-line react-refresh/only-export-components
 export function receiptText(saved: SaveResponse): string {
   return [
-    "Portrait Booth 暂存回执",
+    "Portrait Booth staging receipt",
     "",
-    `取回码：${saved.keyDisplay}`,
-    `删除密钥：${saved.deleteSecret}`,
-    `服务端到期时间：${saved.expiresAt}`,
-    `模板：${saved.template.id}@${saved.template.version}`,
+    `Retrieval code: ${saved.keyDisplay}`,
+    `Delete secret: ${saved.deleteSecret}`,
+    `Server expiry time: ${saved.expiresAt}`,
+    `Template: ${saved.template.id}@${saved.template.version}`,
     "",
-    "取回码用于取回照片，删除密钥用于提前删除。",
-    "两者都无法找回，请妥善保存本文件。",
+    "The retrieval code retrieves the photo; the delete secret deletes it early.",
+    "Neither can be recovered; keep this file safe.",
   ].join("\n");
 }
 
@@ -75,7 +81,7 @@ export function downloadReceipt(saved: SaveResponse): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "portrait-booth-回执.txt";
+  a.download = "portrait-booth-receipt.txt";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -93,10 +99,12 @@ export function StagingPanel({
   const [policy, setPolicy] = useState<ServicePolicy | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // SPEC §11 的「同一幂等键重试」：键必须跨重试保持不变，
-  // 每次点击都新建一个键的话，服务端看到的永远是一次全新的保存。
+  // SPEC §11's "same idempotency key retry": the key must stay constant
+  // across retries; creating a new key per click would always look like a
+  // brand-new save to the server.
   const idempotencyKeyRef = useRef<string | null>(staged?.idempotencyKey ?? null);
-  // 会话 Cookie 由浏览器同源自动携带；建过就不再重建，重试才能落在同一命名空间
+  // The session cookie is carried automatically same-origin; once created it
+  // is never recreated, so retries land in the same namespace
   const sessionReadyRef = useRef(false);
 
   useEffect(() => {
@@ -106,7 +114,8 @@ export function StagingPanel({
         if (!cancelled) setPolicy(p);
       },
       () => {
-        // 政策读不到时不阻断流程，但界面必须显示「读取中」而不是编一个数字
+        // An unreadable policy must not block the flow, but the UI has to say
+        // "loading" instead of inventing a number
       },
     );
     return () => {
@@ -114,8 +123,9 @@ export function StagingPanel({
     };
   }, []);
 
-  // 换了一张成品就是另一次保存，旧的幂等键不能再用；上次 id 守卫避免
-  // 每次挂载（从终态返回编辑再回来）把刚从 props 恢复的键清掉
+  // A different artifact is a different save; the old idempotency key must
+  // not be reused. The previous-id guard prevents each mount (back to edit
+  // and return) from clearing the key just restored from props
   const prevArtifactIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (prevArtifactIdRef.current !== null && prevArtifactIdRef.current !== artifact.artifactId) {
@@ -133,8 +143,9 @@ export function StagingPanel({
   const upload = async () => {
     setStage({ kind: "uploading" });
     idempotencyKeyRef.current ??= newIdempotencyKey();
-    // 至多重发一次：仅当会话过期（SESSION_REQUIRED）时换新会话新键重试，
-    // 其余错误直接交回 error 态由用户决定。
+    // At most one resend: only on session expiry (SESSION_REQUIRED) does it
+    // retry with a new session and new key; all other errors go back to the
+    // error state for the user to decide.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         await ensureSaveSession();
@@ -152,11 +163,12 @@ export function StagingPanel({
         if (!sessionExpired || attempt === 1) {
           setStage({
             kind: "error",
-            message: err instanceof Error ? err.message : "暂存失败，请重试",
+            message: err instanceof Error ? err.message : "staging failed, please retry",
           });
           return;
         }
-        // 旧会话连同它的幂等命名空间一起消失：沿用旧键既命不中重放，又会误导排查
+        // The old session and its idempotency namespace are gone: reusing
+        // the old key would neither hit the replay nor help debugging
         sessionReadyRef.current = false;
         idempotencyKeyRef.current = newIdempotencyKey();
       }
@@ -174,11 +186,14 @@ export function StagingPanel({
       onStaged(null);
       setStage({ kind: "idle" });
     } catch (err) {
-      // 删除失败必须留在 done 面板里报错，不能切到上传用的 error 状态：
-      // 那会连同取回码、删除密钥与回执下载一起消失，而 error 状态唯一的主按钮
-      // 是「用同一幂等键重试」——它执行的是 upload()：会话未过期时服务端命中
-      // 已完成的记录并重放原 envelope，用户会拿到一个指向已删除照片的取回码。
-      setDeleteError(err instanceof Error ? err.message : "删除失败，请重试");
+      // A delete failure must stay inside the done panel, never switch to the
+      // upload error state: that would take the retrieval code, delete
+      // secret, and receipt download with it, and the error state's only
+      // primary button is "retry with the same idempotency key" - which runs
+      // upload(): with an unexpired session the server hits the completed
+      // record and replays the original envelope, handing the user a
+      // retrieval code pointing at a deleted photo.
+      setDeleteError(err instanceof Error ? err.message : "delete failed, please retry");
       setStage({ kind: "done", saved });
     }
   };
@@ -187,10 +202,11 @@ export function StagingPanel({
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // 剪贴板不可用时用户可手动复制
+      // When the clipboard is unavailable the user can copy manually
     }
   };
-  /** 移动端拿到成品的实际路径：<a download> 在 iOS 上常常只是打开新标签页 */
+  /** The real mobile path to the artifact: <a download> often just opens a
+   * new tab on iOS */
   const canShare = (): boolean => {
     if (typeof navigator === "undefined" || !navigator.canShare || !navigator.share) return false;
     return navigator.canShare({ files: [new File([], "p.jpg", { type: "image/jpeg" })] });
@@ -200,22 +216,22 @@ export function StagingPanel({
     setShareError(null);
     const file = new File([artifact.blob], "portrait-photo.jpg", { type: "image/jpeg" });
     try {
-      await navigator.share({ files: [file], title: "证件照片" });
+      await navigator.share({ files: [file], title: "Document photo" });
     } catch (err) {
-      // 用户取消不是错误
+      // User cancellation is not an error
       if (err instanceof DOMException && err.name === "AbortError") return;
-      setShareError("分享未完成：可改用「下载」保存到本地。");
+      setShareError('Share did not complete; you can use "Download" to save locally instead.');
     }
   };
 
   return (
-    <section aria-label="暂存照片">
-      <h3>暂存以便取回</h3>
+    <section aria-label="Stage photo">
+      <h3>Stage for retrieval</h3>
 
       {(stage.kind === "idle" || stage.kind === "error") && canShare() && (
         <div className="step-actions">
           <button type="button" onClick={() => void share()}>
-            分享或保存到相册
+            Share or save to photos
           </button>
         </div>
       )}
@@ -228,75 +244,91 @@ export function StagingPanel({
       {stage.kind === "idle" && (
         <div className="step-actions">
           <button type="button" className="primary" onClick={() => setStage({ kind: "confirm" })}>
-            暂存并生成取回码
+            Stage and generate retrieval code
           </button>
         </div>
       )}
       {stage.kind === "confirm" && (
         <div className="confirm-box">
-          {/* §9.2：保存前必须逐项告知。留存时长来自服务端政策，不写死在界面上 */}
-          <p>暂存会把这张终态照片上传到服务器。上传前请确认：</p>
+          {/* §9.2: every item must be disclosed before saving. Retention comes
+          from the server policy, never hard-coded in the UI */}
+          <p>Staging uploads this final photo to the server. Please confirm before uploading:</p>
           <ul>
-            <li>用途：仅用于凭取回码取回这张照片，不做其他用途。</li>
             <li>
-              留存时长：
-              {policy ? formatRetention(policy.temporaryStorageTtlSeconds) : "读取中…"}
-              （到期自动删除，不提供续期）。保存成功后返回的到期时间为权威时间。
+              Purpose: used only to retrieve this photo with the retrieval code, nothing else.
             </li>
-            <li>取回方式：{policy ? retrievalModeLabel(policy.retrievalMode) : "读取中…"}。</li>
-            <li>取回码为 6 位字符，只在这台设备上显示一次；遗失后无法找回。</li>
-            <li>删除密钥与取回码分开，是你主动删除这张照片的唯一凭证。</li>
+            <li>
+              Retention: {policy ? formatRetention(policy.temporaryStorageTtlSeconds) : "loading…"}
+              (auto-deleted on expiry; no renewal offered). The expiry returned after a successful
+              save is authoritative.
+            </li>
+            <li>
+              Retrieval method: {policy ? retrievalModeLabel(policy.retrievalMode) : "loading…"}.
+            </li>
+            <li>
+              The retrieval code is 6 characters, shown once on this device; it cannot be recovered
+              if lost.
+            </li>
+            <li>
+              The delete secret is separate from the retrieval code and is the only credential for
+              proactively deleting this photo.
+            </li>
           </ul>
           <div className="step-actions">
             <button type="button" className="primary" onClick={() => void upload()}>
-              确认并上传
+              Confirm and upload
             </button>
             <button type="button" onClick={() => setStage({ kind: "idle" })}>
-              取消
+              Cancel
             </button>
           </div>
         </div>
       )}
-      {stage.kind === "uploading" && <p aria-live="polite">正在上传并生成取回码…</p>}
+      {stage.kind === "uploading" && (
+        <p aria-live="polite">Uploading and generating retrieval code…</p>
+      )}
       {(stage.kind === "done" || stage.kind === "deleting") && (
         <div className="confirm-box">
           {stagedStale && (
             <p role="alert" className="warn-text">
-              这份取回码对应的是上一次暂存的那张照片；屏幕上的照片已改动、尚未暂存。
-              要暂存新的，请先「删除照片」。
+              This retrieval code belongs to the photo staged last time; the photo on screen has
+              changed and is not staged. To stage the new one, first "delete photo".
             </p>
           )}
-          <p>取回码（保留此页或记下取回码与删除密钥）：</p>
+          <p>Retrieval code (keep this page open or note the code and delete secret):</p>
           <p className="key-display">
             {stage.saved.keyDisplay}
             <button type="button" onClick={() => void copy(stage.saved.key)}>
-              复制
+              Copy
             </button>
           </p>
           <p className="muted">
-            删除密钥：{stage.saved.deleteSecret}
+            Delete secret: {stage.saved.deleteSecret}
             <button type="button" onClick={() => void copy(stage.saved.deleteSecret)}>
-              复制
+              Copy
             </button>
           </p>
-          <p className="muted">服务端到期时间：{formatExpiry(stage.saved.expiresAt)}（权威时间）</p>
+          <p className="muted">
+            Server expiry time: {formatExpiry(stage.saved.expiresAt)} (authoritative)
+          </p>
           <div className="step-actions">
             <button type="button" onClick={() => downloadReceipt(stage.saved)}>
-              下载回执（含取回码与删除密钥）
+              Download receipt (with retrieval code and delete secret)
             </button>
             {stage.kind === "deleting" ? (
               <button type="button" disabled>
-                正在删除…
+                Deleting…
               </button>
             ) : (
               <button type="button" onClick={() => void remove()}>
-                {deleteError ? "重试删除" : "删除照片"}
+                {deleteError ? "Retry delete" : "Delete photo"}
               </button>
             )}
           </div>
           {deleteError && (
             <p role="alert" className="warn-text">
-              {deleteError}（取回码与删除密钥仍然有效，可以直接重试）
+              {deleteError} (the retrieval code and delete secret are still valid; you can retry
+              directly)
             </p>
           )}
         </div>
@@ -307,13 +339,16 @@ export function StagingPanel({
             {stage.message}
           </p>
           <div className="step-actions">
-            {/* 复用同一会话与幂等键重试：会话未过期时服务端命中已完成记录并重放原响应，
-                不产生新照片；会话已过期则 upload() 内换新会话新键重发一次 */}
+            {/* Retry with the same session and idempotency key: with an
+            unexpired session the server hits the completed record and
+            replays the original response without a new photo; with an
+            expired session upload() creates a new session and key and
+            resends once */}
             <button type="button" className="primary" onClick={() => void upload()}>
-              用同一幂等键重试
+              Retry with the same idempotency key
             </button>
             <button type="button" onClick={() => setStage({ kind: "idle" })}>
-              返回
+              Back
             </button>
           </div>
         </>

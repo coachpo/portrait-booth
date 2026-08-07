@@ -61,7 +61,7 @@ describe("landmarker instances", () => {
   });
 
   it("reuses one IMAGE instance across static rechecks", async () => {
-    // GDE-005 的验收：连续两次静态复检只创建一次 landmarker
+    // GDE-005 acceptance: two consecutive static rechecks create the landmarker only once
     const { createLandmarker } = stubDeps();
     await acquireImageLandmarker();
     await acquireImageLandmarker();
@@ -69,7 +69,7 @@ describe("landmarker instances", () => {
   });
 
   it("keeps VIDEO and IMAGE as separate instances", async () => {
-    // VIDEO 模式带跨帧 ROI 回环，复用会把预览的 ROI 先验带进静态复检
+    // VIDEO mode carries a cross-frame ROI loop; reusing it would leak the preview's ROI prior into the static recheck
     const { created } = stubDeps();
     await acquireVideoLandmarker();
     await acquireImageLandmarker();
@@ -85,7 +85,7 @@ describe("landmarker instances", () => {
   });
 
   it("feeds strictly increasing timestamps to detectForVideo", async () => {
-    // 混用 performance.now()（约 1e4）与 Date.now()（约 1.75e12）会让 wasm 抛
+    // Mixing performance.now() (~1e4) with Date.now() (~1.75e12) makes wasm throw
     // "New timestamp is equal or less than the last one."
     const { videoTimestamps } = stubDeps();
     const client = await acquireVideoLandmarker();
@@ -128,9 +128,11 @@ describe("landmarker instances", () => {
 
 describe("failed creation cleanup", () => {
   it("a slow failure does not orphan a newer instance", async () => {
-    // 回归：创建失败的 catch 无条件把 videoInstance 置空。第一次创建很慢并最终
-    // 失败时，槽位里可能已经换成了后来那次成功创建的实例——它的句柄被丢掉，
-    // 之后 releaseVideoLandmarker 再也关不掉它（wasm 堆与 GL 上下文一起泄漏）。
+    // Regression: the creation-failure catch cleared videoInstance
+    // unconditionally. When the first creation is slow and eventually fails,
+    // the slot may already hold a later successful instance - its handle is
+    // dropped, and releaseVideoLandmarker can never close it afterwards
+    // (wasm heap and GL context leak together).
     let failFirst: (reason: unknown) => void = () => {};
     const closed: string[] = [];
     const second = {
@@ -154,16 +156,16 @@ describe("failed creation cleanup", () => {
     const firstAttempt = acquireVideoLandmarker();
     const firstSettled = firstAttempt.catch(() => "failed");
 
-    // 用户在模型加载完成前离开又回来：释放旧句柄，重新获取
+    // User leaves and returns before the model finishes loading: release the old handle, re-acquire
     releaseVideoLandmarker();
     const client = await acquireVideoLandmarker();
     expect(client).toBeDefined();
 
-    // 此时第一次创建才失败
+    // Only now does the first creation fail
     failFirst(new Error("no wasm"));
     await firstSettled;
 
-    // 新实例的句柄必须还在槽位里，否则这里关不掉它
+    // The new instance's handle must still be in the slot, otherwise it cannot be closed here
     releaseVideoLandmarker();
     await vi.waitFor(() => expect(closed).toEqual(["second"]));
   });

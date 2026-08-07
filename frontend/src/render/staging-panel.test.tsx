@@ -77,47 +77,55 @@ async function openConfirm(
       onStaged={overrides.onStaged ?? vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "暂存并生成取回码" }));
-  // 政策文案来自服务端，等它落地再继续
-  await screen.findByText(/30 天/);
+  fireEvent.click(screen.getByRole("button", { name: "Stage and generate retrieval code" }));
+  // The policy copy comes from the server; wait for it to land
+  await screen.findByText(/30 days/i);
 }
 
 describe("StagingPanel", () => {
   it("states purpose and retention from the server policy before uploading", async () => {
     await openConfirm();
-    expect(screen.getByText(/仅用于凭取回码取回这张照片/)).toBeInTheDocument();
-    expect(screen.getByText(/仅凭取回码取回/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/used only to retrieve this photo with the retrieval code/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/retrieval by retrieval code only/i)).toBeInTheDocument();
   });
 
   it("reuses the same idempotency key when a failed upload is retried", async () => {
-    // 回归：每次点击都新建幂等键，SPEC §11 的「同一幂等键重试」在 UI 上不可能发生
-    vi.mocked(savePhoto).mockRejectedValueOnce(new Error("网络中断"));
+    // Regression: every click used to mint a new idempotency key, making
+    // SPEC §11's "same idempotency key retry" impossible at the UI level
+    vi.mocked(savePhoto).mockRejectedValueOnce(new Error("network down"));
     vi.mocked(savePhoto).mockResolvedValueOnce(saved);
     await openConfirm();
 
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("网络中断");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("network down");
 
-    fireEvent.click(screen.getByRole("button", { name: "用同一幂等键重试" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry with the same idempotency key" }));
     await screen.findByText("A7C 2F9");
 
     expect(savePhoto).toHaveBeenCalledTimes(2);
     const firstKey = vi.mocked(savePhoto).mock.calls[0][3];
     const secondKey = vi.mocked(savePhoto).mock.calls[1][3];
     expect(secondKey).toBe(firstKey);
-    // 同一会话复用：重试不能再建会话，否则幂等命名空间被换掉，服务端无从重放
+    // Same-session reuse: a retry must not create another session, or the
+    // idempotency namespace changes and the server cannot replay
     expect(createSaveSession).toHaveBeenCalledTimes(1);
   });
 
   it("recovers from an expired session with a new session and a fresh idempotency key", async () => {
-    // 回归：会话过期（SESSION_REQUIRED）时沿用旧幂等键重发，命中的是已随旧会话
-    // 消失的命名空间，服务端只会当作一次全新保存、多出一张无法删除的照片
+    // Regression: on session expiry (SESSION_REQUIRED), resending with the
+    // old idempotency key hits a namespace gone with the old session; the
+    // server treats it as a brand-new save and leaves a photo that can never
+    // be deleted
     vi.mocked(savePhoto)
-      .mockRejectedValueOnce(new ApiError("SESSION_REQUIRED", "需要先建立保存会话", 403))
+      .mockRejectedValueOnce(
+        new ApiError("SESSION_REQUIRED", "a save session must be established first", 403),
+      )
       .mockResolvedValueOnce(saved);
     await openConfirm();
 
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByText("A7C 2F9");
 
     expect(createSaveSession).toHaveBeenCalledTimes(2);
@@ -128,12 +136,13 @@ describe("StagingPanel", () => {
   });
 
   it("reports the staged receipt upward after a successful upload", async () => {
-    // 回执的所有权在 CreatePage：面板必须把取回码、删除密钥与幂等键回传
+    // The receipt belongs to CreatePage: the panel must report the
+    // retrieval code, delete secret, and idempotency key back
     const onStaged = vi.fn();
     vi.mocked(savePhoto).mockResolvedValue(saved);
     await openConfirm(artifact(), { onStaged });
 
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByText("A7C 2F9");
 
     expect(onStaged).toHaveBeenCalledTimes(1);
@@ -148,16 +157,16 @@ describe("StagingPanel", () => {
     vi.mocked(deletePhoto).mockResolvedValue(undefined);
     await openConfirm(artifact(), { onStaged });
 
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByText("A7C 2F9");
-    fireEvent.click(screen.getByRole("button", { name: "删除照片" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete photo" }));
 
     await waitFor(() => expect(onStaged).toHaveBeenCalledTimes(2));
     expect(onStaged.mock.calls[1][0]).toBeNull();
   });
 
   it("restores the done panel from a staged receipt and warns when stale", async () => {
-    // 受控化：从 props 恢复 done 态，不再发第二次上传
+    // Controlled: restore the done state from props without a second upload
     render(
       <StagingPanel
         artifact={artifact()}
@@ -169,34 +178,37 @@ describe("StagingPanel", () => {
     );
     expect(screen.getByText("A7C 2F9")).toBeInTheDocument();
     expect(screen.getByText(/secret-value-1234567890/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /下载回执/ })).toBeInTheDocument();
-    // 回执对应的照片已改动：必须警告，且不再提供第二次暂存
-    expect(screen.getByRole("alert")).toHaveTextContent(/尚未暂存/);
-    expect(screen.queryByRole("button", { name: "暂存并生成取回码" })).toBeNull();
+    expect(screen.getByRole("button", { name: /download receipt/i })).toBeInTheDocument();
+    // The receipt's photo has changed: must warn and offer no second staging
+    expect(screen.getByRole("alert")).toHaveTextContent(/not staged/i);
+    expect(screen.queryByRole("button", { name: "Stage and generate retrieval code" })).toBeNull();
   });
 
   it("is not a dead end after a failed upload", async () => {
-    vi.mocked(savePhoto).mockRejectedValue(new Error("网络中断"));
+    vi.mocked(savePhoto).mockRejectedValue(new Error("network down"));
     await openConfirm();
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByRole("alert");
 
-    expect(screen.getByRole("button", { name: "用同一幂等键重试" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Retry with the same idempotency key" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
   });
 
   it("shows the key, delete secret and authoritative expiry after saving", async () => {
     vi.mocked(savePhoto).mockResolvedValue(saved);
     await openConfirm();
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
 
     expect(await screen.findByText("A7C 2F9")).toBeInTheDocument();
     expect(screen.getByText(/secret-value-1234567890/)).toBeInTheDocument();
-    expect(screen.getByText(/权威时间/)).toBeInTheDocument();
+    expect(screen.getByText(/authoritative/)).toBeInTheDocument();
   });
 
   it("offers a downloadable receipt so the delete secret survives a refresh", async () => {
-    // 回归：删除密钥只在页面上显示，刷新即永久失去删除权
+    // Regression: the delete secret used to live only on screen; a refresh
+    // permanently lost the delete right
     vi.mocked(savePhoto).mockResolvedValue(saved);
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     vi.stubGlobal("URL", {
@@ -205,50 +217,55 @@ describe("StagingPanel", () => {
       revokeObjectURL: vi.fn(),
     });
     await openConfirm();
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByText("A7C 2F9");
 
-    fireEvent.click(screen.getByRole("button", { name: /下载回执/ }));
+    fireEvent.click(screen.getByRole("button", { name: /download receipt/i }));
     await waitFor(() => expect(click).toHaveBeenCalled());
     click.mockRestore();
     vi.unstubAllGlobals();
   });
 });
 
-describe("删除失败", () => {
+describe("delete failure", () => {
   it("keeps the key and delete secret visible instead of falling into the upload error state", async () => {
-    // 回归：删除失败被并入上传用的 error 状态，done 面板连同取回码、删除密钥与
-    // 回执一起消失，而 error 状态唯一的主按钮「用同一幂等键重试」执行的是
-    // upload()——幂等键还在，服务端重放已完成的记录，用户拿到一个指向已删除
-    // 照片的取回码。
+    // Regression: a delete failure used to fall into the upload error
+    // state, taking the done panel - with retrieval code, delete secret, and
+    // receipt - away, while that state's only primary button
+    // "Retry with the same idempotency key" runs upload(): the key is still
+    // there, the server replays the completed record, and the user gets a
+    // retrieval code pointing at a deleted photo.
     vi.mocked(savePhoto).mockResolvedValue(saved);
-    vi.mocked(deletePhoto).mockRejectedValue(new Error("网络中断"));
+    vi.mocked(deletePhoto).mockRejectedValue(new Error("network down"));
     await openConfirm();
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByText("A7C 2F9");
 
-    fireEvent.click(screen.getByRole("button", { name: "删除照片" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("网络中断"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete photo" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("network down"));
 
-    // 取回码与删除密钥仍在，删除可以直接重试
+    // The retrieval code and delete secret are still there; delete can be
+    // retried directly
     expect(screen.getByText("A7C 2F9")).toBeInTheDocument();
     expect(screen.getByText(/secret-value-1234567890/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重试删除" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "用同一幂等键重试" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry delete" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry with the same idempotency key" }),
+    ).toBeNull();
   });
 
   it("retries the delete rather than the upload", async () => {
     vi.mocked(savePhoto).mockResolvedValue(saved);
     vi.mocked(deletePhoto)
-      .mockRejectedValueOnce(new Error("网络中断"))
+      .mockRejectedValueOnce(new Error("network down"))
       .mockResolvedValueOnce(undefined);
     await openConfirm();
-    fireEvent.click(screen.getByRole("button", { name: "确认并上传" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByText("A7C 2F9");
 
-    fireEvent.click(screen.getByRole("button", { name: "删除照片" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete photo" }));
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByRole("button", { name: "重试删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry delete" }));
 
     await waitFor(() => expect(deletePhoto).toHaveBeenCalledTimes(2));
     expect(savePhoto).toHaveBeenCalledTimes(1);

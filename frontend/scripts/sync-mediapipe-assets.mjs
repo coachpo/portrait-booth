@@ -1,7 +1,9 @@
-// MediaPipe 模型与 WASM 资产的版本锁定与构建期同步（O3）。
-// 所有路径以 process.cwd() 为基准：npm 跑 prebuild/predev 时 cwd 正是 frontend/，
-// 测试把脚本指向临时目录执行时也解析该目录下的 node_modules。
-// 语义与后端 template_store 的内容门一致：声明哈希 vs 实算哈希，不符即硬失败。
+// Version-locking and build-time sync of MediaPipe model and WASM assets (O3).
+// All paths are anchored at process.cwd(): during prebuild/predev npm runs
+// with cwd exactly frontend/, and tests point the script at a temp directory
+// that resolves its own node_modules.
+// Semantics are identical to the backend template_store content gate:
+// declared hash vs computed hash, hard failure on mismatch.
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { cpSync, existsSync, readFileSync } from "node:fs";
@@ -24,15 +26,15 @@ function verifyBytes(filePath, expectedBytes, expectedSha, label) {
     actual = readFileSync(filePath);
   } catch (err) {
     fail(
-      `${label} 缺失：${path.join(root, filePath)}\n  期望 ${expectedBytes} 字节 ${expectedSha}`,
+      `${label} missing: ${path.join(root, filePath)}\n  expected ${expectedBytes} bytes ${expectedSha}`,
     );
   }
   const actualSha = sha256Of(actual);
   if (actual.length !== expectedBytes || actualSha !== expectedSha) {
     fail(
-      `${label} 校验失败：${path.join(root, filePath)}\n` +
-        `  期望 ${expectedBytes} 字节 ${expectedSha}\n` +
-        `  实际 ${actual.length} 字节 ${actualSha}`,
+      `${label} verification failed: ${path.join(root, filePath)}\n` +
+        `  expected ${expectedBytes} bytes ${expectedSha}\n` +
+        `  actual ${actual.length} bytes ${actualSha}`,
     );
   }
   return actual;
@@ -42,32 +44,36 @@ let lock;
 try {
   lock = JSON.parse(readFileSync(path.join(root, "assets-lock.json"), "utf8"));
 } catch {
-  fail(`无法读取清单 ${path.join(root, "assets-lock.json")}`);
+  fail(`Unable to read lockfile ${path.join(root, "assets-lock.json")}`);
 }
 
-// 1. 依赖版本必须精确等于清单版本
+// 1. The dependency version must exactly equal the lockfile version
 const require = createRequire(path.join(root, "package.json"));
 let pkgVersion;
 try {
-  // 包 exports 不暴露 ./package.json，只能直接读文件（require 会 ERR_PACKAGE_PATH_NOT_EXPORTED）
+  // The package exports do not expose ./package.json, so read the file directly
+  // (require would throw ERR_PACKAGE_PATH_NOT_EXPORTED)
   pkgVersion = JSON.parse(
     readFileSync(path.join(root, "node_modules/@mediapipe/tasks-vision/package.json"), "utf8"),
   ).version;
 } catch (err) {
-  fail(`无法解析 @mediapipe/tasks-vision 包（${err.code ?? "unknown"}），请先 npm install`);
+  fail(
+    `Unable to resolve @mediapipe/tasks-vision package (${err.code ?? "unknown"}); run npm install first`,
+  );
 }
 if (pkgVersion !== lock.mediapipeVersion) {
   fail(
-    `依赖版本与清单不符：node_modules 是 ${pkgVersion}，assets-lock.json 声明 ${lock.mediapipeVersion}`,
+    `Dependency version does not match the lockfile: node_modules has ${pkgVersion}, assets-lock.json declares ${lock.mediapipeVersion}`,
   );
 }
 
-// 2. 逐条同步/校验
+// 2. Sync/verify each entry
 for (const entry of lock.assets) {
   const target = path.join(root, entry.path);
   if (entry.source.startsWith("npm:")) {
-    // source 形如 npm:@mediapipe/tasks-vision@1.0.1/vision_wasm_internal.js：
-    // 拆出包名与子路径，@版本后缀不属于模块说明符
+    // source looks like npm:@mediapipe/tasks-vision@1.0.1/vision_wasm_internal.js:
+    // split out package name and subpath; the @version suffix is not part of
+    // the module specifier
     const rest = entry.source.slice(4);
     const slash = rest.lastIndexOf("/");
     const pkg = rest.slice(0, slash).replace(/@[^@]*$/, "");
@@ -75,27 +81,30 @@ for (const entry of lock.assets) {
     const specifier = `${pkg}/${subpath}`;
     let resolved;
     try {
-      // 走包 exports 子路径定位源文件，不拼 node_modules 目录
+      // Locate the source file via the package exports subpath, never by
+      // constructing a node_modules path
       resolved = require.resolve(specifier);
     } catch (err) {
-      fail(`无法从 npm 包解析 ${specifier}（${err.code ?? "unknown"}）\n  目标路径：${target}`);
+      fail(
+        `Unable to resolve ${specifier} from the npm package (${err.code ?? "unknown"})\n  target path: ${target}`,
+      );
     }
     const sourceBytes = readFileSync(resolved);
     cpSync(resolved, target);
     const copiedSha = sha256Of(sourceBytes);
     if (sourceBytes.length !== entry.bytes || copiedSha !== entry.sha256) {
       fail(
-        `npm 原件与清单不符：${resolved}\n` +
-          `  期望 ${entry.bytes} 字节 ${entry.sha256}\n` +
-          `  实际 ${sourceBytes.length} 字节 ${copiedSha}\n  目标路径：${target}`,
+        `npm original does not match the lockfile: ${resolved}\n` +
+          `  expected ${entry.bytes} bytes ${entry.sha256}\n` +
+          `  actual ${sourceBytes.length} bytes ${copiedSha}\n  target path: ${target}`,
       );
     }
   } else {
-    // vendored 资产（face_landmarker.task）：只校验不生成
-    verifyBytes(entry.path, entry.bytes, entry.sha256, `模型 ${entry.source}`);
+    // Vendored asset (face_landmarker.task): verify only, never generate
+    verifyBytes(entry.path, entry.bytes, entry.sha256, `model ${entry.source}`);
   }
 }
 
 process.stdout.write(
-  `[sync-mediapipe-assets] ${lock.assets.length} 个资产已同步并通过校验（${lock.mediapipeVersion}）\n`,
+  `[sync-mediapipe-assets] ${lock.assets.length} assets synced and verified (${lock.mediapipeVersion})\n`,
 );

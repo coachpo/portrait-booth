@@ -9,7 +9,7 @@ function revision(caps: Capabilities): TemplateRevision {
     id: "t",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "测试" },
+    label: { en: "test" },
     jurisdiction: "XX",
     documentType: "id",
     submissionChannel: "digital_upload",
@@ -44,9 +44,11 @@ describe("editorPolicy", () => {
   it("locks compose only when crop is forbidden", () => {
     const policy = editorPolicy(revision({ ...ALL_ALLOWED, crop: "forbidden" }));
     expect(policy.composeLocked).toBe(true);
-    expect(policy.composeLockReason).toContain("禁止调整构图");
-    // 锁定原因文本不能写成「禁止裁剪」——输出比例固定必然要裁，正确语义是锁构图
-    expect(policy.composeLockReason).not.toContain("禁止裁剪");
+    expect(policy.composeLockReason).toContain("forbids adjusting the composition");
+    // The lock reason must not say "forbidden cropping" - the output aspect is
+    // fixed so cropping is inevitable; the correct semantics is locking the
+    // composition
+    expect(policy.composeLockReason).not.toContain("cropping");
 
     expect(editorPolicy(revision(ALL_ALLOWED)).composeLocked).toBe(false);
     expect(editorPolicy(revision({ ...ALL_ALLOWED, crop: "warn" })).composeLocked).toBe(false);
@@ -89,9 +91,10 @@ describe("editorPolicy", () => {
       "requiresOriginalCameraFile",
       "requiresProfessionalPhotographer",
     ]);
-    // 原文必须说明本工具成品是重新编码文件、不产出认证摄影师出品
-    expect(policy.sourceRequirements[1].text).toContain("重新编码");
-    expect(policy.sourceRequirements[2].text).toContain("认证摄影师");
+    // The copy must state that this tool's artifact is a re-encoded file
+    // and does not produce certified-photographer output
+    expect(policy.sourceRequirements[1].text).toContain("re-encoded");
+    expect(policy.sourceRequirements[2].text).toContain("certified photographer");
   });
 
   it("produces no notices or requirements when everything is allowed", () => {

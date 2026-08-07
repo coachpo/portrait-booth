@@ -23,9 +23,10 @@ export function SourceStep({ template, onReady, onBack }: SourceStepProps) {
     setLoading(true);
     try {
       const source = await loadSourceImage(file);
-      // GDE-009：上传照片也执行静态位置/角度/质量分析
+      // GDE-009: uploaded photos also get static position/angle/quality analysis
       try {
-        // GDE-009 复检结果随 source 传递，由终态页统一展示
+        // GDE-009 recheck results travel with the source; the final page
+        // displays them
         const checks = await runStaticCheck(source.bitmap);
         onReady({ ...source, staticChecks: checks });
       } catch {
@@ -39,18 +40,18 @@ export function SourceStep({ template, onReady, onBack }: SourceStepProps) {
   };
 
   return (
-    <section aria-label="选择照片来源">
-      <h2>上传照片</h2>
+    <section aria-label="Choose photo source">
+      <h2>Upload photo</h2>
       <p className="muted">
-        已选模板：{entryLabel(template, uiLocale())}。支持 JPEG、PNG、WebP（单文件 ≤15
-        MB）；照片只在本地处理，不会自动上传。
+        Selected template: {entryLabel(template, uiLocale())}. Supports JPEG, PNG, WebP (single file
+        ≤15 MB); photos are processed locally only and never uploaded automatically.
       </p>
       <input
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
         className="visually-hidden"
-        aria-label="选择照片文件"
+        aria-label="Choose photo file"
         data-testid="file-input"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -78,7 +79,11 @@ export function SourceStep({ template, onReady, onBack }: SourceStepProps) {
           if (file) void handleFile(file);
         }}
       >
-        {loading ? <p aria-live="polite">正在读取照片…</p> : <p>点击选择文件，或将照片拖到这里</p>}
+        {loading ? (
+          <p aria-live="polite">Reading photo…</p>
+        ) : (
+          <p>Click to choose a file, or drag a photo here</p>
+        )}
       </div>
       {error && (
         <p role="alert" className="warn-text">
@@ -87,7 +92,7 @@ export function SourceStep({ template, onReady, onBack }: SourceStepProps) {
       )}
       <div className="step-actions">
         <button type="button" onClick={onBack}>
-          返回重新选择模板
+          Back to choose another template
         </button>
       </div>
     </section>

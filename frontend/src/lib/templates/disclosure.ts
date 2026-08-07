@@ -1,7 +1,8 @@
 /**
- * 模板披露（TMP-002）：限制短语与来源注记的取数。
- * capabilities 文案映射的唯一来源是 ./policy.ts（第 3 轮约定），
- * 本模块只 re-export，不另建第二份映射；sourceNotesFor 做 locale 回退。
+ * Template disclosure (TMP-002): fetching restriction phrases and source notes.
+ * The single source for capabilities copy is ./policy.ts (round-3 convention);
+ * this module only re-exports and never builds a second mapping; sourceNotesFor
+ * does the locale fallback.
  */
 
 import type { TemplateRevision } from "./types";
@@ -11,15 +12,16 @@ export { capabilityRestrictions };
 export type { RestrictionPhrase };
 
 /**
- * 按 locale → "zh" → "en" → 第一个可用 key 回退，只返回选中那一个 locale
- * 的全部条目，绝不合并多个 locale；容忍 undefined / {} / 缺 locale 键。
+ * Fallback per locale → "en" → first available key, returning all entries of
+ * the selected locale only, never merging multiple locales; tolerates
+ * undefined / {} / missing locale keys.
  */
 export function sourceNotesFor(rev: TemplateRevision, locale: string): string[] {
   const notes = rev.sourceNotes;
   if (!notes) return [];
   const keys = Object.keys(notes);
   if (keys.length === 0) return [];
-  const pick = [locale, "zh", "en", keys[0]].find((k) => notes[k] !== undefined);
+  const pick = [locale, "en", "zh", keys[0]].find((k) => notes[k] !== undefined);
   if (!pick) return [];
   return notes[pick] ?? [];
 }

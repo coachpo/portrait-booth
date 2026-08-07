@@ -1,18 +1,22 @@
 /**
- * 姿态推理的性能测量口径。
+ * Measurement basis for pose-inference performance.
  *
- * 存在的理由：是否把推理迁到 Worker 是一个性能问题，而当前唯一的依据是一句
- * 「推理 ~30-50ms/帧」的代码注释——它与实测矛盾。在拿到真实分布之前，
- * 线程重构只是在优化一个没被测量过的量。
+ * Why it exists: whether to move inference to a Worker is a performance
+ * question, and the only current basis is a code comment saying "inference
+ * ~30-50ms/frame" - which contradicts measurements. Without the real
+ * distribution, a thread refactor would just be optimizing an unmeasured
+ * quantity.
  *
- * 判定门限取 50 ms：这是 Long Tasks API 的规范门限，比拍脑袋的 60 ms 更有依据。
- * 单帧 p95 稳定低于它时，主线程路径在响应性上没有实际问题，
- * Worker 迁移降级为纯规范符合性工作。
+ * The decision gate is 50 ms: the Long Tasks API's spec threshold, more
+ * principled than an off-the-cuff 60 ms. When single-frame p95 stays stably
+ * below it, the main-thread path has no real responsiveness problem and the
+ * Worker migration degrades to pure spec-compliance work.
  *
- * 采集只在开发构建下启用（见 isMeasurementEnabled），生产路径零开销。
+ * Collection is enabled only in development builds (see
+ * isMeasurementEnabled); the production path has zero overhead.
  */
 
-/** Long Tasks API 的规范门限（毫秒）。 */
+/** The Long Tasks API's spec threshold (milliseconds). */
 export const LONG_TASK_MS = 50;
 
 const CAPACITY = 240;
@@ -22,7 +26,7 @@ export interface InferenceStats {
   p50: number;
   p95: number;
   max: number;
-  /** p95 是否越过 Long Tasks 门限——越过才需要重新考虑 Worker 迁移 */
+  /** Whether p95 crosses the Long Tasks threshold - only then should the Worker migration be reconsidered */
   exceedsLongTaskBudget: boolean;
 }
 
@@ -33,7 +37,7 @@ export function isMeasurementEnabled(): boolean {
   return import.meta.env.DEV;
 }
 
-/** 记录一次推理耗时。环形缓冲，固定内存，不随会话时长增长。 */
+/** Record one inference duration. Ring buffer, fixed memory, does not grow with session length. */
 export function recordInference(durationMs: number): void {
   if (!Number.isFinite(durationMs) || durationMs < 0) return;
   samples[written % CAPACITY] = durationMs;
@@ -47,7 +51,8 @@ export function resetInferenceSamples(): void {
 
 function percentile(sorted: number[], fraction: number): number {
   if (sorted.length === 0) return 0;
-  // 最近邻取值法：样本量小时不做插值，避免造出一个从未观测到的数
+  // Nearest-neighbor quantiles: no interpolation for small samples, avoiding
+  // inventing a value that was never observed
   const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1));
   return sorted[index];
 }
@@ -67,16 +72,17 @@ export function inferenceStats(): InferenceStats | null {
 }
 
 export interface LongTaskWindow {
-  /** 观测窗口内的长任务条数 */
+  /** Number of long tasks in the observation window */
   count: number;
-  /** 最长的一次（毫秒） */
+  /** The longest one (milliseconds) */
   longestMs: number;
   stop: () => void;
 }
 
 /**
- * 观测预览期间的长任务。浏览器不支持 longtask 时返回 null，
- * 调用方据此说明「本环境无法测量」而不是假装测到了 0。
+ * Observe long tasks during the preview. Returns null when the browser does
+ * not support longtask, letting callers state "this environment cannot
+ * measure" instead of pretending a 0 was measured.
  */
 export function observeLongTasks(): LongTaskWindow | null {
   if (typeof PerformanceObserver === "undefined") return null;
@@ -99,7 +105,7 @@ export function observeLongTasks(): LongTaskWindow | null {
   }
 }
 
-/** 把一次推理包起来计时。非开发构建下直接透传，不产生额外调用开销。 */
+/** Time one inference by wrapping it. Outside development builds this passes through directly with zero overhead. */
 export function measureInference<T>(run: () => T): T {
   if (!isMeasurementEnabled()) return run();
   const start = performance.now();

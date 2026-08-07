@@ -7,10 +7,10 @@ import { clearTemplateCatalogCache } from "../lib/templates/catalog";
 import { routes } from "./App";
 import { ErrorBoundary } from "./error-boundary";
 
-vi.mock("../create/create-page", () => ({ CreatePage: () => <p>创建流程占位</p> }));
-vi.mock("../pages/retrieve-page", () => ({ RetrievePage: () => <p>取回流程占位</p> }));
+vi.mock("../create/create-page", () => ({ CreatePage: () => <p>create flow placeholder</p> }));
+vi.mock("../pages/retrieve-page", () => ({ RetrievePage: () => <p>retrieve flow placeholder</p> }));
 vi.mock("../pages/template-detail-page", () => ({
-  TemplateDetailPage: () => <p>模板详情占位</p>,
+  TemplateDetailPage: () => <p>template detail placeholder</p>,
 }));
 
 function renderAt(path: string) {
@@ -41,15 +41,15 @@ describe("App shell", () => {
   it("renders the home page with both entry points", () => {
     renderAt("/");
     expect(screen.getByRole("heading", { name: "Portrait Booth", level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "开始创建" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "输入取回码" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Start creating" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Enter retrieval code" })).toBeInTheDocument();
   });
 
   it("shows global navigation on every page", () => {
-    // 回归：内页曾没有任何回首页的出口
+    // Regression: inner pages used to have no way back home
     for (const path of ["/", "/create", "/retrieve", "/privacy"]) {
       const { unmount } = renderAt(path);
-      expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Portrait Booth" })).toBeInTheDocument();
       unmount();
     }
@@ -57,58 +57,60 @@ describe("App shell", () => {
 
   it("falls back to a 404 page instead of a blank screen", () => {
     renderAt("/no-such-page");
-    expect(screen.getByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Page not found" })).toBeInTheDocument();
     expect(screen.getByText("/no-such-page", { exact: false })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "回到首页" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to home" })).toBeInTheDocument();
   });
 
   it("renders the template detail page for /templates/:revisionId (P4)", () => {
-    // 回归：该路径曾命中 * 兜底路由渲染 NotFoundPage
+    // Regression: this path used to hit the * fallback route and render NotFoundPage
     renderAt("/templates/fi-police-digital@1");
-    expect(screen.getByText("模板详情占位")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "页面不存在" })).toBeNull();
+    expect(screen.getByText("template detail placeholder")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Page not found" })).toBeNull();
   });
 
   it("renders the privacy page from server policy, not hard-coded numbers", async () => {
     renderAt("/privacy");
-    expect(await screen.findByText("30 天（到期自动删除，不提供续期）")).toBeInTheDocument();
-    expect(screen.getByText(/仅凭取回码取回/)).toBeInTheDocument();
+    expect(
+      await screen.findByText("30 days (auto-deleted on expiry; no renewal offered)"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/retrieval by retrieval code only/i)).toBeInTheDocument();
     expect(screen.getByText("15 MB")).toBeInTheDocument();
   });
 
   it("offers a retry when the service policy cannot be read", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     renderAt("/privacy");
-    expect(await screen.findByRole("alert")).toHaveTextContent("无法读取服务政策");
-    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("unable to load the service policy");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 });
 
 describe("ErrorBoundary", () => {
   function Boom(): never {
-    throw new Error("渲染炸了");
+    throw new Error("render exploded");
   }
 
   it("shows a recoverable message instead of a white screen", () => {
-    // React 会把渲染错误打到 console.error，这里不需要它污染输出
+    // React logs render errors to console.error; keep it out of the output
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     render(
       <ErrorBoundary>
         <Boom />
       </ErrorBoundary>,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("页面出错了");
-    expect(screen.getByText(/渲染炸了/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Something went wrong");
+    expect(screen.getByText(/render exploded/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     consoleError.mockRestore();
   });
 
   it("renders children when nothing throws", () => {
     render(
       <ErrorBoundary>
-        <p>一切正常</p>
+        <p>all good</p>
       </ErrorBoundary>,
     );
-    expect(screen.getByText("一切正常")).toBeInTheDocument();
+    expect(screen.getByText("all good")).toBeInTheDocument();
   });
 });

@@ -13,7 +13,7 @@ import {
 } from "./camera";
 
 beforeEach(() => {
-  // jsdom 未实现 mediaDevices
+  // jsdom does not implement mediaDevices
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: { getUserMedia: vi.fn(), enumerateDevices: vi.fn() },
@@ -62,24 +62,24 @@ describe("openCamera (CAM-001/003)", () => {
 describe("cameraErrorMessage (CAM-002)", () => {
   it("maps permission denial to guidance", () => {
     const msg = cameraErrorMessage(new DOMException("denied", "NotAllowedError"));
-    expect(msg).toContain("权限被拒绝");
-    expect(msg).toContain("改用上传照片");
+    expect(msg).toContain("permission denied");
+    expect(msg).toContain("upload a photo instead");
   });
 
   it("maps missing device", () => {
     expect(cameraErrorMessage(new DOMException("none", "NotFoundError"))).toContain(
-      "未检测到摄像头设备",
+      "no camera device detected",
     );
   });
 
   it("maps constraint failure", () => {
     expect(cameraErrorMessage(new DOMException("c", "OverconstrainedError"))).toContain(
-      "不满足所需约束",
+      "does not satisfy the required constraints",
     );
   });
 
   it("falls back to a generic message", () => {
-    expect(cameraErrorMessage(new Error("boom"))).toContain("打开摄像头失败");
+    expect(cameraErrorMessage(new Error("boom"))).toContain("failed to open the camera");
   });
 });
 
@@ -158,7 +158,8 @@ describe("checkCameraSupport (§10.2)", () => {
   });
 
   it("explains that the browser lacks getUserMedia", () => {
-    // 不做检测时这些浏览器会走到「打开摄像头失败：请重试」——重试多少次都没用
+    // Without detection these browsers end up at "failed to open camera:
+    // retry" - retrying never helps
     vi.stubGlobal("navigator", {});
     const support = checkCameraSupport();
     expect(support.supported).toBe(false);
@@ -197,18 +198,19 @@ describe("attachStream (CAM-002)", () => {
   });
 
   it("surfaces a blocked autoplay instead of swallowing it", async () => {
-    // 回归：play() 的失败曾被空 catch 吞掉，用户看到一块永远黑着的预览，
-    // 而界面显示「已就绪」
+    // Regression: play() failures used to be swallowed by an empty catch,
+    // leaving the user with a permanently black preview while the UI said
+    // "ready"
     const video = fakeVideo(() => Promise.reject(new DOMException("blocked", "NotAllowedError")));
     const result = await attachStream(video, {} as MediaStream);
     expect(result.playing).toBe(false);
-    expect(result.reason).toContain("自动播放");
+    expect(result.reason).toContain("autoplay");
   });
 
   it("reports a generic playback failure with a usable next step", async () => {
     const video = fakeVideo(() => Promise.reject(new Error("boom")));
     const result = await attachStream(video, {} as MediaStream);
     expect(result.playing).toBe(false);
-    expect(result.reason).toContain("上传照片");
+    expect(result.reason).toContain("upload a photo");
   });
 });

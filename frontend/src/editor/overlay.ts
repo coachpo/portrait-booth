@@ -1,12 +1,15 @@
 /**
- * 模板蒙版与允许区间的坐标换算（EDT-008）。
+ * Template mask and allowed-range coordinate conversion (EDT-008).
  *
- * cropRules 里的数字有三种坐标空间——输出像素、物理毫米、归一化比例——
- * 而编辑器画布只认输出像素。这里把它们统一换算过去，
- * 顺便把「从顶部起算」「从底部起算」「相对中线」这几种锚定方式解释成画布上的区间。
+ * cropRules numbers live in three coordinate spaces - output pixels,
+ * physical millimeters, normalized ratios - while the editor canvas only
+ * knows output pixels. This module converts them all over, and interprets
+ * the anchoring styles "from the top", "from the bottom", and "relative to
+ * the center line" as canvas intervals.
  *
- * 换算失败时返回 null 而不是猜一个数：宁可不画，也不能画一条位置错误的参考线，
- * 那比没有参考线更糟。
+ * A failed conversion returns null instead of guessing: better to draw
+ * nothing than a reference line in the wrong place - that is worse than no
+ * line at all.
  */
 
 import type { MeasurementRule, TemplateRevision } from "../lib/templates/types";
@@ -15,20 +18,20 @@ import type { Rect } from "./edit-transform";
 const MM_PER_INCH = 25.4;
 
 export type GuideKind =
-  /** 画布上的一条水平带（y 区间） */
+  /** A horizontal band on the canvas (y interval) */
   | "horizontal-band"
-  /** 画布上的一条垂直带（x 区间） */
+  /** A vertical band on the canvas (x interval) */
   | "vertical-band"
-  /** 纵向尺寸的允许范围，画成标尺 */
+  /** Allowed range of a vertical size, drawn as a ruler */
   | "size-y"
-  /** 横向尺寸的允许范围，画成标尺 */
+  /** Allowed range of a horizontal size, drawn as a ruler */
   | "size-x";
 
 export interface OverlayGuide {
   ruleId: string;
   metric: string;
   kind: GuideKind;
-  /** 输出像素坐标，from <= to */
+  /** Output-pixel coordinates, from <= to */
   fromPx: number;
   toPx: number;
   label: string;
@@ -37,22 +40,23 @@ export interface OverlayGuide {
 }
 
 const METRIC_LABELS: Record<string, string> = {
-  head_height: "头部高度",
-  head_top_margin: "头顶留白",
-  chin_bottom_margin: "下巴到底边",
-  eye_line_from_bottom: "眼睛高度（自底边）",
-  face_center_offset_x: "面部中线偏移",
-  face_width: "面部宽度",
-  interpupil_distance: "瞳距",
-  face_left_margin: "面部左侧留白",
-  face_right_margin: "面部右侧留白",
+  head_height: "Head height",
+  head_top_margin: "Head top margin",
+  chin_bottom_margin: "Chin to bottom edge",
+  eye_line_from_bottom: "Eye height (from bottom)",
+  face_center_offset_x: "Face center-line offset",
+  face_width: "Face width",
+  interpupil_distance: "Interpupillary distance",
+  face_left_margin: "Face left margin",
+  face_right_margin: "Face right margin",
 };
 
 export function metricLabel(metric: string): string {
   return METRIC_LABELS[metric] ?? metric;
 }
 
-/** 把一个规则值换算成输出像素。无法换算时返回 null。 */
+/** Convert one rule value to output pixels. Returns null when the
+ * conversion is impossible. */
 export function toOutputPixels(
   value: number,
   rule: MeasurementRule,
@@ -64,14 +68,15 @@ export function toOutputPixels(
     case "output_pixel_top_left":
       return value;
     case "output_physical_mm_top_left": {
-      // 毫米只有在模板声明了打印密度时才有确定的像素含义
+      // Millimeters only have a definite pixel meaning when the template
+      // declares a print density
       if (rev.output.kind !== "physical_raster") return null;
       return (value / MM_PER_INCH) * rev.output.printPpi;
     }
     case "output_normalized_top_left":
       return axis === "x" ? value * out.width : value * out.height;
     default:
-      // pose_camera_degrees 等：不是画布上的长度，画不出来
+      // pose_camera_degrees etc.: not a canvas length; cannot be drawn
       return null;
   }
 }
@@ -82,7 +87,8 @@ interface Span {
   kind: GuideKind;
 }
 
-/** 把 [min, max] 解释成画布上的区间。max 缺失时用画布边界兜底。 */
+/** Interpret [min, max] as a canvas interval. When max is missing, fall
+ * back to the canvas edge. */
 function spanFor(metric: string, min: number | null, max: number | null, out: Rect): Span | null {
   const H = out.height;
   const W = out.width;
@@ -91,7 +97,7 @@ function spanFor(metric: string, min: number | null, max: number | null, out: Re
       return { from: min ?? 0, to: max ?? H, kind: "horizontal-band" };
     case "chin_bottom_margin":
     case "eye_line_from_bottom":
-      // 自底边起算：越大越靠上
+      // Measured from the bottom: larger values sit higher
       return { from: H - (max ?? H), to: H - (min ?? 0), kind: "horizontal-band" };
     case "face_left_margin":
       return { from: min ?? 0, to: max ?? W, kind: "vertical-band" };
@@ -110,10 +116,10 @@ function spanFor(metric: string, min: number | null, max: number | null, out: Re
 }
 
 /**
- * 生成可绘制的蒙版参考。
+ * Build drawable mask guides.
  *
- * 只处理 overlay.ruleIds 点名的规则——overlay.kind 决定画什么是模板作者的决定，
- * 不是编辑器猜出来的。
+ * Only rules named by overlay.ruleIds are handled - what overlay.kind draws
+ * is the template author's decision, not something the editor guesses.
  */
 export function buildOverlayGuides(rev: TemplateRevision, out: Rect): OverlayGuide[] {
   if (rev.overlay.kind === "none") return [];
@@ -122,12 +128,15 @@ export function buildOverlayGuides(rev: TemplateRevision, out: Rect): OverlayGui
 
   for (const ruleId of rev.overlay.ruleIds) {
     const rule = byId.get(ruleId);
-    if (!rule) continue; // 坏引用由 CI 的内容门拦截，运行期安静跳过
+    if (!rule) continue; // broken references are blocked by CI's content gate; skip quietly at runtime
 
-    // 尺寸档位过滤位置（P6 坑 12）：SPEC:337 的 appliesToOutputSize 声明了
-    // 规则适用的输出尺寸档，buildOverlayGuides 目前未消费；一旦有模板按档位
-    // 声明不同参考线，必须在这里按当前 out 过滤规则后再走换算。
-    // MeasurementRule 的类型声明缺 appliesToOutputSize（坑 19），属于别的工作。
+    // Size-band filter position (P6 ticket 12): SPEC:337's appliesToOutputSize
+    // declares which output-size band a rule applies to, and
+    // buildOverlayGuides does not consume it yet; once a template declares
+    // band-specific guides, rules must be filtered by the current out here
+    // before conversion.
+    // MeasurementRule's type declaration lacks appliesToOutputSize (ticket
+    // 19); that is separate work.
 
     const min = rule.min == null ? null : toOutputPixels(rule.min, rule, rev, out);
     const max = rule.max == null ? null : toOutputPixels(rule.max, rule, rev, out);
@@ -154,7 +163,8 @@ export function buildOverlayGuides(rev: TemplateRevision, out: Rect): OverlayGui
   return guides;
 }
 
-/** 目标头部椭圆：由头顶留白与下巴留白共同确定的纵向区间推导。 */
+/** Target head ellipse: derived from the vertical interval jointly defined
+ * by the head-top margin and chin-bottom margin. */
 export function headEllipse(
   guides: OverlayGuide[],
   out: Rect,
@@ -162,7 +172,8 @@ export function headEllipse(
   const top = guides.find((g) => g.metric === "head_top_margin");
   const bottom = guides.find((g) => g.metric === "chin_bottom_margin");
   if (!top || !bottom) return null;
-  // 两条带都已经是画布 y 坐标，取中点作为头顶与下巴的目标位置
+  // Both bands are already canvas y coordinates; their midpoints are the
+  // target crown and chin positions
   const crownY = (top.fromPx + top.toPx) / 2;
   const chinY = (bottom.fromPx + bottom.toPx) / 2;
   if (chinY <= crownY) return null;

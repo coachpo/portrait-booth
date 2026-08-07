@@ -4,8 +4,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    // tasks-vision 在 Worker 内对 WASM glue 做运行时动态 import，
-    // 预打包会产生第二个模块实例导致 ModuleFactory 缺失
+    // tasks-vision does a runtime dynamic import of the WASM glue inside a
+    // Worker; pre-bundling would create a second module instance and break
+    // the ModuleFactory lookup
     exclude: ["@mediapipe/tasks-vision"],
   },
   server: {
@@ -16,7 +17,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
-    // e2e 由 Playwright 运行（playwright.config.ts），排除出 vitest
+    // e2e is run by Playwright (playwright.config.ts), excluded from vitest
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
   },
 });

@@ -23,7 +23,7 @@ function entry(
       id: "t",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "测试模板" },
+      label: { en: "Test template" },
       jurisdiction: "US",
       documentType: "passport",
       submissionChannel: "digital_upload",
@@ -32,8 +32,8 @@ function entry(
         {
           id: "s1",
           url: "https://example.com/spec",
-          title: "官方规格",
-          authority: "测试机构",
+          title: "Official specification",
+          authority: "Test authority",
           accessedAt: "2026-08-06",
         },
       ],
@@ -83,22 +83,22 @@ const catalog: TemplateCatalog = {
     entry({
       revisionId: "generic@1",
       id: "generic",
-      label: { zh: "通用肖像" },
+      label: { en: "Generic portrait" },
       jurisdiction: "generic",
       documentType: "portrait",
-      sourceNotes: { zh: ["非官方证件模板。"] },
+      sourceNotes: { en: ["Unofficial document template."] },
     }),
     entry(
       {
         revisionId: "us-paper@1",
         id: "us-paper",
-        label: { zh: "美国护照纸质" },
+        label: { en: "US passport paper" },
         submissionChannel: "paper",
       },
       {
         revisionId: "us-paper@1",
         status: "reference_only",
-        statusReason: "尚未通过校准打印测试",
+        statusReason: "not verified by calibrated print tests",
       },
     ),
   ],
@@ -116,20 +116,22 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole("heading", { name: "测试模板" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "通用肖像" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Test template" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Generic portrait" })).toBeInTheDocument();
   });
 
   it("shows error and retries on failure", async () => {
-    mockedFetch.mockRejectedValueOnce(new Error("网络错误")).mockResolvedValueOnce(catalog);
+    mockedFetch.mockRejectedValueOnce(new Error("network error")).mockResolvedValueOnce(catalog);
     render(
       <MemoryRouter>
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    expect(await screen.findByText("模板目录加载失败：网络错误")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    expect(await screen.findByRole("heading", { name: "测试模板" })).toBeInTheDocument();
+    expect(
+      await screen.findByText("template catalog failed to load: network error"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: "Test template" })).toBeInTheDocument();
     expect(mockedFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -140,10 +142,10 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "测试模板" });
-    fireEvent.click(screen.getByRole("button", { name: "美国" }));
-    expect(screen.queryByRole("heading", { name: "通用肖像" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "测试模板" })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Test template" });
+    fireEvent.click(screen.getByRole("button", { name: "United States" }));
+    expect(screen.queryByRole("heading", { name: "Generic portrait" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Test template" })).toBeInTheDocument();
   });
 
   it("marks non-official and reference_only templates", async () => {
@@ -153,10 +155,10 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "测试模板" });
-    expect(screen.getByText("非证件模板")).toBeInTheDocument();
-    expect(screen.getByText("仅供参考")).toBeInTheDocument();
-    expect(screen.getByText("尚未通过校准打印测试")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Test template" });
+    expect(screen.getByText("Non-document template")).toBeInTheDocument();
+    expect(screen.getByText("Reference only")).toBeInTheDocument();
+    expect(screen.getByText("not verified by calibrated print tests")).toBeInTheDocument();
   });
 
   it("only active templates are selectable", async () => {
@@ -167,12 +169,12 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={onSelect} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "测试模板" });
-    const selectable = screen.getAllByRole("button", { name: "选择此模板" });
+    await screen.findByRole("heading", { name: "Test template" });
+    const selectable = screen.getAllByRole("button", { name: "Select this template" });
     expect(selectable).toHaveLength(2);
     fireEvent.click(selectable[0]);
     expect(onSelect).toHaveBeenCalledOnce();
-    const disabled = screen.getByRole("button", { name: "不可用于提交" });
+    const disabled = screen.getByRole("button", { name: "Not submittable" });
     expect(disabled).toBeDisabled();
   });
 
@@ -184,7 +186,7 @@ describe("TemplateStep", () => {
         entry({
           revisionId: "pro@1",
           id: "pro",
-          label: { zh: "需专业拍摄" },
+          label: { en: "Professional capture required" },
           capabilities: {
             selfCapture: "certified_only",
             crop: "allowed",
@@ -203,15 +205,16 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "需专业拍摄" });
+    await screen.findByRole("heading", { name: "Professional capture required" });
     const card = screen
-      .getByRole("heading", { name: "需专业拍摄" })
+      .getByRole("heading", { name: "Professional capture required" })
       .closest("li.template-card") as HTMLElement;
-    // 限制短语（TMP-002，以句号结尾）与前置约束（以分号承接工具说明）各出现一次
-    expect(within(card).getByText(/要求认证摄影师拍摄。/)).toBeInTheDocument();
-    expect(within(card).getByText(/要求原始相机文件。/)).toBeInTheDocument();
-    expect(within(card).getByText(/重新编码的 JPEG/)).toBeInTheDocument();
-    expect(within(card).getByText(/本工具不产出认证摄影师出品/)).toBeInTheDocument();
+    // The restriction phrase (TMP-002, ending in a period) and the
+    // prerequisite constraint (continuing with the tool note) each appear once
+    expect(within(card).getByText(/certified photographer is required\./i)).toBeInTheDocument();
+    expect(within(card).getByText(/original camera file is required\./i)).toBeInTheDocument();
+    expect(within(card).getByText(/re-encoded JPEG/)).toBeInTheDocument();
+    expect(within(card).getByText(/not produce certified-photographer output/)).toBeInTheDocument();
   });
 
   it("hides requirement markers when all prerequisites are satisfied (P2)", async () => {
@@ -221,26 +224,27 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "测试模板" });
-    expect(screen.queryByText(/认证摄影师/)).toBeNull();
-    expect(screen.queryByText(/原始相机文件/)).toBeNull();
+    await screen.findByRole("heading", { name: "Test template" });
+    expect(screen.queryByText(/certified photographer/i)).toBeNull();
+    expect(screen.queryByText(/original camera file/i)).toBeNull();
   });
 
   it("discloses review date, source update time, notes and restrictions (P3)", async () => {
-    // 旧实现：官方模板一条注记都看不到、dl 无复核日期/版本、来源无更新时间
+    // Old implementation: official templates showed no notes at all, the
+    // dl had no review date/version, and sources had no update time
     mockedFetch.mockResolvedValue({
       ...catalog,
       templates: catalog.templates.map((t) =>
         t.revision.revisionId === "t@1"
           ? entry({
               revisionId: "t@1",
-              sourceNotes: { zh: ["注记甲", "注记乙"] },
+              sourceNotes: { en: ["note one", "note two"] },
               sources: [
                 {
                   id: "s1",
                   url: "https://example.com/spec",
-                  title: "官方规格",
-                  authority: "测试机构",
+                  title: "Official specification",
+                  authority: "Test authority",
                   accessedAt: "2026-08-06",
                   sourceUpdatedAt: "2026-01-01",
                 },
@@ -254,17 +258,17 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "测试模板" });
+    await screen.findByRole("heading", { name: "Test template" });
     const card = screen
-      .getByRole("heading", { name: "测试模板" })
+      .getByRole("heading", { name: "Test template" })
       .closest("li.template-card") as HTMLElement;
-    expect(within(card).getByText("2026-08-06")).toBeInTheDocument(); // 本项目复核日期
-    expect(within(card).getByText("更新于 2026-01-01")).toBeInTheDocument();
-    expect(within(card).getByText("访问于 2026-08-06")).toBeInTheDocument();
-    expect(within(card).getByText("注记甲")).toBeInTheDocument();
-    expect(within(card).getByText("注记乙")).toBeInTheDocument();
-    expect(within(card).getByText(/模板禁止镜像/)).toBeInTheDocument(); // 限制短语
-    expect(within(card).getByText("官方来源")).toBeInTheDocument(); // 官方模板保持原标题
+    expect(within(card).getByText("2026-08-06")).toBeInTheDocument(); // review date for this project
+    expect(within(card).getByText("updated 2026-01-01")).toBeInTheDocument();
+    expect(within(card).getByText("accessed 2026-08-06")).toBeInTheDocument();
+    expect(within(card).getByText("note one")).toBeInTheDocument();
+    expect(within(card).getByText("note two")).toBeInTheDocument();
+    expect(within(card).getByText(/forbids mirroring/i)).toBeInTheDocument(); // restriction phrase
+    expect(within(card).getByText("Official sources")).toBeInTheDocument(); // official templates keep the original heading
   });
 
   it("links every card to its template detail page (P4)", async () => {
@@ -274,8 +278,8 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "测试模板" });
-    const links = screen.getAllByRole("link", { name: "查看模板详情" });
+    await screen.findByRole("heading", { name: "Test template" });
+    const links = screen.getAllByRole("link", { name: "View template details" });
     expect(links).toHaveLength(3);
     const hrefs = links.map((l) => l.getAttribute("href"));
     expect(hrefs).toContain("/templates/t@1");
@@ -290,13 +294,13 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "测试模板" });
+    await screen.findByRole("heading", { name: "Test template" });
     const card = screen
-      .getByRole("heading", { name: "美国护照纸质" })
+      .getByRole("heading", { name: "US passport paper" })
       .closest("li.template-card") as HTMLElement;
-    const reason = within(card).getByText("尚未通过校准打印测试");
+    const reason = within(card).getByText("not verified by calibrated print tests");
     const details = card.querySelector(".template-card-details")!;
-    // reason 排在 details 之前（旧实现在 dl 之后）
+    // reason precedes details (the old implementation had it after the dl)
     const following = reason.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING;
     expect(following).toBeTruthy();
   });

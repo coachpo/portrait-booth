@@ -23,7 +23,7 @@ function entry(
       id: "t",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "测试模板", en: "Test template" },
+      label: { en: "Test template" },
       jurisdiction: "US",
       documentType: "passport",
       submissionChannel: "digital_upload",
@@ -75,7 +75,7 @@ const catalog: TemplateCatalog = {
     entry({
       revisionId: "generic@1",
       id: "generic",
-      label: { zh: "通用肖像" },
+      label: { en: "Generic portrait" },
       jurisdiction: "generic",
       documentType: "portrait",
       submissionChannel: "digital_upload",
@@ -83,7 +83,7 @@ const catalog: TemplateCatalog = {
     entry({
       revisionId: "fi@1",
       id: "fi",
-      label: { zh: "芬兰证件" },
+      label: { en: "Finnish document" },
       jurisdiction: "FI",
       documentType: "id",
       submissionChannel: "certified_transfer",
@@ -92,7 +92,7 @@ const catalog: TemplateCatalog = {
       {
         revisionId: "us-paper@1",
         id: "us-paper",
-        label: { zh: "美国护照纸质" },
+        label: { en: "US passport paper" },
         jurisdiction: "US",
         documentType: "passport",
         submissionChannel: "paper",
@@ -100,7 +100,7 @@ const catalog: TemplateCatalog = {
       {
         revisionId: "us-paper@1",
         status: "reference_only",
-        statusReason: "未通过校准打印测试",
+        statusReason: "not verified by calibrated print tests",
       },
     ),
   ],
@@ -138,9 +138,9 @@ describe("template catalog", () => {
   });
 
   it("falls back across label locales", () => {
-    expect(entryLabel(catalog.templates[0], "fr")).toBe("测试模板");
-    // O4：UI 语言键单一来源
-    expect(uiLocale()).toBe("zh");
+    expect(entryLabel(catalog.templates[0], "fr")).toBe("Test template");
+    // O4: single source for the UI language key
+    expect(uiLocale()).toBe("en");
   });
 
   it("marks portrait templates as non-official", () => {
@@ -150,9 +150,9 @@ describe("template catalog", () => {
   });
 
   it("maps display names", () => {
-    expect(jurisdictionName("US")).toBe("美国");
+    expect(jurisdictionName("US")).toBe("United States");
     expect(jurisdictionName("XY")).toBe("XY");
-    expect(documentTypeName("visa")).toBe("签证");
+    expect(documentTypeName("visa")).toBe("Visa");
   });
 });
 
@@ -176,8 +176,9 @@ describe("fetchTemplateCatalog caching", () => {
   });
 
   it("does not cache a failure, so retry actually retries", async () => {
-    // 回归：失败的 Promise 曾被模块级永久缓存，
-    // 网络抖动一次后「重试」按钮永远返回同一个已拒绝的 Promise。
+    // Regression: a rejected Promise used to be cached forever at module
+    // level, so after one network blip the "retry" button always returned
+    // the same rejected Promise.
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new Error("network down"))

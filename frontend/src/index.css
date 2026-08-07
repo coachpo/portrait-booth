@@ -238,7 +238,7 @@ a {
   font-size: 0.9rem;
 }
 
-/* 上传步骤（SRC-001~005） */
+/* Upload step (SRC-001~005) */
 .drop-zone {
   border: 2px dashed var(--color-border, #cbd5e1);
   border-radius: 8px;
@@ -273,7 +273,7 @@ a {
   margin-top: 1rem;
 }
 
-/* 编辑器（EDT-001~009） */
+/* Editor (EDT-001~009) */
 .editor-layout {
   display: flex;
   gap: 1.5rem;
@@ -319,7 +319,7 @@ a {
   width: 6em;
 }
 
-/* 平移替代控件（EDT-007 / WCAG 2.5.7） */
+/* Pan alternative controls (EDT-007 / WCAG 2.5.7) */
 .nudge-pad {
   display: grid;
   grid-template-columns: repeat(3, 44px);
@@ -336,7 +336,7 @@ a {
   grid-column: 2;
 }
 
-/* 终态页（OUT-007/008） */
+/* Final page (OUT-007/008) */
 .final-details {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -353,7 +353,7 @@ a {
   margin: 0;
 }
 
-/* TMP-002 模板披露块（终态页） */
+/* TMP-002 template disclosure block (final page) */
 .template-disclosure {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -417,7 +417,7 @@ a {
   color: var(--color-muted);
 }
 
-/* 摄像头拍摄（CAM-001~008） */
+/* Camera capture (CAM-001~008) */
 .camera-view video {
   width: 100%;
   max-width: 480px;
@@ -435,7 +435,7 @@ a {
   gap: 0.35rem;
 }
 
-/* 姿态指导（GDE-001/002） */
+/* Pose guidance (GDE-001/002) */
 .pose-guide {
   display: flex;
   align-items: center;
@@ -446,7 +446,8 @@ a {
   font-size: 0.95rem;
 }
 
-/* 状态图形而不是纯色块：颜色不能是唯一的状态载体（WCAG 1.4.1） */
+/* Status graphics rather than solid color blocks: color must not be the
+   only status carrier (WCAG 1.4.1) */
 .pose-dot {
   display: inline-flex;
   align-items: center;
@@ -473,7 +474,7 @@ a {
   color: #334155;
 }
 
-/* 暂存面板（SAV-001）与取回页 */
+/* Staging panel (SAV-001) and the retrieve page */
 .confirm-box {
   border: 1px solid var(--color-border, #cbd5e1);
   border-radius: 8px;
@@ -491,7 +492,7 @@ a {
   gap: 0.75rem;
 }
 
-/* 应用外壳：页头导航、主内容、页脚 */
+/* App shell: header navigation, main content, footer */
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -584,7 +585,7 @@ a {
   background: var(--color-primary-hover);
 }
 
-/* 步骤条（EDT/流程导航） */
+/* Step bar (EDT/flow navigation) */
 .step-bar {
   display: flex;
   gap: 0.5rem;
@@ -612,7 +613,7 @@ a {
   color: var(--color-success);
 }
 
-/* 触控目标：44×44 下限同样适用于表单控件（WCAG 2.5.8） */
+/* Touch targets: the 44×44 minimum also applies to form controls (WCAG 2.5.8) */
 input,
 select {
   min-height: 44px;
@@ -634,7 +635,7 @@ input[type="range"] {
   accent-color: var(--color-primary);
 }
 
-/* 窄屏与横屏适配 */
+/* Narrow-screen and landscape adaptation */
 @media (max-width: 640px) {
   .container {
     padding: 0.75rem;
@@ -677,7 +678,7 @@ input[type="range"] {
   }
 }
 
-/* 暗色模式 */
+/* Dark mode */
 @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: #0f172a;
@@ -748,7 +749,7 @@ input[type="range"] {
   }
 }
 
-/* 尊重「减少动态效果」设置 */
+/* Respect the "reduce motion" preference */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -759,7 +760,7 @@ input[type="range"] {
   }
 }
 
-/* 模板详情页（P4） */
+/* Template detail page (P4) */
 .rule-list {
   list-style: none;
   padding: 0;

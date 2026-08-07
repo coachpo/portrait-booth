@@ -21,7 +21,7 @@ const template = {
     id: "us",
     version: 1,
     schemaVersion: 1,
-    label: { zh: "美国签证" },
+    label: { en: "US visa" },
     jurisdiction: "US",
     documentType: "visa",
     submissionChannel: "digital_upload",
@@ -88,7 +88,7 @@ beforeEach(() => {
     poseAvailable: false,
     quality: {
       status: "warn",
-      issues: ["曝光与清晰度未发现明显问题（启发式，仅供参考）"],
+      issues: ["exposure and sharpness show no obvious issues (heuristic, for reference only)"],
       metrics: {
         darkClipRatio: 0,
         brightClipRatio: 0,
@@ -107,8 +107,8 @@ afterEach(() => {
 describe("SourceStep", () => {
   it("shows template label and file picker", () => {
     render(<SourceStep template={template} onReady={vi.fn()} onBack={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "上传照片" })).toBeInTheDocument();
-    expect(screen.getByText(/已选模板：美国签证/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Upload photo" })).toBeInTheDocument();
+    expect(screen.getByText(/Selected template: US visa/)).toBeInTheDocument();
     expect(screen.getByTestId("file-input")).toBeInTheDocument();
   });
 
@@ -133,8 +133,8 @@ describe("SourceStep", () => {
 
     selectFile(new File([new Uint8Array(4)], "photo.heic", { type: "image/heic" }));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("不支持 HEIC/HEIF 格式");
-    expect(alert).toHaveTextContent("改用摄像头拍摄");
+    expect(alert).toHaveTextContent("HEIC/HEIF is not supported");
+    expect(alert).toHaveTextContent("camera capture instead");
   });
 
   it("shows an error for oversized files and does not report ready", async () => {
@@ -146,14 +146,14 @@ describe("SourceStep", () => {
 
     selectFile(new File([new Uint8Array(1024)], "photo.jpg", { type: "image/jpeg" }));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("文件大小超过上限");
+    expect(alert).toHaveTextContent("file size exceeds the limit");
     expect(onReady).not.toHaveBeenCalled();
   });
 
   it("goes back to template selection", () => {
     const onBack = vi.fn();
     render(<SourceStep template={template} onReady={vi.fn()} onBack={onBack} />);
-    fireEvent.click(screen.getByRole("button", { name: "返回重新选择模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to choose another template" }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

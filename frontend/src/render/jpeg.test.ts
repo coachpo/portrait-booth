@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { hasExifSegment, readJpegDensity, rewriteJfifDensityBytes } from "./jpeg";
 
-/** 构造最小 JPEG：SOI + APP0 JFIF（density 可调）+ SOF0 + EOI */
+/** Build a minimal JPEG: SOI + APP0 JFIF (density adjustable) + SOF0 + EOI */
 function jpegBytes(
   opts: { xdensity?: number; ydensity?: number; units?: number; exif?: boolean } = {},
 ): Uint8Array {
@@ -58,7 +58,7 @@ describe("rewriteJfifDensityBytes", () => {
 
   it("throws when no JFIF APP0 exists", () => {
     const noJfif = new Uint8Array(jpegBytes({ exif: false }));
-    noJfif[3] = 0xe1; // 把 APP0 改成 APP1，破坏 JFIF
+    noJfif[3] = 0xe1; // change APP0 to APP1, breaking JFIF
     expect(() => rewriteJfifDensityBytes(noJfif, 300)).toThrow();
   });
 });

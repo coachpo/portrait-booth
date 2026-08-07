@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { applyTransform, normalizedSize, orientationTransform, withScale } from "./exif";
 
-/** 断言 raw 位图四角经方向变换后落在归一化画布的正确四角（SRC-003）。 */
+/** Assert the raw bitmap's four corners land on the normalized canvas's
+ * correct corners after the orientation transform (SRC-003). */
 function expectCornersMapped(orientation: number, rawW: number, rawH: number) {
   const { width: outW, height: outH } = normalizedSize(rawW, rawH, orientation);
   const t = orientationTransform(orientation, rawW, rawH);
@@ -14,7 +15,7 @@ function expectCornersMapped(orientation: number, rawW: number, rawH: number) {
   ];
   for (const [x, y] of corners) {
     const [px, py] = applyTransform(t, x, y);
-    // 连续坐标允许落在边界上（x' ∈ [0, outW]）
+    // Continuous coordinates may land on the boundary (x' ∈ [0, outW])
     expect(px).toBeGreaterThanOrEqual(0);
     expect(px).toBeLessThanOrEqual(outW);
     expect(py).toBeGreaterThanOrEqual(0);
@@ -70,20 +71,20 @@ describe("orientationTransform", () => {
   it("rotates 90 CW for orientation 6", () => {
     const { t, outW, outH } = expectCornersMapped(6, 4, 2);
     expect(applyTransform(t, 1, 1)).toEqual([1, 3]);
-    expect(applyTransform(t, 0, 0)).toEqual([0, 4]); // 左上 → 右上
+    expect(applyTransform(t, 0, 0)).toEqual([0, 4]); // top-left → top-right
     expect(outW).toBe(2);
     expect(outH).toBe(4);
   });
 
   it("mirrors anti-diagonally for orientation 7", () => {
     const { t } = expectCornersMapped(7, 4, 2);
-    expect(applyTransform(t, 0, 0)).toEqual([2, 4]); // 左上 → 右下
+    expect(applyTransform(t, 0, 0)).toEqual([2, 4]); // top-left → bottom-right
     expect(applyTransform(t, 4, 2)).toEqual([0, 0]);
   });
 
   it("rotates 270 CW for orientation 8", () => {
     const { t, outW, outH } = expectCornersMapped(8, 4, 2);
-    expect(applyTransform(t, 0, 0)).toEqual([2, 0]); // 左上 → 左下
+    expect(applyTransform(t, 0, 0)).toEqual([2, 0]); // top-left → bottom-left
     expect(outW).toBe(2);
     expect(outH).toBe(4);
   });
@@ -98,7 +99,7 @@ describe("withScale", () => {
   it("scales all components uniformly", () => {
     const t = orientationTransform(6, 400, 300);
     const s = withScale(t, 0.5);
-    expect(applyTransform(s, 0, 0)).toEqual([0, 200]); // 左上 → 右上（缩放后）
+    expect(applyTransform(s, 0, 0)).toEqual([0, 200]); // top-left → top-right (after scaling)
     expect(applyTransform(s, 200, 0)).toEqual([0, 100]);
   });
 });

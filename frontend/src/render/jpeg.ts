@@ -1,15 +1,16 @@
 /**
- * JPEG 元数据处理（OUT-004, OUT-006）。
- * Canvas toBlob 产物天然不含 EXIF；纸质模板需把 JFIF APP0 密度改写为模板规定 PPI。
+ * JPEG metadata handling (OUT-004, OUT-006).
+ * Canvas toBlob output naturally has no EXIF; paper templates need the JFIF
+ * APP0 density rewritten to the template's mandated PPI.
  */
 
 export interface JpegDensity {
-  units: number; // 0=无单位 1=dpi 2=dpcm
+  units: number; // 0=none 1=dpi 2=dpcm
   xdensity: number;
   ydensity: number;
 }
 
-/** 读取 JFIF APP0 密度；非 JFIF JPEG 返回 null。 */
+/** Read the JFIF APP0 density; returns null for non-JFIF JPEGs. */
 export function readJpegDensity(bytes: Uint8Array): JpegDensity | null {
   let off = 2;
   while (off + 4 <= bytes.length) {
@@ -39,7 +40,7 @@ export function readJpegDensity(bytes: Uint8Array): JpegDensity | null {
   return null;
 }
 
-/** 把 JFIF APP0 密度改写为指定 PPI（units=1, dpi）。返回新字节。 */
+/** Rewrite the JFIF APP0 density to the given PPI (units=1, dpi). Returns new bytes. */
 export function rewriteJfifDensityBytes(bytes: Uint8Array, ppi: number): Uint8Array {
   const out = new Uint8Array(bytes);
   let off = 2;
@@ -68,10 +69,10 @@ export function rewriteJfifDensityBytes(bytes: Uint8Array, ppi: number): Uint8Ar
     }
     off += 2 + len;
   }
-  throw new Error("JPEG 缺少 JFIF APP0 段，无法写入打印密度");
+  throw new Error("JPEG has no JFIF APP0 segment; print density cannot be written");
 }
 
-/** 扫描 JPEG 是否含 EXIF APP1 段（OUT-004 剥离验证）。 */
+/** Scan whether the JPEG contains an EXIF APP1 segment (OUT-004 stripping verification). */
 export function hasExifSegment(bytes: Uint8Array): boolean {
   let off = 2;
   while (off + 4 <= bytes.length) {

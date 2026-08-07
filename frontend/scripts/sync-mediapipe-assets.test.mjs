@@ -1,6 +1,8 @@
 // @vitest-environment node
-// O3 回归：sync-mediapipe-assets 的版本锁定、哈希校验与非零退出契约。
-// 夹具目录一律用 fs.mkdtemp 在临时目录搭建，脚本以 process.cwd() 为基准解析。
+// O3 regressions: sync-mediapipe-assets version locking, hash verification,
+// and non-zero-exit contract.
+// Fixture directories are always built with fs.mkdtemp under a temp dir; the
+// script resolves paths relative to process.cwd().
 
 import { createHash } from "node:crypto";
 import {
@@ -31,7 +33,8 @@ function sha256Of(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
 
-/** 搭一个最小夹具：只有两个 wasm 条目（可加 missingWasm / corruptSha 破坏它） */
+/** Build a minimal fixture: only two wasm entries (add missingWasm /
+ * corruptSha to break it) */
 function buildFixture({ missingWasm = false, corruptSha = false } = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "o3-fixture-"));
   writeFileSync(
@@ -96,7 +99,7 @@ describe("sync-mediapipe-assets", () => {
       const result = runScript(dir);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("vision_wasm_internal.wasm");
-      expect(result.stderr).toContain("无法从 npm 包解析");
+      expect(result.stderr).toContain("Unable to resolve");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -107,7 +110,7 @@ describe("sync-mediapipe-assets", () => {
     expect(lock.assets.length).toBeGreaterThan(0);
     for (const entry of lock.assets) {
       const file = path.join(FRONTEND, entry.path);
-      expect(existsSync(file), `缺失 ${entry.path}`).toBe(true);
+      expect(existsSync(file), `missing ${entry.path}`).toBe(true);
       const actual = readFileSync(file);
       expect(actual.length).toBe(entry.bytes);
       expect(sha256Of(file)).toBe(entry.sha256);
@@ -135,7 +138,7 @@ describe("sync-mediapipe-assets", () => {
       const result = runScript(dir);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("vision_wasm_internal.wasm");
-      expect(result.stderr).toContain("清单不符");
+      expect(result.stderr).toContain("does not match the lockfile");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

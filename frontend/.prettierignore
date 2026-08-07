@@ -1,6 +1,8 @@
-# 第三方构建产物：格式化会改动字节，与 SPEC §4.4「审计锁定构建」直接冲突。
-# prettier 曾在这里改掉 MediaPipe WASM glue 的末尾换行，让自托管副本与
-# npm 包里的文件不再逐字节一致，版本锁定的依据随之失效。
+# Third-party build artifacts: formatting would change their bytes, directly
+# conflicting with SPEC §4.4 "audit-locked build".
+# prettier once stripped a trailing newline from the MediaPipe WASM glue here,
+# making the self-hosted copy no longer byte-identical to the npm package and
+# voiding the version-lock basis.
 public/assets/models/
 
 dist/

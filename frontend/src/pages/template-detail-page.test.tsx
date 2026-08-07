@@ -21,7 +21,7 @@ function entry(
       id: "rich",
       version: 1,
       schemaVersion: 1,
-      label: { zh: "富模板" },
+      label: { en: "Rich template" },
       jurisdiction: "US",
       documentType: "passport",
       submissionChannel: "digital_upload",
@@ -30,16 +30,16 @@ function entry(
         {
           id: "a",
           url: "https://a.example/spec",
-          title: "源A规格",
-          authority: "机构甲",
+          title: "Source A spec",
+          authority: "Authority A",
           accessedAt: "2026-08-01",
           sourceUpdatedAt: "2026-01-01",
         },
         {
           id: "b",
           url: "https://b.example/spec",
-          title: "源B规格",
-          authority: "机构乙",
+          title: "Source B spec",
+          authority: "Authority B",
           accessedAt: "2026-08-02",
         },
       ],
@@ -90,16 +90,16 @@ function entry(
         requiresOriginalCameraFile: true,
         requiresProfessionalPhotographer: false,
       },
-      sourceNotes: { zh: ["注记一", "注记二", "注记三"] },
+      sourceNotes: { en: ["note one", "note two", "note three"] },
       ...overrides,
     },
     contentHash: "abc123",
     publication: {
       revisionId: "rich@1",
       status: "active",
-      statusReason: "复核通过，可正常使用",
-      owner: "内容维护",
-      reviewer: "内容复核",
+      statusReason: "reviewed and approved; safe to use",
+      owner: "content maintainer",
+      reviewer: "content reviewer",
       verifiedAt: "2026-08-06",
       reviewDueAt: "2026-11-04",
       effectiveAt: "2026-08-06",
@@ -131,27 +131,27 @@ beforeEach(() => {
 describe("TemplateDetailPage", () => {
   it("renders all source notes, not just the first one (P4)", async () => {
     renderDetail([entry()]);
-    expect(await screen.findByRole("heading", { name: "富模板" })).toBeInTheDocument();
-    expect(screen.getByText("注记二")).toBeInTheDocument();
-    expect(screen.getByText("注记三")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Rich template" })).toBeInTheDocument();
+    expect(screen.getByText("note two")).toBeInTheDocument();
+    expect(screen.getByText("note three")).toBeInTheDocument();
   });
 
   it("renders a readable value for an expected:false capture rule (P4)", async () => {
     renderDetail([entry()]);
-    await screen.findByRole("heading", { name: "富模板" });
-    expect(screen.getByText(/必须不满足/)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Rich template" });
+    expect(screen.getByText(/must not hold/)).toBeInTheDocument();
   });
 
   it("discloses source update times, accessed times and links (P4)", async () => {
     renderDetail([entry()]);
-    await screen.findByRole("heading", { name: "富模板" });
-    expect(screen.getByText("访问于 2026-08-01")).toBeInTheDocument();
-    expect(screen.getByText("访问于 2026-08-02")).toBeInTheDocument();
-    expect(screen.getByText(/官方更新于 2026-01-01/)).toBeInTheDocument();
-    // 缺失 sourceUpdatedAt 的来源显示明确措辞，不是空串
-    const missing = screen.getByText("官方未标注更新时间");
+    await screen.findByRole("heading", { name: "Rich template" });
+    expect(screen.getByText("Accessed 2026-08-01")).toBeInTheDocument();
+    expect(screen.getByText("Accessed 2026-08-02")).toBeInTheDocument();
+    expect(screen.getByText(/Officially updated 2026-01-01/)).toBeInTheDocument();
+    // A source missing sourceUpdatedAt shows explicit wording, not an empty string
+    const missing = screen.getByText("Official update time not provided");
     expect(missing).toBeInTheDocument();
-    const linkB = screen.getByRole("link", { name: /源B规格/ });
+    const linkB = screen.getByRole("link", { name: /Source B spec/ });
     expect(linkB.getAttribute("href")).toBe("https://b.example/spec");
     expect(linkB.getAttribute("rel")).toContain("noopener");
   });
@@ -162,30 +162,34 @@ describe("TemplateDetailPage", () => {
         entry(),
         entry(
           { revisionId: "ref@1" },
-          { revisionId: "ref@1", status: "reference_only", statusReason: "尚未通过校准打印测试" },
+          {
+            revisionId: "ref@1",
+            status: "reference_only",
+            statusReason: "not verified by calibrated print tests",
+          },
         ),
       ],
       "/templates/ref@1",
     );
-    await screen.findByRole("heading", { name: "富模板" });
+    await screen.findByRole("heading", { name: "Rich template" });
     expect(screen.getAllByText("2026-08-06").length).toBeGreaterThan(0); // verifiedAt
     expect(screen.getByText("2026-11-04")).toBeInTheDocument(); // reviewDueAt
-    expect(screen.getByText("尚未通过校准打印测试")).toBeInTheDocument();
+    expect(screen.getByText("not verified by calibrated print tests")).toBeInTheDocument();
   });
 
   it("renders all eight capability fields with distinct boolean wording (P4)", async () => {
     renderDetail([entry()]);
-    await screen.findByRole("heading", { name: "富模板" });
+    await screen.findByRole("heading", { name: "Rich template" });
     const liText = (text: string) =>
       screen.getByText((_, el) => el?.tagName === "LI" && el?.textContent?.includes(text));
-    expect(liText("自行拍摄：允许")).toBeInTheDocument();
-    expect(liText("调整构图：警告")).toBeInTheDocument();
-    expect(liText("旋转：禁止")).toBeInTheDocument();
-    expect(liText("镜像：警告")).toBeInTheDocument();
-    expect(liText("修饰：禁止")).toBeInTheDocument();
-    expect(liText("背景替换：允许")).toBeInTheDocument();
-    expect(liText("原始相机文件：要求")).toBeInTheDocument();
-    expect(liText("认证摄影师：不要求")).toBeInTheDocument();
+    expect(liText("Self-capture: Allowed")).toBeInTheDocument();
+    expect(liText("Adjust composition: Warning")).toBeInTheDocument();
+    expect(liText("Rotation: Forbidden")).toBeInTheDocument();
+    expect(liText("Mirroring: Warning")).toBeInTheDocument();
+    expect(liText("Retouching: Forbidden")).toBeInTheDocument();
+    expect(liText("Background replacement: Allowed")).toBeInTheDocument();
+    expect(liText("Original camera file: Required")).toBeInTheDocument();
+    expect(liText("Certified photographer: Not required")).toBeInTheDocument();
   });
 
   it("never claims submittability for reference_only templates (P4)", async () => {
@@ -193,17 +197,21 @@ describe("TemplateDetailPage", () => {
       [
         entry(
           { revisionId: "ref@1" },
-          { revisionId: "ref@1", status: "reference_only", statusReason: "尚未通过校准打印测试" },
+          {
+            revisionId: "ref@1",
+            status: "reference_only",
+            statusReason: "not verified by calibrated print tests",
+          },
         ),
       ],
       "/templates/ref@1",
     );
-    await screen.findByRole("heading", { name: "富模板" });
-    expect(screen.getByText("尚未通过校准打印测试")).toBeInTheDocument();
-    expect(screen.queryByText(/可提交/)).toBeNull();
-    expect(screen.queryByText(/已合规/)).toBeNull();
-    expect(screen.queryByText(/符合官方要求/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /用此模板创建/ })).toBeNull();
+    await screen.findByRole("heading", { name: "Rich template" });
+    expect(screen.getByText("not verified by calibrated print tests")).toBeInTheDocument();
+    expect(screen.queryByText(/submittable/i)).toBeNull();
+    expect(screen.queryByText(/compliant/i)).toBeNull();
+    expect(screen.queryByText(/meets official requirements/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /create with this template/i })).toBeNull();
   });
 
   it("marks non-official templates and shows empty-rule wording (P4)", async () => {
@@ -212,7 +220,7 @@ describe("TemplateDetailPage", () => {
         entry({
           revisionId: "portrait@1",
           id: "portrait",
-          label: { zh: "通用肖像" },
+          label: { en: "Generic portrait" },
           documentType: "portrait",
           cropRules: [],
           captureRules: [],
@@ -220,16 +228,16 @@ describe("TemplateDetailPage", () => {
       ],
       "/templates/portrait@1",
     );
-    await screen.findByRole("heading", { name: "通用肖像" });
-    expect(screen.getByText("非证件模板")).toBeInTheDocument();
-    expect(screen.getByText("本模板未声明裁剪规则。")).toBeInTheDocument();
-    expect(screen.getByText("本模板未声明拍摄规则。")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Generic portrait" });
+    expect(screen.getByText("Non-document template")).toBeInTheDocument();
+    expect(screen.getByText("This template declares no crop rules.")).toBeInTheDocument();
+    expect(screen.getByText("This template declares no capture rules.")).toBeInTheDocument();
   });
 
   it("shows a clear missing state for unknown revision ids (P4)", async () => {
     renderDetail([entry()], "/templates/nope@9");
-    expect(await screen.findByText("模板不存在")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "返回模板列表" })).toBeInTheDocument();
+    expect(await screen.findByText("Template not found")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to template list" })).toBeInTheDocument();
   });
 
   it("offers a working retry when the catalog fetch fails (P4)", async () => {
@@ -242,9 +250,9 @@ describe("TemplateDetailPage", () => {
       });
     renderDetail([]);
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("模板目录加载失败");
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    expect(await screen.findByRole("heading", { name: "富模板" })).toBeInTheDocument();
+    expect(alert).toHaveTextContent("Template catalog failed to load");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: "Rich template" })).toBeInTheDocument();
     expect(fetchTemplateCatalog).toHaveBeenCalledTimes(2);
   });
 });

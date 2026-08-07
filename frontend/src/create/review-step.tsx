@@ -1,9 +1,10 @@
 /**
- * 确认步骤。
+ * Confirmation step.
  *
- * 拍摄或上传之后必须有一次确认机会：直接跳进编辑器意味着用户要先经过编辑、
- * 再到终态页，才发现这张照片根本不能用。静态复检的结果也在这里就近给出，
- * 而不是等走到终态页才第一次出现。
+ * After capture or upload there must be one confirmation chance: jumping
+ * straight into the editor means users only discover the photo is unusable
+ * after editing and reaching the final page. Static-recheck results are also
+ * given here, rather than first appearing at the final page.
  */
 
 import { useEffect, useMemo } from "react";
@@ -22,16 +23,17 @@ import {
 export interface ReviewStepProps {
   source: SourceImage;
   template: TemplateEntry;
-  /** 用户是自己拍的还是上传的——决定「重新拍摄」还是「重新选择文件」 */
+  /** Whether the user shot it or uploaded it - decides "retake" vs
+   * "choose another file" */
   origin: "camera" | "upload";
   onConfirm: () => void;
   onRetake: () => void;
   onBack: () => void;
-  /** 会话内更换模板：保留照片与编辑状态 */
+  /** Same-session template switch: keeps the photo and edit state */
   onChangeTemplate: () => void;
-  /** 换模板投影产生的可见说明（role=status） */
+  /** Visible note from the template-switch projection (role=status) */
   notice?: string | null;
-  /** ranged_pixels 模板的用户选定输出尺寸（P6） */
+  /** The user-selected output size for ranged_pixels templates (P6) */
   selectedSize?: OutputSizeOption | null;
   onSizeChange?: (size: OutputSizeOption) => void;
 }
@@ -48,7 +50,8 @@ export function ReviewStep({
   selectedSize,
   onSizeChange,
 }: ReviewStepProps) {
-  // 源图自带 previewUrl 时直接用；否则临时造一个，并在源切换时释放
+  // Use the source's own previewUrl when present; otherwise create a
+  // temporary one and release it when the source changes
   const previewUrl = useMemo(() => source.previewUrl ?? URL.createObjectURL(source.file), [source]);
   useEffect(() => {
     if (source.previewUrl) return;
@@ -71,7 +74,8 @@ export function ReviewStep({
   const chosen = sizeOptions.find(
     (s) => out !== null && s.width === out.width && s.height === out.height,
   );
-  // 高档位与体积上限之间可能只剩窄窗口，切档前必须让用户知道（P6 坑 7）
+  // Between the upper band and the size cap there may be only a narrow
+  // window; the user must know before switching (P6 ticket 7)
   const maxBytes = rev.outputFile?.sizeLimit?.maxBytes;
   const maxRatio = rev.outputFile?.maxCompressionRatio;
   const sizeLimitNote =
@@ -80,21 +84,22 @@ export function ReviewStep({
     defaultOut !== null &&
     chosen.width > defaultOut.width &&
     maxBytes !== undefined;
-  // 源图分辨率是否够填满模板输出（EDT-004）
+  // Whether the source resolution suffices to fill the template output (EDT-004)
   const shortfall =
     out !== null && Math.max(out.width / source.width, out.height / source.height) > 1.001;
 
   return (
-    <section aria-label="确认照片">
-      <h2>确认这张照片</h2>
+    <section aria-label="Confirm photo">
+      <h2>Confirm this photo</h2>
       <p className="muted">
-        模板：{entryLabel(template, uiLocale())}
-        {out && `（输出 ${out.width}×${out.height} 像素）`}。确认后进入裁剪与编辑。
+        Template: {entryLabel(template, uiLocale())}
+        {out && ` (output ${out.width}×${out.height} pixels)`}. After confirming you move on to
+        cropping and editing.
       </p>
 
       {sizeOptions.length > 1 && (
-        <fieldset aria-label="输出尺寸">
-          <legend>输出尺寸</legend>
+        <fieldset aria-label="Output size">
+          <legend>Output size</legend>
           {sizeOptions.map((s) => (
             <label key={`${s.width}x${s.height}`} className="size-option">
               <input
@@ -104,22 +109,22 @@ export function ReviewStep({
                 checked={out !== null && s.width === out.width && s.height === out.height}
                 onChange={() => onSizeChange?.(s)}
               />
-              {s.width}×{s.height} 像素
+              {s.width}×{s.height} pixels
             </label>
           ))}
           {sizeLimitNote && (
             <p className="muted">
-              注意：{out?.width}×{out?.height} 档的文件体积窗口很窄（≤
+              Note: the {out?.width}×{out?.height} band has a narrow size window (≤{" "}
               {Math.round(maxBytes! / 1024)} KB
-              {maxRatio !== undefined && ` 且压缩比 ≤${maxRatio}:1`}），源图噪点较重时可能
-              无法生成成品，可切回默认尺寸。
+              {maxRatio !== undefined && ` and compression ratio ≤${maxRatio}:1`}); with noisy
+              sources the artifact may not be producible - switch back to the default size.
             </p>
           )}
         </fieldset>
       )}
 
       <div className="source-preview">
-        <img src={previewUrl} alt="待确认的照片" />
+        <img src={previewUrl} alt="Photo awaiting confirmation" />
       </div>
 
       {notice && (
@@ -130,59 +135,67 @@ export function ReviewStep({
 
       <dl className="final-details">
         <div>
-          <dt>照片像素</dt>
+          <dt>Photo pixels</dt>
           <dd>
             {source.width}×{source.height}
           </dd>
         </div>
         <div>
-          <dt>来源</dt>
-          <dd>{origin === "camera" ? "本机摄像头拍摄" : "本地文件上传"}</dd>
+          <dt>Source</dt>
+          <dd>
+            {origin === "camera" ? "Captured with the device camera" : "Uploaded from a local file"}
+          </dd>
         </div>
       </dl>
 
       {shortfall && (
         <p className="warn-text" role="alert">
-          这张照片小于模板要求的输出尺寸，继续编辑会需要放大，成品清晰度将明显下降。
+          This photo is smaller than the template's required output size; continuing to edit will
+          require upscaling and the artifact sharpness will visibly drop.
         </p>
       )}
 
       {source.staticChecks && warnings.length > 0 && (
         <div className="warn-text">
-          <p>复检提示（启发式判断，未经官方容差校准）：</p>
+          <p>Recheck notes (heuristic judgment, not calibrated to official tolerance):</p>
           <ul>
             {warnings.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
           <p className="muted">
-            这些提示不阻止你继续。若因医疗或身体原因无法保持标准姿态，仍可继续导出；
-            部分签发机关提供医疗或残障例外。
+            These notes do not block you. If a medical or physical condition prevents holding the
+            standard pose, you may still export; some issuing authorities offer medical or
+            disability exceptions.
           </p>
         </div>
       )}
       {source.staticChecks && warnings.length === 0 && unknowns.length > 0 && (
         <p className="muted">
-          已检查项未发现明显问题；以下项目未检查，需人工确认：{unknowns.join("、")}。
+          Checked items show no obvious issues; the following were not checked and need manual
+          confirmation: {unknowns.join(", ")}.
         </p>
       )}
       {source.staticChecks && warnings.length === 0 && unknowns.length === 0 && (
-        <p className="muted">复检未发现明显问题（启发式判断，未经官方容差校准）。</p>
+        <p className="muted">
+          Recheck found no obvious issues (heuristic judgment, not calibrated to official
+          tolerance).
+        </p>
       )}
-      {!source.staticChecks && <p className="muted">本次未运行姿态与曝光复检。</p>}
+      {!source.staticChecks && <p className="muted">No pose and exposure recheck ran this time.</p>}
 
       <div className="step-actions">
         <button type="button" className="primary" onClick={onConfirm}>
-          使用这张照片
+          Use this photo
         </button>
         <button type="button" onClick={onRetake}>
-          {origin === "camera" ? "重新拍摄" : "重新选择文件"}
+          {origin === "camera" ? "Retake" : "Choose another file"}
         </button>
         <button type="button" onClick={onBack}>
-          返回上一步
+          Back to previous step
         </button>
         <button type="button" onClick={onChangeTemplate}>
-          更换模板
+          Switch template
         </button>
       </div>
     </section>
