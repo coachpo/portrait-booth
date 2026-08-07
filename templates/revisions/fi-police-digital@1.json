@@ -4,7 +4,6 @@
   "version": 1,
   "schemaVersion": 1,
   "label": {
-    "zh": "芬兰警方证件（数字 500×653）",
     "en": "Finnish police document (digital 500x653)"
   },
   "jurisdiction": "FI",
@@ -160,10 +159,10 @@
     "requiresProfessionalPhotographer": false
   },
   "sourceNotes": {
-    "zh": [
-      "用户可自行上传警方 photo server 或走摄影棚流程；本产品不能代传，也不混淆两种 KEY。",
-      "禁止改变外貌细节或引发真实性疑问的处理。",
-      "500×653 与头部像素区间按 SPEC §5.2 录入，内容维护人复核时须对照芬兰警方现行像素说明。"
+    "en": [
+      "Users may upload to the police photo server themselves or use a studio flow; this product cannot submit on their behalf and does not conflate the two KEY types.",
+      "Processing that changes appearance details or raises doubts about authenticity is prohibited.",
+      "500×653 and the head pixel ranges are recorded per SPEC §5.2; content maintainers must cross-check against the Finnish police's current pixel instructions when reviewing."
     ]
   }
 }

@@ -4,7 +4,6 @@
   "version": 1,
   "schemaVersion": 1,
   "label": {
-    "zh": "美国护照（纸质 2×2 英寸）",
     "en": "US passport (paper 2x2 inch)"
   },
   "jurisdiction": "US",
@@ -98,11 +97,11 @@
     "requiresProfessionalPhotographer": false
   },
   "sourceNotes": {
-    "zh": [
-      "reference_only：本模板的 300 ppi 像素编码为 derived，须通过校准打印测试后才能发布为 active。",
-      "官方原文保留 anchor『top of head』，不擅自解释为 crown/hair。",
-      "不得声称手持自拍或单人自动快门获官方认可；禁止 AI、换背景、滤镜或改变外貌。",
-      "美国部分官方总览页面把 1 inch 写作 22 mm，构图页与数学换算为 25.4 mm；本模板采用 50.8×50.8 mm。"
+    "en": [
+      "reference_only: this template's 300 ppi pixel encoding is derived; it can only be published as active after passing calibrated print tests.",
+      "The official source text keeps the 'top of head' anchor; it is not reinterpreted as crown/hair.",
+      "Must not claim that handheld self-portraits or single-person auto-shutter shots are officially endorsed; AI generation, background replacement, filters, or appearance alteration are prohibited.",
+      "Some official US overview pages write 1 inch as 22 mm, while the composition page and mathematical conversion give 25.4 mm; this template uses 50.8×50.8 mm."
     ]
   }
 }

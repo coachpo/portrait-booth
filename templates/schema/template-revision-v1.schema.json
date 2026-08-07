@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://portrait-booth.dev/schema/template-revision/v1",
   "title": "TemplateRevision v1",
-  "description": "SPEC §5.1 TemplateRevision 结构；revision 内容不可变。",
+  "description": "SPEC §5.1 TemplateRevision structure; revision content is immutable.",
   "type": "object",
   "additionalProperties": false,
   "required": [

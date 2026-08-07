@@ -4,74 +4,74 @@
     {
       "revisionId": "generic-portrait-square@1",
       "status": "active",
-      "statusReason": "非官方通用肖像模板：按项目内部规格与测试档案发布，不继承任何官方合规文案。",
-      "owner": "Portrait Booth 内容维护",
-      "reviewer": "Portrait Booth 内容复核",
+      "statusReason": "Unofficial generic portrait template: published per the project's internal specification and test archive; inherits no official compliance wording.",
+      "owner": "Portrait Booth content maintainer",
+      "reviewer": "Portrait Booth content reviewer",
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
       "publicationRevision": 1,
-      "contentHash": "a2ee74327160720fa855aa3757f816e2b4778f443d01a1f5b131457a95d17867"
+      "contentHash": "ed8f33b029d14d362a634bfee0a9c9845cb6269e95c60922524be218b3ad9634"
     },
     {
       "revisionId": "us-passport-paper@1",
       "status": "reference_only",
-      "statusReason": "纸质模板：300 ppi 像素编码为 derived，尚未通过 PPI 编码与校准打印测试；镜像未获官方认可。",
-      "owner": "Portrait Booth 内容维护",
-      "reviewer": "Portrait Booth 内容复核",
+      "statusReason": "Paper template: the 300 ppi pixel encoding is derived and has not passed PPI-encoding and calibrated print tests; mirroring is not officially endorsed.",
+      "owner": "Portrait Booth content maintainer",
+      "reviewer": "Portrait Booth content reviewer",
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
       "publicationRevision": 1,
-      "contentHash": "4af5ebda09bb427dd1426a5072177fe8ee493bd2b866aca0cd3cebdc660e8f38"
+      "contentHash": "c5e0b381a88894013e12468c5a03defe474dd6536581152e5691af261db54175"
     },
     {
       "revisionId": "us-visa-digital@1",
       "status": "active",
-      "statusReason": "DS-160/DS-1648 数字上传；240 KB 阈值为 conservative_derived，门户实测后可更新。",
-      "owner": "Portrait Booth 内容维护",
-      "reviewer": "Portrait Booth 内容复核",
+      "statusReason": "DS-160/DS-1648 digital uploads; the 240 KB threshold is conservative_derived and can be updated after portal-measured verification.",
+      "owner": "Portrait Booth content maintainer",
+      "reviewer": "Portrait Booth content reviewer",
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
       "publicationRevision": 1,
-      "contentHash": "9fce7a95fb0f4fb35361cc3642bf405d697ee8dca575df28ae0fa8e7e183b41b"
+      "contentHash": "0b13ba6423b60938f99c9fe44a64e3d1a0689cf7b138a1b442246c8f7b20a7eb"
     },
     {
       "revisionId": "fi-police-digital@1",
       "status": "active",
-      "statusReason": "芬兰警方数字证件 500×653；250 KB 阈值为 conservative_derived。",
-      "owner": "Portrait Booth 内容维护",
-      "reviewer": "Portrait Booth 内容复核",
+      "statusReason": "Finnish police digital document 500×653; the 250 KB threshold is conservative_derived.",
+      "owner": "Portrait Booth content maintainer",
+      "reviewer": "Portrait Booth content reviewer",
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
       "publicationRevision": 1,
-      "contentHash": "a838af2e931753f1c21d291ae89cf5b5455be79d91bb5e1da3a1b925f8a844f6"
+      "contentHash": "f5a02c30c078a85f15c5b8a8d5c29478066352e7c1fcaba799ad7ec20832c2de"
     },
     {
       "revisionId": "cn-visa-digital-ma-rabat@1",
       "status": "reference_only",
-      "statusReason": "绑定驻摩洛哥使馆来源版本；经实际门户验证前不激活，不得称为中国全局规则。",
-      "owner": "Portrait Booth 内容维护",
-      "reviewer": "Portrait Booth 内容复核",
+      "statusReason": "Bound to the Rabat embassy source version; not activated until verified against the actual portal; must not be called a China-wide rule.",
+      "owner": "Portrait Booth content maintainer",
+      "reviewer": "Portrait Booth content reviewer",
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
       "publicationRevision": 1,
-      "contentHash": "cfde1889e554cb5594951961a4900aeed36cdc801156dd2836f247c6ab767bf9"
+      "contentHash": "faf12069e512a562bf8c1c6533053b850b42af4fb3be0c362e6bad93f1fa2fd0"
     },
     {
       "revisionId": "jp-passport-paper@1",
       "status": "reference_only",
-      "statusReason": "纸质模板：300 ppi 像素编码为 derived，尚未通过 PPI 编码与校准打印测试。",
-      "owner": "Portrait Booth 内容维护",
-      "reviewer": "Portrait Booth 内容复核",
+      "statusReason": "Paper template: the 300 ppi pixel encoding is derived and has not passed PPI-encoding and calibrated print tests.",
+      "owner": "Portrait Booth content maintainer",
+      "reviewer": "Portrait Booth content reviewer",
       "verifiedAt": "2026-08-06",
       "reviewDueAt": "2026-11-04",
       "effectiveAt": "2026-08-06",
       "publicationRevision": 1,
-      "contentHash": "7e8c1d6b5cb92ff3f23201a24b52aa537c8f26087ae7d18e81a98cae216bd6bd"
+      "contentHash": "12a55b5c459921e1e2c2c79ba3ffa4366acf844e61c95b5ce147bb5a772139ac"
     }
   ]
 }

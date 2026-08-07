@@ -4,7 +4,6 @@
   "version": 1,
   "schemaVersion": 1,
   "label": {
-    "zh": "通用肖像（正方形 1200×1200）",
     "en": "Generic portrait (1200x1200 square)"
   },
   "jurisdiction": "generic",
@@ -15,8 +14,8 @@
     {
       "id": "pb-spec-5-2",
       "url": "https://github.com/portrait-booth/spec",
-      "title": "Portrait Booth SPEC §5.2 首批模板候选",
-      "authority": "Portrait Booth 项目内部规格",
+      "title": "Portrait Booth SPEC §5.2 first template candidates",
+      "authority": "Portrait Booth project-internal specification",
       "accessedAt": "2026-08-05"
     }
   ],
@@ -51,9 +50,9 @@
     "requiresProfessionalPhotographer": false
   },
   "sourceNotes": {
-    "zh": [
-      "非官方证件模板：本模板不是任何政府机构的证件照片规格，不得用于官方申请。",
-      "允许镜像、自由构图与基础编辑；输出仅用于通用肖像或开发验收。"
+    "en": [
+      "Unofficial document template: this template is not a government agency's document photo specification and must not be used for official applications.",
+      "Mirroring, free composition, and basic editing are allowed; output is for generic portraits or development acceptance only."
     ]
   }
 }

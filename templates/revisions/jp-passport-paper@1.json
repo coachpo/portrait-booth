@@ -4,7 +4,6 @@
   "version": 1,
   "schemaVersion": 1,
   "label": {
-    "zh": "日本护照（纸质 35×45 毫米）",
     "en": "Japan passport (paper 35x45 mm)"
   },
   "jurisdiction": "JP",
@@ -15,16 +14,16 @@
     {
       "id": "mofa-passport-photo",
       "url": "https://www.mofa.go.jp/mofaj/toko/passport/ic_photo.html",
-      "title": "旅券用写真の規格",
-      "authority": "外務省（日本）",
+      "title": "Passport photo specifications",
+      "authority": "Ministry of Foreign Affairs (Japan)",
       "sourceUpdatedAt": "2026-01-01",
       "accessedAt": "2026-08-05"
     },
     {
       "id": "mofa-photo-spec-pdf",
       "url": "https://www.mofa.go.jp/mofaj/files/100171389.pdf",
-      "title": "旅券用写真の規格（PDF）",
-      "authority": "外務省（日本）",
+      "title": "Passport photo specifications (PDF)",
+      "authority": "Ministry of Foreign Affairs (Japan)",
       "accessedAt": "2026-08-05"
     }
   ],
@@ -63,7 +62,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "34mm±2mm（頭頂からあご先まで）"
+      "sourceLiteral": "34 mm ± 2 mm (from top of head to tip of chin)"
     },
     {
       "id": "jp-passport-paper-head-top-margin",
@@ -81,7 +80,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "頭頂から写真上辺まで 4mm±2mm"
+      "sourceLiteral": "4 mm ± 2 mm from top of head to the upper edge of the photo"
     },
     {
       "id": "jp-passport-paper-chin-bottom-margin",
@@ -99,7 +98,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "あご先から写真下辺まで 7mm±2mm"
+      "sourceLiteral": "7 mm ± 2 mm from tip of chin to the lower edge of the photo"
     },
     {
       "id": "jp-passport-paper-face-center",
@@ -117,7 +116,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "顔の中心線：水平中心 17mm±2mm"
+      "sourceLiteral": "face centre line: horizontal centre 17 mm ± 2 mm"
     },
     {
       "id": "jp-passport-paper-face-left-margin",
@@ -132,7 +131,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "顔から左右の端まで各 2mm 以上"
+      "sourceLiteral": "at least 2 mm from the face to each side edge"
     },
     {
       "id": "jp-passport-paper-face-right-margin",
@@ -147,7 +146,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "顔から左右の端まで各 2mm 以上"
+      "sourceLiteral": "at least 2 mm from the face to each side edge"
     }
   ],
   "captureRules": [
@@ -159,7 +158,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "無地・影なし背景、白が推奨"
+      "sourceLiteral": "plain background without patterns or shadows; white recommended"
     },
     {
       "id": "jp-passport-paper-recent-photo",
@@ -169,7 +168,7 @@
       "enforcement": "mandatory",
       "provenance": "source_literal",
       "sourceRefs": ["mofa-passport-photo"],
-      "sourceLiteral": "最近6か月以内に撮影"
+      "sourceLiteral": "photographed within the last 6 months"
     }
   ],
   "overlay": {
@@ -192,10 +191,10 @@
     "requiresProfessionalPhotographer": false
   },
   "sourceNotes": {
-    "zh": [
-      "reference_only：300 ppi 像素编码为 derived，须通过校准打印测试后才能发布为 active。",
-      "『水平中心 17±2 mm』按 SPEC §5.2 表录入；内容维护人复核时须对照日本外务省原文（§14.3 来源）确认度量语义。",
-      "禁止水平镜像和改变本人形象的修饰。"
+    "en": [
+      "reference_only: the 300 ppi pixel encoding is derived; it can only be published as active after passing calibrated print tests.",
+      "'horizontal centre 17 ± 2 mm' is recorded per the SPEC §5.2 table; content maintainers must confirm the measurement semantics against the Japanese MOFA source text (§14.3 source) when reviewing.",
+      "Horizontal mirroring and retouching that alters one's appearance are prohibited."
     ]
   }
 }

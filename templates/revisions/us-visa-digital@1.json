@@ -4,7 +4,6 @@
   "version": 1,
   "schemaVersion": 1,
   "label": {
-    "zh": "美国签证（DS-160/DS-1648 数字照片）",
     "en": "US visa (DS-160/DS-1648 digital photo)"
   },
   "jurisdiction": "US",
@@ -136,10 +135,10 @@
     "requiresProfessionalPhotographer": false
   },
   "sourceNotes": {
-    "zh": [
-      "仅覆盖适用的 DS-160/DS-1648 数字上传；不覆盖 DS-260、DV 或馆站特殊要求。",
-      "240 KB 上限为 conservative_derived；门户实测后可更新为 portal_verified。",
-      "镜像与修饰标为 warn：不得改变脸部外观或引发真实性疑问。"
+    "en": [
+      "Covers only the applicable DS-160/DS-1648 digital uploads; does not cover DS-260, DV, or mission-specific requirements.",
+      "The 240 KB limit is conservative_derived; it can be updated to portal_verified after portal-measured verification.",
+      "Mirroring and retouching are marked warn: they must not alter facial appearance or raise doubts about authenticity."
     ]
   }
 }
