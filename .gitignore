@@ -22,3 +22,6 @@ backend/data/
 
 # OS
 .DS_Store
+
+# Agent tooling state (pi goal tracking; must stay untracked)
+.pi/
