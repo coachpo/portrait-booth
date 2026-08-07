@@ -19,8 +19,7 @@ Prerequisites: Node.js 24+, Python 3.11+, [uv](https://docs.astral.sh/uv/).
 
 ```sh
 # Backend (API, port 8000)
-PORTRAIT_SECRET_KEY_BASE=R-ULVqaTDhAzfxpReUBrpPyuGKuMivOtt9iXbVIKNFk= \
-cd backend && uv sync --extra dev && uv run uvicorn app.main:app --reload
+ cd backend && uv sync --extra dev && PORTRAIT_SECRET_KEY_BASE=R-ULVqaTDhAzfxpReUBrpPyuGKuMivOtt9iXbVIKNFk= uv run uvicorn app.main:app --reload
 
 # Frontend (dev server, port 5173, /api proxied to 8000)
 cd frontend && npm install && npm run dev
@@ -30,15 +29,15 @@ Open http://localhost:5173 in a browser.
 
 ## Common commands
 
-| Location | Command                                | Purpose                                        |
-| -------- | -------------------------------------- | ---------------------------------------------- |
-| frontend | `npm run dev`                          | Dev server                                     |
-| frontend | `npm run build`                        | Type check + production build                  |
-| frontend | `npm test`                             | Vitest unit tests                              |
-| frontend | `npm run lint` / `npm run format`      | ESLint / Prettier                              |
-| backend  | `uv run uvicorn app.main:app --reload` | Dev server                                     |
-| backend  | `uv run pytest`                        | pytest tests                                   |
-| backend  | `uv run ruff check .`                  | Static checks                                  |
+| Location | Command                                | Purpose                                                             |
+| -------- | -------------------------------------- | ------------------------------------------------------------------- |
+| frontend | `npm run dev`                          | Dev server                                                          |
+| frontend | `npm run build`                        | Type check + production build                                       |
+| frontend | `npm test`                             | Vitest unit tests                                                   |
+| frontend | `npm run lint` / `npm run format`      | ESLint / Prettier                                                   |
+| backend  | `uv run uvicorn app.main:app --reload` | Dev server                                                          |
+| backend  | `uv run pytest`                        | pytest tests                                                        |
+| backend  | `uv run ruff check .`                  | Static checks                                                       |
 | root     | `docker compose up --build`            | Full-stack container (frontend build + API + SQLite + disk storage) |
 
 See the [contribution guide](CONTRIBUTING.md) for the full command list and
