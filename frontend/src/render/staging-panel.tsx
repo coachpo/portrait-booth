@@ -16,6 +16,7 @@ import {
   savePhoto,
   type SaveResponse,
 } from "../api/save";
+import { errorText } from "../api/error-text";
 import {
   fetchServicePolicy,
   formatRetention,
@@ -163,7 +164,10 @@ export function StagingPanel({
         if (!sessionExpired || attempt === 1) {
           setStage({
             kind: "error",
-            message: err instanceof Error ? err.message : "staging failed, please retry",
+            message: errorText(
+              err instanceof ApiError ? err.code : undefined,
+              err instanceof Error ? err.message : "",
+            ),
           });
           return;
         }
@@ -193,7 +197,12 @@ export function StagingPanel({
       // upload(): with an unexpired session the server hits the completed
       // record and replays the original envelope, handing the user a
       // retrieval code pointing at a deleted photo.
-      setDeleteError(err instanceof Error ? err.message : "delete failed, please retry");
+      setDeleteError(
+        errorText(
+          err instanceof ApiError ? err.code : undefined,
+          err instanceof Error ? err.message : "delete failed, please retry",
+        ),
+      );
       setStage({ kind: "done", saved });
     }
   };
@@ -345,7 +354,7 @@ export function StagingPanel({
             expired session upload() creates a new session and key and
             resends once */}
             <button type="button" className="primary" onClick={() => void upload()}>
-              Retry with the same idempotency key
+              Retry saving
             </button>
             <button type="button" onClick={() => setStage({ kind: "idle" })}>
               Back

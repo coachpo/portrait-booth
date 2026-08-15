@@ -101,7 +101,7 @@ describe("StagingPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("network down");
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry with the same idempotency key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry saving" }));
     await screen.findByText("A7C 2F9");
 
     expect(savePhoto).toHaveBeenCalledTimes(2);
@@ -190,10 +190,23 @@ describe("StagingPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
     await screen.findByRole("alert");
 
-    expect(
-      screen.getByRole("button", { name: "Retry with the same idempotency key" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry saving" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
+  });
+
+  it("explains the secure-origin cause instead of echoing the backend string", async () => {
+    // Reaching the app over plain http drops the Secure session cookie, so the
+    // server answers SESSION_REQUIRED forever. Both retry attempts fail, and
+    // what the user is left reading must name the real cause.
+    vi.mocked(savePhoto).mockRejectedValue(
+      new ApiError("SESSION_REQUIRED", "a save session must be established first", 403),
+    );
+    await openConfirm();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and upload" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/secure origin/i);
+    expect(alert).not.toHaveTextContent(/save session must be established/i);
   });
 
   it("shows the key, delete secret and authoritative expiry after saving", async () => {
@@ -232,7 +245,7 @@ describe("delete failure", () => {
     // Regression: a delete failure used to fall into the upload error
     // state, taking the done panel - with retrieval code, delete secret, and
     // receipt - away, while that state's only primary button
-    // "Retry with the same idempotency key" runs upload(): the key is still
+    // "Retry saving" runs upload() with the same key: it is still
     // there, the server replays the completed record, and the user gets a
     // retrieval code pointing at a deleted photo.
     vi.mocked(savePhoto).mockResolvedValue(saved);
@@ -249,9 +262,7 @@ describe("delete failure", () => {
     expect(screen.getByText("A7C 2F9")).toBeInTheDocument();
     expect(screen.getByText(/secret-value-1234567890/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry delete" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Retry with the same idempotency key" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry saving" })).toBeNull();
   });
 
   it("retries the delete rather than the upload", async () => {

@@ -341,7 +341,11 @@ describe("cropRules geometry checks (EDT-008)", () => {
       max: 0.02,
     };
     const item = byId(
-      geometryChecks(revision([normalized]), manifest(), anchors({ faceCenter: { x: 600, y: 700 } })),
+      geometryChecks(
+        revision([normalized]),
+        manifest(),
+        anchors({ faceCenter: { x: 600, y: 700 } }),
+      ),
       "fi-face-center-offset",
     );
     expect(item.status).toBe("warn");
