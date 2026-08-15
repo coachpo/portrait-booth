@@ -17,6 +17,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "frontend",
       "port": 5173
+    },
+    {
+      "name": "demo",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["scripts/demo.sh"],
+      "cwd": ".",
+      "port": 5173
     }
   ]
 }

@@ -27,6 +27,24 @@ cd frontend && npm install && npm run dev
 
 Open http://localhost:5173 in a browser.
 
+## Running it for a demo
+
+`scripts/demo.sh` starts both servers with the settings a live demo needs:
+it generates `PORTRAIT_SECRET_KEY_BASE` into the gitignored `.env` on first
+run and reuses it afterwards, so retrieval codes issued during a rehearsal
+still work later; and it raises the per-IP retrieval cap, which otherwise
+defaults to 30 per hour and is shared by every device behind the dev proxy.
+
+```sh
+scripts/demo.sh           # start backend and frontend
+scripts/demo.sh --reset   # clear the previous session's staged photos first
+```
+
+Use `http://localhost:5173`. The camera and the staging session cookie both
+require a secure context, so reaching the same server over a plain
+`http://<LAN-IP>` disables capture and blocks staging by design; put a device
+that needs the full flow behind HTTPS, or let it retrieve by code only.
+
 ## Common commands
 
 | Location | Command                                | Purpose                                                             |
