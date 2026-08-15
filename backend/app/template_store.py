@@ -6,16 +6,37 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import jsonschema
 
-_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "templates" / "schema"
-_REVISIONS_DIR = Path(__file__).resolve().parents[2] / "templates" / "revisions"
-_PUBLICATIONS_FILE = Path(__file__).resolve().parents[2] / "templates" / "publications.json"
+# Source layout: backend/app/template_store.py -> parents[2] is the repository
+# root. The container layout is NOT the same - the image puts the code at
+# /app/app and the templates at /app/templates, so parents[2] resolves to "/"
+# and the catalog would be looked up in a nonexistent /templates, failing every
+# template request with a 500 while /api/v1/health still reports healthy.
+# PORTRAIT_TEMPLATES_DIR pins the directory for such deployments; the Dockerfile
+# sets it alongside the other path variables.
+_DEFAULT_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 _UNSPECIFIED = object()
+
+
+def templates_dir() -> Path:
+    """Templates root. Read per call rather than frozen at import, matching
+    config.get_settings, so tests can point it at a fixture directory."""
+    raw = os.environ.get("PORTRAIT_TEMPLATES_DIR", "").strip()
+    return Path(raw) if raw else _DEFAULT_TEMPLATES_DIR
+
+
+def default_revisions_dir() -> Path:
+    return templates_dir() / "revisions"
+
+
+def default_publications_file() -> Path:
+    return templates_dir() / "publications.json"
 
 
 @dataclass(frozen=True)
@@ -39,7 +60,7 @@ def _content_hash(revision: dict) -> str:
 
 
 def _schema_for(schema_version: int) -> dict:
-    schema_file = _SCHEMA_PATH / f"template-revision-v{schema_version}.schema.json"
+    schema_file = templates_dir() / "schema" / f"template-revision-v{schema_version}.schema.json"
     return _load_json(schema_file)
 
 
@@ -104,12 +125,13 @@ def load_template_catalog(
     revisions_dir: Path | None = None,
     publications_file: Path | None = None,
 ) -> list[TemplateEntry]:
-    revisions_dir = revisions_dir or _REVISIONS_DIR
-    publications_file = publications_file or _PUBLICATIONS_FILE
+    root = templates_dir()
+    revisions_dir = revisions_dir or root / "revisions"
+    publications_file = publications_file or root / "publications.json"
 
     publications: dict[str, dict] = {}
     pubs = _load_json(publications_file)
-    jsonschema.validate(pubs, _load_json(_SCHEMA_PATH / "template-publication-v1.schema.json"))
+    jsonschema.validate(pubs, _load_json(root / "schema" / "template-publication-v1.schema.json"))
     for pub in pubs.get("publications", []):
         publications[pub["revisionId"]] = pub
 

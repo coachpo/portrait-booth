@@ -125,3 +125,61 @@ class TestEnvExample:
         assert SECRET_KEY_BASE_ENV in compose
         # Missing must fail compose outright, not pass an empty string through
         assert f"{SECRET_KEY_BASE_ENV}:?" in compose
+
+
+class TestTemplatesDirectory:
+    """The templates root used to be derived from the module's own location.
+    That is correct for the source layout and wrong for the image, where the
+    code sits at /app/app and the derived root becomes "/" - every template
+    request answered 500 while the healthcheck still reported healthy."""
+
+    def test_environment_overrides_the_derived_root(self, monkeypatch, tmp_path):
+        from app.template_store import (
+            default_publications_file,
+            default_revisions_dir,
+            templates_dir,
+        )
+
+        monkeypatch.setenv("PORTRAIT_TEMPLATES_DIR", str(tmp_path))
+        assert templates_dir() == tmp_path
+        assert default_revisions_dir() == tmp_path / "revisions"
+        assert default_publications_file() == tmp_path / "publications.json"
+
+    def test_blank_value_falls_back_to_the_derived_root(self, monkeypatch):
+        from app.template_store import templates_dir
+
+        monkeypatch.setenv("PORTRAIT_TEMPLATES_DIR", "   ")
+        assert (templates_dir() / "publications.json").is_file()
+
+    def test_default_still_resolves_inside_the_repository(self, monkeypatch):
+        from app.template_store import load_template_catalog, templates_dir
+
+        monkeypatch.delenv("PORTRAIT_TEMPLATES_DIR", raising=False)
+        assert templates_dir() == REPO_ROOT / "templates"
+        assert load_template_catalog()
+
+    def test_catalog_loads_from_an_image_style_layout(self, monkeypatch, tmp_path):
+        """Reproduces the container layout: templates live somewhere the module
+        path cannot derive, reachable only through the environment variable."""
+        import shutil
+
+        from app.template_store import load_template_catalog
+
+        relocated = tmp_path / "opt" / "portrait-templates"
+        shutil.copytree(REPO_ROOT / "templates", relocated)
+        monkeypatch.setenv("PORTRAIT_TEMPLATES_DIR", str(relocated))
+        assert load_template_catalog()
+
+    def test_image_pins_the_templates_directory(self):
+        """A Dockerfile that copies templates to /app/templates without pinning
+        the variable reintroduces the 500."""
+        dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+        assert "PORTRAIT_TEMPLATES_DIR=" in dockerfile
+        copy_target = re.search(r"^COPY templates/ (\S+)", dockerfile, flags=re.MULTILINE)
+        assert copy_target, "Dockerfile must copy the templates directory"
+        pinned = re.search(r"PORTRAIT_TEMPLATES_DIR=(\S+)", dockerfile)
+        assert pinned
+        # WORKDIR is /app, so a relative COPY target lands under it
+        target = copy_target.group(1).rstrip("/")
+        expected = target if target.startswith("/") else f"/app/{target}"
+        assert pinned.group(1).rstrip("/") == expected

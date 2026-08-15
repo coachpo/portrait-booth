@@ -15,14 +15,16 @@ from app.template_store import _content_hash, load_template_catalog
 def template_dir(tmp_path):
     """Copy the repository's real templates so each case can break them and
     verify the gate."""
-    from app.template_store import _PUBLICATIONS_FILE, _REVISIONS_DIR
+    from app.template_store import default_publications_file, default_revisions_dir
 
     revisions = tmp_path / "revisions"
     revisions.mkdir()
-    for path in _REVISIONS_DIR.glob("*.json"):
+    for path in default_revisions_dir().glob("*.json"):
         (revisions / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     publications = tmp_path / "publications.json"
-    publications.write_text(_PUBLICATIONS_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+    publications.write_text(
+        default_publications_file().read_text(encoding="utf-8"), encoding="utf-8"
+    )
     return revisions, publications
 
 

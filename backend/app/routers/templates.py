@@ -9,10 +9,10 @@ from functools import lru_cache
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.template_store import (
-    _PUBLICATIONS_FILE,
-    _REVISIONS_DIR,
     TemplateEntry,
     catalog_payload,
+    default_publications_file,
+    default_revisions_dir,
     load_template_catalog,
 )
 
@@ -27,8 +27,8 @@ _CACHE_CONTROL = "public, max-age=300, must-revalidate"
 def _content_key() -> tuple[int, int]:
     """Template file modification times. When content changes the cache key
     changes - otherwise an emergency takedown would wait for a process restart."""
-    revisions = [p.stat().st_mtime_ns for p in _REVISIONS_DIR.glob("*.json")]
-    return (_PUBLICATIONS_FILE.stat().st_mtime_ns, max(revisions, default=0))
+    revisions = [p.stat().st_mtime_ns for p in default_revisions_dir().glob("*.json")]
+    return (default_publications_file().stat().st_mtime_ns, max(revisions, default=0))
 
 
 @lru_cache(maxsize=4)

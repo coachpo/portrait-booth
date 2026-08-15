@@ -13,7 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app/ app/
 COPY templates/ templates/
 COPY --from=frontend /app/frontend/dist/ frontend/dist/
+# PORTRAIT_TEMPLATES_DIR is not optional here: the code derives the templates
+# root from its own location, which points at the repository root in the source
+# layout but at "/" in this image, so without it every template request 500s
+# while the healthcheck below still reports the container healthy.
 ENV PORTRAIT_FRONTEND_DIST=/app/frontend/dist \
+    PORTRAIT_TEMPLATES_DIR=/app/templates \
     PORTRAIT_DB_PATH=/app/data/portrait.db \
     PORTRAIT_STORAGE_DIR=/app/data/objects \
     PYTHONUNBUFFERED=1

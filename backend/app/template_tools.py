@@ -24,9 +24,9 @@ import sys
 from pathlib import Path
 
 from .template_store import (
-    _PUBLICATIONS_FILE,
-    _REVISIONS_DIR,
     _content_hash,
+    default_publications_file,
+    default_revisions_dir,
     load_template_catalog,
 )
 
@@ -67,9 +67,9 @@ def cmd_validate(_args: argparse.Namespace) -> int:
 
 
 def cmd_rehash(_args: argparse.Namespace) -> int:
-    pubs = _read(_PUBLICATIONS_FILE)
+    pubs = _read(default_publications_file())
     hashes = {}
-    for path in sorted(_REVISIONS_DIR.glob("*.json")):
+    for path in sorted(default_revisions_dir().glob("*.json")):
         revision = _read(path)
         hashes[revision["revisionId"]] = _content_hash(revision)
 
@@ -82,7 +82,7 @@ def cmd_rehash(_args: argparse.Namespace) -> int:
         if pub.get("contentHash") != expected:
             pub["contentHash"] = expected
             changed += 1
-    _write(_PUBLICATIONS_FILE, pubs)
+    _write(default_publications_file(), pubs)
     print(f"updated {changed} contentHash entries")
     return 0
 
@@ -122,7 +122,7 @@ def cmd_report(_args: argparse.Namespace) -> int:
 
 def cmd_new(args: argparse.Namespace) -> int:
     revision_id = f"{args.id}@{args.version}"
-    path = _REVISIONS_DIR / f"{revision_id}.json"
+    path = default_revisions_dir() / f"{revision_id}.json"
     if path.exists():
         print(f"{path.name} already exists", file=sys.stderr)
         return 1
@@ -166,7 +166,7 @@ def cmd_new(args: argparse.Namespace) -> int:
     }
     _write(path, skeleton)
 
-    pubs = _read(_PUBLICATIONS_FILE)
+    pubs = _read(default_publications_file())
     pubs["publications"].append(
         {
             "revisionId": revision_id,
@@ -183,7 +183,7 @@ def cmd_new(args: argparse.Namespace) -> int:
             "publicationRevision": 1,
         }
     )
-    _write(_PUBLICATIONS_FILE, pubs)
+    _write(default_publications_file(), pubs)
     print(f"generated {path.name}; run rehash afterwards to write the contentHash")
     return 0
 
