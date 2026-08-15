@@ -124,6 +124,7 @@ beforeEach(() => {
       },
     },
     faceGeometry: null,
+    faceAnchors: null,
   });
   // Pose inference stack isolation: default to "model available"; PoseGuide
   // renders null in jsdom, injecting no model <script> and leaving no

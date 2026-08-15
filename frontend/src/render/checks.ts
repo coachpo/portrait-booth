@@ -15,19 +15,10 @@ import { uiLocale } from "../lib/locale";
 import { QUALITY_CONFIG } from "../pose/quality";
 import { hasExifSegment, readJpegDensity } from "./jpeg";
 import type { FinalArtifact } from "./final-artifact";
+import { HEURISTIC_NOTICE, type CheckItem } from "./check-types";
+import { geometryChecks } from "./geometry-checks";
 
-export type CheckStatus = "pass" | "warn" | "fail" | "unknown" | "manual";
-
-export interface CheckItem {
-  id: string;
-  label: string;
-  status: CheckStatus;
-  detail?: string;
-}
-
-/** Unified disclaimer for heuristic checks: these thresholds are not
- * officially calibrated and constitute no acceptance promise. */
-export const HEURISTIC_NOTICE = "heuristic judgment, not calibrated to official tolerance";
+export { HEURISTIC_NOTICE, type CheckItem, type CheckStatus } from "./check-types";
 
 export async function buildChecks(
   artifact: FinalArtifact,
@@ -156,6 +147,10 @@ export async function buildChecks(
   // GDE-008: the background-uniformity automatic signal never passes; when
   // not measured it must explicitly say unchecked
   checks.push(backgroundCheck(staticChecks));
+
+  // EDT-008: cropRules the recheck's face anchors can actually reach. The
+  // editor drew these bands; this is where they get measured against.
+  checks.push(...geometryChecks(rev, artifact.manifest, staticChecks?.faceAnchors ?? null));
 
   // TMP-003: reference_only templates are not submittable
   if (template.publication.status !== "active") {

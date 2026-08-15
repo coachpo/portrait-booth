@@ -5,6 +5,7 @@ import {
   EAR_CLOSED_MAX,
   MAR_OPEN_MIN,
   eyeAspectRatio,
+  faceAnchors,
   faceRoi,
   mouthAspectRatio,
 } from "./face-geometry";
@@ -120,5 +121,78 @@ describe("face geometry (O2)", () => {
     expect(faceRoi(f, 1)).toBeNull();
     expect(eyeAspectRatio(f, 1)).toBeNull();
     expect(mouthAspectRatio(f, 1)).toBeNull();
+  });
+});
+
+describe("cropRules anchors (EDT-008)", () => {
+  /** Normalized landmarks placed so every anchor lands on a distinct value */
+  function anchorFace(): FaceObservation {
+    const f = faceWith((x, y) => ({ x, y }));
+    f.landmarks[152] = { x: 0.5, y: 0.8 }; // chin tip
+    f.landmarks[10] = { x: 0.5, y: 0.2 }; // hairline center
+    f.landmarks[33] = { x: 0.4, y: 0.45 }; // left eye outer corner
+    f.landmarks[133] = { x: 0.46, y: 0.44 }; // left eye inner corner
+    f.landmarks[362] = { x: 0.54, y: 0.44 }; // right eye inner corner
+    f.landmarks[263] = { x: 0.6, y: 0.45 }; // right eye outer corner
+    return f;
+  }
+
+  it("scales normalized landmarks into source pixels (EDT-008)", () => {
+    const a = faceAnchors(anchorFace(), 1000, 2000)!;
+    expect(a.chinTip).toEqual({ x: 500, y: 1600 });
+    expect(a.hairline).toEqual({ x: 500, y: 400 });
+    // Face center line follows faceMetrics: midpoint of the eye outer corners
+    expect(a.faceCenter.x).toBeCloseTo(500, 9);
+    expect(a.faceCenter.y).toBeCloseTo(900, 9);
+  });
+
+  it("puts the eye line at the midpoint of the two eye centers (EDT-008)", () => {
+    const a = faceAnchors(anchorFace(), 1000, 2000)!;
+    // Left eye center y = (0.45 + 0.44) / 2, right eye center y likewise;
+    // the eye line averages both → 0.445 of 2000 px
+    expect(a.eyeLine.y).toBeCloseTo(890, 9);
+    expect(a.eyeLine.x).toBeCloseTo(500, 9);
+    // Deliberately distinct from faceCenter, which uses the outer corners only
+    expect(a.eyeLine.y).not.toBeCloseTo(a.faceCenter.y, 9);
+  });
+
+  it("returns null when an inner eye corner is missing (EDT-008)", () => {
+    const f = anchorFace();
+    delete f.landmarks[133];
+    expect(faceAnchors(f, 100, 100)).toBeNull();
+  });
+
+  it("keeps the center line off-axis when the face is off-center (EDT-008)", () => {
+    const f = anchorFace();
+    f.landmarks[33] = { x: 0.5, y: 0.45 };
+    f.landmarks[263] = { x: 0.7, y: 0.45 };
+    const a = faceAnchors(f, 500, 653)!;
+    expect(a.faceCenter.x).toBeCloseTo(0.6 * 500, 9);
+  });
+
+  it("falls back to landmark 9 when the hairline point 10 is missing (EDT-008)", () => {
+    const f = anchorFace();
+    delete f.landmarks[10];
+    f.landmarks[9] = { x: 0.5, y: 0.25 };
+    const a = faceAnchors(f, 100, 100)!;
+    expect(a.hairline.y).toBeCloseTo(25, 9);
+  });
+
+  it("returns null rather than a partial anchor set when the chin is missing (EDT-008)", () => {
+    const f = anchorFace();
+    delete f.landmarks[152];
+    expect(faceAnchors(f, 100, 100)).toBeNull();
+  });
+
+  it("returns null when both hairline candidates are missing (EDT-008)", () => {
+    const f = anchorFace();
+    delete f.landmarks[10];
+    delete f.landmarks[9];
+    expect(faceAnchors(f, 100, 100)).toBeNull();
+  });
+
+  it("returns null for non-positive bitmap dimensions (EDT-008)", () => {
+    expect(faceAnchors(anchorFace(), 0, 100)).toBeNull();
+    expect(faceAnchors(anchorFace(), 100, Number.NaN)).toBeNull();
   });
 });

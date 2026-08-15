@@ -28,6 +28,70 @@ interface Point {
   y: number;
 }
 
+/**
+ * cropRules anchor points, in source-bitmap pixels (EDT-008 measurement).
+ *
+ * Only anchors the landmark model can genuinely provide are exposed. The face
+ * mesh ends at the hairline, so the `crown_point`, `top_of_head`, and
+ * `top_of_head_including_hair` anchors used by the head_height and
+ * head_top_margin rules have no landmark at all - they are deliberately
+ * absent here, and render/geometry-checks.ts reports those rules as
+ * unmeasured rather than inventing a crown position.
+ */
+export interface FaceAnchors {
+  /** Chin tip (landmark 152); the `chin` / `chin_tip` anchors */
+  chinTip: Point;
+  /**
+   * Hairline center (landmark 10, falling back to 9): the topmost midline
+   * landmark the mesh provides. Everything above it - scalp, hair, crown - is
+   * outside the model, which is why chin-to-hairline can only ever be a lower
+   * bound on head height.
+   */
+  hairline: Point;
+  /**
+   * Face center line: midpoint of the eye outer corners (33, 263), the same
+   * definition faceMetrics in tracking.ts already uses for the primary-face
+   * score, so the editor and the check summary cannot disagree about where the
+   * face is.
+   */
+  faceCenter: Point;
+  /**
+   * Eye line: midpoint of the two eye centers, each taken as the midpoint of
+   * that eye's own outer and inner corners (33/133 and 362/263). Deliberately
+   * not the same as faceCenter - the outer corners alone sit slightly off eye
+   * level, and `eye_line_from_bottom` is a mandatory rule on real templates.
+   */
+  eyeLine: Point;
+}
+
+/**
+ * Resolve the measurable cropRules anchors to source-bitmap pixels.
+ * Returns null when any required landmark is missing or invalid - a partial
+ * anchor set would silently produce a measurement against the wrong point.
+ */
+export function faceAnchors(
+  face: FaceObservation,
+  width: number,
+  height: number,
+): FaceAnchors | null {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  const chinTip = pt(face, 152);
+  const hairline = pt(face, 10) ?? pt(face, 9);
+  const leftOuter = pt(face, 33);
+  const leftInner = pt(face, 133);
+  const rightInner = pt(face, 362);
+  const rightOuter = pt(face, 263);
+  if (!chinTip || !hairline || !leftOuter || !leftInner || !rightInner || !rightOuter) return null;
+  const mid = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const toPixels = (p: Point): Point => ({ x: p.x * width, y: p.y * height });
+  return {
+    chinTip: toPixels(chinTip),
+    hairline: toPixels(hairline),
+    faceCenter: toPixels(mid(leftOuter, rightOuter)),
+    eyeLine: toPixels(mid(mid(leftOuter, leftInner), mid(rightInner, rightOuter))),
+  };
+}
+
 function pt(face: FaceObservation, index: number): Point | null {
   const p = face.landmarks[index];
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;

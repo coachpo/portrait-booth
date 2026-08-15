@@ -123,6 +123,7 @@ describe("runStaticCheck (O2)", () => {
         shootable: false,
       },
       faceGeometry: null,
+      faceAnchors: null,
       quality: {
         status: "warn",
         issues: ["exposure and sharpness show no obvious issues (heuristic, for reference only)"],

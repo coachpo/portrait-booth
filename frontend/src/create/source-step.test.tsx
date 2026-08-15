@@ -97,6 +97,7 @@ beforeEach(() => {
       },
     },
     faceGeometry: null,
+    faceAnchors: null,
   });
 });
 

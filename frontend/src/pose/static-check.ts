@@ -20,8 +20,10 @@ import {
   EAR_CLOSED_MAX,
   MAR_OPEN_MIN,
   eyeAspectRatio,
+  faceAnchors,
   faceRoi,
   mouthAspectRatio,
+  type FaceAnchors,
   type FaceRoi,
 } from "./face-geometry";
 import { PoseTracker, selectPrimaryFace, type FaceObservation, type PoseState } from "./tracking";
@@ -35,6 +37,14 @@ export interface StaticCheckResult {
   poseAvailable: boolean;
   /** Eye/mouth geometry heuristics; null when not checked */
   faceGeometry: { eyesClosed: boolean; mouthOpen: boolean } | null;
+  /**
+   * cropRules anchor points in source-bitmap pixels (EDT-008); null when the
+   * model is unavailable or the landmarks are incomplete. The final check
+   * summary maps these through the artifact's render matrix to reach output
+   * pixels, so they must come from the same bitmap the artifact was rendered
+   * from.
+   */
+  faceAnchors: FaceAnchors | null;
 }
 
 export interface StaticCheckOptions {
@@ -71,6 +81,7 @@ export async function runStaticCheck(
   // when landmark indices are missing or coordinates coincide)
   let faceGeometry: StaticCheckResult["faceGeometry"] = null;
   let roi: FaceRoi | null = null;
+  let anchors: FaceAnchors | null = null;
   if (primary) {
     const aspect = bitmap.height / bitmap.width;
     const ear = eyeAspectRatio(primary, aspect);
@@ -79,12 +90,13 @@ export async function runStaticCheck(
       faceGeometry = { eyesClosed: ear < EAR_CLOSED_MAX, mouthOpen: mar > MAR_OPEN_MIN };
     }
     roi = faceRoi(primary, aspect);
+    anchors = faceAnchors(primary, bitmap.width, bitmap.height);
   }
 
   const config = options?.qualityConfig ?? QUALITY_CONFIG;
   const deps = options?.qualityDeps ?? browserQualityDeps;
   const quality = analyzeQuality(bitmap, config, deps, roi);
-  return { pose, quality, poseAvailable, faceGeometry };
+  return { pose, quality, poseAvailable, faceGeometry, faceAnchors: anchors };
 }
 
 /** Recheck result → user-readable warnings (null when none). */

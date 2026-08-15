@@ -156,6 +156,7 @@ function staticCheckResult(overrides: Partial<StaticCheckResult> = {}): StaticCh
       },
     },
     faceGeometry: { eyesClosed: false, mouthOpen: false },
+    faceAnchors: null,
     ...overrides,
   };
 }
@@ -648,6 +649,65 @@ describe("buildChecks", () => {
       expect(checks.find((c) => c.id === "exact-pixels")!.status).toBe("pass");
       const fail = await buildChecks(manifestArtifact(1200, 1200), rangedTemplate(), null);
       expect(fail.find((c) => c.id === "exact-pixels")!.status).toBe("fail");
+    });
+  });
+
+  describe("cropRules geometry wiring (EDT-008)", () => {
+    const centerOffset = {
+      id: "fi-face-center-offset",
+      metric: "face_center_offset_x",
+      min: -21,
+      max: 21,
+      unit: "px" as const,
+      anchors: ["face_center_line", "photo_center_line"],
+      axis: "x" as const,
+      bounds: "inclusive" as const,
+      coordinateSpace: "output_pixel_top_left",
+      evaluation: "automatic_with_manual_confirmation" as const,
+      enforcement: "mandatory" as const,
+      provenance: "source_literal",
+      sourceRefs: ["poliisi-photo-instructions"],
+      sourceLiteral: "deviation of face centre line from photo centre line at most 1.5 mm",
+    };
+    // artifact()'s default matrix is the identity, so source pixels are output
+    // pixels and the 500 px wide artifact is centered on x = 250
+    const centeredAnchors = {
+      chinTip: { x: 250, y: 560 },
+      hairline: { x: 250, y: 160 },
+      faceCenter: { x: 250, y: 330 },
+      eyeLine: { x: 250, y: 330 },
+    };
+
+    it("adds no crop items for a template without cropRules", async () => {
+      const checks = await buildChecks(artifact(96), template(), staticCheckResult());
+      expect(checks.filter((c) => c.id.startsWith("crop:"))).toHaveLength(0);
+    });
+
+    it("measures the face center line against the template tolerance", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template({ cropRules: [centerOffset] }),
+        staticCheckResult({ faceAnchors: centeredAnchors }),
+      );
+      const item = checks.find((c) => c.id === "crop:fi-face-center-offset");
+      expect(item!.status).toBe("pass");
+      expect(item!.detail).toContain(HEURISTIC_NOTICE);
+    });
+
+    it("states the rule is unchecked when the recheck produced no anchors", async () => {
+      const checks = await buildChecks(
+        artifact(96),
+        template({ cropRules: [centerOffset] }),
+        staticCheckResult({ faceAnchors: null }),
+      );
+      const item = checks.find((c) => c.id === "crop:fi-face-center-offset");
+      expect(item!.status).toBe("unknown");
+      expect(item!.detail).toContain("no face landmarks");
+    });
+
+    it("states the rule is unchecked when no recheck ran at all", async () => {
+      const checks = await buildChecks(artifact(96), template({ cropRules: [centerOffset] }), null);
+      expect(checks.find((c) => c.id === "crop:fi-face-center-offset")!.status).toBe("unknown");
     });
   });
 });
