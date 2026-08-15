@@ -22,7 +22,7 @@ export interface CaptureStepProps {
   onReady: (source: SourceImage) => void;
   onBack: () => void;
   /** How long the page may stay hidden before auto-stopping the stream
-   * (CAM-005); injectable so tests need no fake clocks */
+   * (CAM-005); injectable so tests own the threshold they drive the clock to */
   hiddenStopMs?: number;
 }
 

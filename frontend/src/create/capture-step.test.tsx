@@ -170,22 +170,41 @@ describe("CaptureStep", () => {
   it("stops the stream after the page stays hidden (CAM-005)", async () => {
     const stream = fakeStream();
     vi.mocked(openCamera).mockResolvedValue(stream);
-    // The threshold is injected as an extremely short value, so tests need
-    // no fake clocks and do not fight RTL polling
-    render(<CaptureStep template={template} onReady={vi.fn()} onBack={vi.fn()} hiddenStopMs={5} />);
+    const hiddenStopMs = 30_000;
+    render(
+      <CaptureStep
+        template={template}
+        onReady={vi.fn()}
+        onBack={vi.fn()}
+        hiddenStopMs={hiddenStopMs}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open camera" }));
     await screen.findByRole("button", { name: "Shoot" });
+    // findByRole resolves on the DOM mutation, but the effect registering the
+    // visibilitychange listener is a passive effect flushed later; under load
+    // the dispatch below used to land before it and hit no listener at all
+    await act(async () => {});
+    // From here the threshold runs on a fake clock, never on wall time
+    vi.useFakeTimers();
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await vi.advanceTimersByTimeAsync(hiddenStopMs - 1);
     });
-
-    await waitFor(() => expect(stream.getVideoTracks()[0].stop).toHaveBeenCalled());
-    expect(await screen.findByRole("alert")).toHaveTextContent("auto-stopped");
-
+    expect(stream.getVideoTracks()[0].stop).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    // Restore before asserting: a failing assertion must not leak "hidden"
+    // into the tests that follow
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+
+    // RTL polling (waitFor/findBy*) hangs on a frozen clock, and is no longer
+    // needed: act() has already flushed the timer's state update
+    expect(stream.getVideoTracks()[0].stop).toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("auto-stopped");
   });
 
   it("starts the camera on click and shows the shutter (CAM-002/003)", async () => {
