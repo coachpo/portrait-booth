@@ -1,6 +1,6 @@
 # Project status
 
-> Last review date based on repository evidence: 2026-08-06
+> Last review date based on repository evidence: 2026-08-15
 
 ## Lifecycle
 
@@ -34,10 +34,22 @@ in place (see "Known gaps").
   a machine cannot judge show one by one as "needs manual confirmation"
   with the official source text; the rest are "not checked". Every heuristic
   item is labeled not calibrated to official tolerance.
+- `cropRules` are measured, not only drawn: the recheck's face anchors are
+  captured in source-bitmap pixels and mapped through the artifact's own
+  render matrix into output pixels, so mirroring and rotation are already
+  folded in, and ratio/millimeter bounds resolve against the artifact's actual
+  output size. Which rules can be judged follows their declared `anchors`:
+  `face_center_offset_x`, `chin_bottom_margin`, and `eye_line_from_bottom`
+  resolve to real landmarks and yield pass/warn with fix advice phrased as
+  panning the photo; `head_height` is crown-anchored in every template that
+  declares it and the face mesh has no crown point, so it reports the measured
+  chin-to-hairline span as a lower bound, can warn when that bound already
+  exceeds the maximum, and never passes.
 - Staging/retrieval/deletion loop: anonymous save sessions, idempotency
   leases, KEY-only retrieval, single-use download tokens, delete-secret
-  authorization; the retrieve page offers the delete entry and a downloadable
-  receipt.
+  authorization; the retrieve page offers the delete entry, while the
+  downloadable receipt (retrieval code plus delete secret) is issued by the
+  staging panel at the end of the creation flow.
 - App shell: global navigation, 404 fallback, ErrorBoundary, and the
   `/privacy` page (retention and other numbers all come from
   `/api/v1/service-policy`).
@@ -173,9 +185,14 @@ deliberate deviation**:
   issues" when unchecked items exist. Remaining scope: uncalibrated
   thresholds (same nature as LANDMARKER_CONFIDENCE), background in the luma
   domain only (color cast needs an explicit config field plus SPEC sync), and
-  the captureRules consumption chain not implemented. Optional ranged_pixels
-  sizes are implemented: us-visa-digital can switch 600/1200 bands on the
-  confirm page, through the editor, final page, and staging validation.
+  the captureRules consumption chain not implemented. Among `cropRules`, the
+  crown-anchored rules stay unmeasurable for want of a crown landmark
+  (`head_height` everywhere, `head_top_margin` except jp-passport's
+  hairline-anchored variant), while `face_width`, `interpupil_distance`, and
+  the left/right face margins are measurable but not consumed yet. Optional
+  ranged_pixels sizes are implemented: us-visa-digital can switch 600/1200
+  bands on the confirm page, through the editor, final page, and staging
+  validation.
 - Playwright end-to-end tests are not wired into CI and must be run
   manually.
 - **The Public Beta minimum template manifest is not met**: 3 of the 6 hard
