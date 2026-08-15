@@ -48,12 +48,14 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
       .then((c) => {
         if (!cancelled) setCatalog(c);
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         if (cancelled) return;
+        // The raw transport error ("HTTP 500") tells the user nothing and
+        // reads as a broken product; the actionable part is that the catalog
+        // comes from the server, so this is a connection problem rather than
+        // anything they did.
         setError(
-          err instanceof Error
-            ? `template catalog failed to load: ${err.message}`
-            : "template catalog failed to load",
+          "could not load the photo templates. The template service is not responding - check that the server is running, then retry.",
         );
       });
     return () => {
@@ -79,13 +81,16 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
         : [],
     [catalog, jurisdiction, documentType, channel],
   );
-  const sorted = useMemo(
-    () =>
-      [...entries].sort((a, b) => {
-        const pa = a.publication.status === "active" ? 0 : 1;
-        const pb = b.publication.status === "active" ? 0 : 1;
-        return pa - pb;
-      }),
+  // Split rather than sort. Half the catalog is reference_only, and rendered
+  // inline those cards are a wall of disabled buttons carrying their own
+  // "not verified" text - filtering by passport used to return nothing else.
+  // Collapsed, every disclosure is still one click away (TMP-003) while the
+  // templates that can actually produce a photo come first.
+  const { selectable, unavailable } = useMemo(
+    () => ({
+      selectable: entries.filter((e) => e.publication.status === "active"),
+      unavailable: entries.filter((e) => e.publication.status !== "active"),
+    }),
     [entries],
   );
 
@@ -160,14 +165,38 @@ export function TemplateStep({ onSelect }: TemplateStepProps) {
           </select>
         </label>
       </div>
-      {sorted.length === 0 ? (
+      {selectable.length === 0 && unavailable.length === 0 && (
         <p className="muted">No templates match the current filters.</p>
-      ) : (
+      )}
+      {selectable.length > 0 && (
         <ul className="template-list">
-          {sorted.map((entry) => (
+          {selectable.map((entry) => (
             <TemplateCard key={entry.revision.revisionId} entry={entry} onSelect={onSelect} />
           ))}
         </ul>
+      )}
+      {selectable.length === 0 && unavailable.length > 0 && (
+        <p className="muted">
+          No template matching these filters can produce a submittable photo yet. The ones that
+          match are listed below with the verification each is still waiting on.
+        </p>
+      )}
+      {unavailable.length > 0 && (
+        <details className="unavailable-templates">
+          <summary>
+            {unavailable.length} matching {unavailable.length === 1 ? "template" : "templates"} not
+            yet submittable
+          </summary>
+          <p className="muted">
+            These specifications are recorded with their official sources, but have not passed this
+            project&apos;s publication verification, so they cannot produce a submittable photo yet.
+          </p>
+          <ul className="template-list">
+            {unavailable.map((entry) => (
+              <TemplateCard key={entry.revision.revisionId} entry={entry} onSelect={onSelect} />
+            ))}
+          </ul>
+        </details>
       )}
     </section>
   );

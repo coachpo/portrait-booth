@@ -127,9 +127,7 @@ describe("TemplateStep", () => {
         <TemplateStep onSelect={vi.fn()} />
       </MemoryRouter>,
     );
-    expect(
-      await screen.findByText("template catalog failed to load: network error"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/could not load the photo templates/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("heading", { name: "Test template" })).toBeInTheDocument();
     expect(mockedFetch).toHaveBeenCalledTimes(2);
@@ -176,6 +174,49 @@ describe("TemplateStep", () => {
     expect(onSelect).toHaveBeenCalledOnce();
     const disabled = screen.getByRole("button", { name: "Not submittable" });
     expect(disabled).toBeDisabled();
+  });
+
+  it("keeps non-submittable templates out of the main list but still discloses them", async () => {
+    mockedFetch.mockResolvedValue(catalog);
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { name: "Test template" });
+
+    // The collapsed group is closed by default, so the customer meets
+    // selectable templates first instead of a wall of disabled buttons
+    const group = screen.getByText(/not yet submittable/);
+    const details = group.closest("details");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+
+    // Disclosure is preserved, not removed: the card and its reason are inside
+    expect(details).toContainElement(screen.getByRole("button", { name: "Not submittable" }));
+    expect(details).toContainElement(screen.getByText("not verified by calibrated print tests"));
+
+    // The selectable cards are outside the collapsed group
+    for (const button of screen.getAllByRole("button", { name: "Select this template" })) {
+      expect(details).not.toContainElement(button);
+    }
+  });
+
+  it("explains an all-unavailable filter result instead of showing dead ends only", async () => {
+    mockedFetch.mockResolvedValue({
+      ...catalog,
+      templates: catalog.templates.filter((t) => t.publication.status !== "active"),
+    });
+    render(
+      <MemoryRouter>
+        <TemplateStep onSelect={vi.fn()} />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText(
+        /no template matching these filters can produce a submittable photo/i,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows source requirement markers when the template demands them (P2)", async () => {

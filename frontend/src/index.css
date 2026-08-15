@@ -232,6 +232,57 @@ a {
   color: var(--color-primary);
 }
 
+/* Templates that cannot produce a submittable photo: collapsed so they do not
+   crowd out the selectable ones, but never hidden (TMP-003 disclosure). */
+.unavailable-templates {
+  margin-top: 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  background: var(--color-bg);
+}
+
+.unavailable-templates summary {
+  cursor: pointer;
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.unavailable-templates[open] summary {
+  margin-bottom: 0.75rem;
+}
+
+.unavailable-templates .template-list {
+  margin-top: 0.75rem;
+}
+
+/* Load failures: without a surface of their own these read as raw body text
+   at the exact moment the product looks broken. */
+.template-error {
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius);
+  padding: 1rem;
+  background: var(--color-surface);
+  display: grid;
+  gap: 0.75rem;
+  justify-items: start;
+}
+
+/* Optional output sizes on ranged_pixels templates: without this the radio
+   options run together on one line. */
+.size-option {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+
+.policy-notices {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
 .sources ul {
   margin: 0.5rem 0 0;
   padding-left: 1.25rem;
