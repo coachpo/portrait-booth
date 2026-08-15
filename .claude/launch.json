@@ -3,16 +3,19 @@
   "configurations": [
     {
       "name": "backend",
-      "runtimeExecutable": "/Users/qingli/Documents/ChatGPT/portrait-booth/backend/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--port", "8000"],
-      "cwd": "/Users/qingli/Documents/ChatGPT/portrait-booth/backend",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": [
+        "-c",
+        "if [ -z \"$PORTRAIT_SECRET_KEY_BASE\" ]; then echo 'PORTRAIT_SECRET_KEY_BASE is not set; the API refuses to start without it. See .env.example, then export it before launching.' >&2; exit 1; fi; exec uv run uvicorn app.main:app --reload --port 8000"
+      ],
+      "cwd": "backend",
       "port": 8000
     },
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/qingli/Documents/ChatGPT/portrait-booth/frontend",
+      "cwd": "frontend",
       "port": 5173
     }
   ]
