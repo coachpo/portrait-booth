@@ -2,7 +2,7 @@
 
 > Status: Draft v0.1
 > Baseline date: 2026-08-05
-> Related product document: [PRODUCT.md](./PRODUCT.md)
+> Related product document: [product.md](./product.md)
 > Keywords: `MUST`, `SHOULD`, and `MAY` are to be interpreted as described in RFC 2119.
 
 ## 1. Scope and key decisions

@@ -69,7 +69,7 @@ pages that do not belong to the creation flow.
 
 ## Planned system boundaries
 
-[Product overview](PRODUCT.md) and [SPEC](SPEC.md) record the following
+[Product overview](product.md) and [SPEC](SPEC.md) record the following
 implementation boundaries:
 
 - **Browser client**: template selection, file decoding, camera access,
@@ -167,6 +167,11 @@ photo objects on a mounted volume. Commands are in [README](../README.md)
 and the [contribution guide](../CONTRIBUTING.md).
 
 ## Main risks and exit conditions
+
+At the current local development and demonstration stage (no deployment,
+no external users, no public retrieval), none of the launch-gated risks
+below is reachable; they bind any future deployment or public exposure and
+are re-assessed when such exposure begins.
 
 | Risk | Current limitation | Verifiable exit condition |
 | --- | --- | --- |

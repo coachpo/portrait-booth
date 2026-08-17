@@ -46,8 +46,8 @@ git diff --check
 
 ## Development workflow
 
-1. Read the [product overview](docs/PRODUCT.md), [project status](STATUS.md),
-   [architecture](docs/architecture.md), and [development guidelines](docs/development-guidelines.md).
+1. Read the [product overview](docs/product.md), [project status](STATUS.md),
+   [architecture](docs/architecture.md), and [Development Rules](docs/development-rules.md).
 2. Confirm the requirement scope, module responsibilities, data boundaries,
    and acceptance conditions before making changes.
 3. Use the minimal implementation that satisfies the current requirements;
@@ -57,82 +57,84 @@ git diff --check
 5. Sync the single authoritative documents and verify the working tree
    contains only this change.
 
-Project-specific technical rules live in the [development guidelines](docs/development-guidelines.md); component responsibilities and dependency
+Project-specific technical rules live in the [Development Rules](docs/development-rules.md); component responsibilities and dependency
 orientation in the [architecture](docs/architecture.md); long files and
-responsibility splitting in the [source size and responsibility rules](docs/source-size-and-responsibility-rules.md).
+responsibility splitting in the [Source Code Size and Responsibility Rules](docs/source-code-size-and-responsibility-rules.md).
 
-## General design principles
+<!-- write-project-docs:derived-iteration-strategy:start -->
+<!-- write-project-docs:derived-iteration-strategy:metadata {"contentSha256":"sha256:8e27c8e89b715cab27ed8ad67e552966ce89fccece1d24fc58228b9b21c1d242","schemaVersion":1,"sources":[{"normalization":"without-visible-exact-mvp-control-line-terminal-lf-v2","path":"STATUS.md","sha256":"sha256:bc7787c528973f161d41a01b5101238e4aa26daf29a0040b29083935c2bc2387"},{"path":"docs/product.md","sha256":"sha256:10ebee5808de0f6e45323fc138de1252741a2ae8f6691ec4671ddfea091def0e"},{"path":"docs/architecture.md","sha256":"sha256:1cf4b160601e911b921b7962b6544d69bc7643e23ec725d3c1ebe1a089cd7cc4"},{"path":"docs/development-rules.md","sha256":"sha256:a7768dd495255f637efcffcc3528f20d93bbb781941c03a47a4cd8011f3d6f48"}]} -->
+## Current Iteration Strategy
 
-Given confirmed functional scope, architectural boundaries, quality
-attributes, security, compatibility, and runtime constraints, choose a
-design in the following order:
+Run a repeatable, observable local demonstration loop: deliver through the local full-stack Docker container or the two-process dev topology, bound to the reviewed templates and their official source text; before any demo or delivery run the applicable tests, static checks, format checks, and builds, and keep the create, export/stage, KEY retrieval, and delete flows walkable end to end.
 
-1. Designs, patterns, interfaces, or components already in the project that
-   are proven and still applicable;
-2. applicable formal standards, standard protocols, and official platform or
-   framework recommendations;
-3. mature industry solutions widely adopted in similar scenarios, actively
-   maintained, and backed by reliable practice evidence;
-4. only when none of the above satisfies a verified constraint, a minimal
-   custom design that meets the current requirements.
+Derived from (the source documents remain authoritative): [`STATUS.md`](STATUS.md), [`docs/product.md`](docs/product.md), [`docs/architecture.md`](docs/architecture.md), [`docs/development-rules.md`](docs/development-rules.md).
 
-"Widely used" is only a candidate signal, not a sufficient reason to adopt.
-Before adopting, check against risk: requirement fit, security and
-compatibility, primary failure modes, and maintenance and migration cost;
-never introduce capabilities, abstractions, or dependencies the current
-scope does not need just to follow convention.
+> This block scopes only the current iteration. It does not change the MVP fast-validation switch or weaken security, privacy, permissions, data integrity, existing compatibility commitments, or higher-priority requirements.
 
-Important design choices touching architecture boundaries, dependency
-direction, data responsibility, security boundaries, or long-lived
-dependencies should record the applicable rationale, key trade-offs, and
-verification method in the design result. When adopting a custom design,
-also state the verified constraints that make mature solutions inapplicable.
-For high-risk, evidence-poor choices, first define observable success,
-failure, and exit conditions, then run the smallest reversible verification
-permitted by current permissions; never write unaccepted or unimplemented
-candidates into the current architecture as fact.
+### Must Complete Now
 
-## General implementation principles
+- Keep the local create to export/stage to KEY retrieval to delete loop walkable with visible results, backed by the applicable pytest, Vitest, lint, format, build, and template-gate checks.
+- Before any demonstration, run the template content gate (uv run python -m app.template_tools validate) so templates stay versioned, source-bound, and reviewable.
+- Do not display unreviewed or inapplicable templates as submittable artifacts; keep reference_only and unsupported statuses accurate in the demo.
 
-Given the functional scope, architecture boundaries, correctness,
-security, and verifiability, choose an implementation in the following
-order:
+### Not Pursued This Iteration
 
-1. Implementations already in the project;
-2. the language standard library;
-3. native platform capabilities;
-4. dependencies already installed and fitting the current scenario;
-5. third-party libraries that fit the environment, are mature, active, and
-   widely used;
-6. a minimal custom implementation that satisfies the current requirements.
+- Public-retrieval abuse-resistance hardening (rate-limit dimensions, logs and metrics, streamed uploads, constant-time retrieval, CAPTCHA and KEY hardening). Basis: no release environment, external users, or public retrieval exists at this stage. Recheck: when any deployment, external user, or public retrieval appears.
+- Load and stress testing, capacity planning, high availability, and production-grade observability. Basis: no performance acceptance criteria or reachable load risk at the local demonstration stage. Recheck: when throughput, concurrency, or latency acceptance criteria or real traffic appear.
+- P1 print layouts and PDF, and the P2 PWA shell. Basis: recorded product non-goals for this stage with no current requirement. Recheck: when product scope or acceptance criteria change.
 
-Search for existing implementations before adding code. Do not introduce
-large dependencies for small features; do not create abstraction,
-extension, or compatibility layers for hypothetical future needs; keep
-custom implementations local, simple, and testable.
+### Non-negotiable Boundaries
 
-Implementations must follow the architecture facts in [`docs/architecture.md`](docs/architecture.md), the project/technical rules in
-[`docs/development-guidelines.md`](docs/development-guidelines.md), and the
-uniform size and responsibility rules in
-[`docs/source-size-and-responsibility-rules.md`](docs/source-size-and-responsibility-rules.md).
+- Do not weaken implemented privacy and security boundaries while demonstrating: KEY-only retrieval, short retention, same-origin enforcement, delete/download separation, and no photos, KEYs, or credentials in logs.
+- Heuristic checks may only report checked items and must never claim official approval, certification, or guaranteed acceptance.
+- Existing repository checks (pytest, Vitest, lint, format, build, template content gate) must keep passing for every demonstration state.
 
-## Definition of done
+### Re-derivation Triggers
 
-A change is done only when all of the following hold:
+- A deployment appears beyond the local machine, external users arrive, public retrieval is implemented, or real or non-discardable data is used.
+- Throughput, concurrency, or latency acceptance criteria, or production-grade observability requirements appear.
+- The Public Beta template manifest, product scope, or acceptance criteria change materially.
+<!-- write-project-docs:derived-iteration-strategy:end -->
 
-- The implementation matches the confirmed functional scope and acceptance
-  conditions;
-- important design choices verified the applicability of mature solutions;
-  when a custom solution was adopted, the inapplicable constraints, key
-  trade-offs, and verification method are recorded;
-- existing architecture boundaries and dependency directions are preserved,
-  with no unrelated responsibilities or drive-by changes;
-- the applicable project/technical development guidelines are met;
-- the relevant tests, static checks, format checks, and build verification
-  pass;
-- single authoritative documents, machine contracts, and verification are
-  synced per the development guidelines;
-- no keys, credentials, personal data, generated artifacts, or unrelated
-  files are committed;
-- the source size and responsibility rules check is done and any long files
-  needing explanation are reported.
+<!-- write-project-docs:shared-contributing:start -->
+## General Design Principles
+
+While satisfying the confirmed functional scope, architectural boundaries, quality attributes, security, compatibility, and runtime constraints, choose a design in this order:
+
+1. Existing, verified, and still-applicable designs, patterns, interfaces, or components already in the project;
+2. Applicable formal standards, standard protocols, and officially recommended platform or framework solutions;
+3. Mature industry solutions that are widely adopted in similar scenarios, actively maintained, and backed by reliable evidence of practice;
+4. Only when none of the above satisfies a verified constraint, the smallest custom design that meets the current requirement.
+
+"Widely used" is a candidate signal, not sufficient reason to adopt. Before adopting, check requirement fit, security and compatibility, primary failure modes, and maintenance and migration cost against the risk. Do not introduce capabilities, abstractions, or dependencies outside the current scope merely to follow a convention.
+
+For significant design choices that touch architectural boundaries, dependency direction, data ownership, security boundaries, or long-lived dependencies, record the applicable rationale, the primary trade-offs, and the verification method in the design outcome. When adopting a custom design, also state the verified constraints that make mature solutions inapplicable. When risk is high and evidence is thin, first define observable success, failure, and exit conditions, then run the smallest reversible validation your current authority allows. Do not write unaccepted or unimplemented candidates into the record as current architectural fact.
+
+## General Implementation Principles
+
+While satisfying functional scope, architectural boundaries, correctness, security, and verifiability, choose an implementation in this order:
+
+1. Existing implementations in the project;
+2. The language standard library;
+3. Platform-native capabilities;
+4. Dependencies already installed in the project that fit the current scenario;
+5. Mature, actively maintained, widely used third-party libraries suited to the current environment;
+6. The smallest custom implementation that meets the current requirement.
+
+Search for an existing implementation before adding new code. Do not pull in a large dependency for a small feature; do not create abstraction, extension, or compatibility layers for hypothetical future requirements; keep custom implementations local, simple, and testable.
+
+Implementations must comply with the project architecture facts in [`docs/architecture.md`](docs/architecture.md), the project- and technology-specific rules in [`docs/development-rules.md`](docs/development-rules.md), and the unified size and responsibility rules in [`docs/source-code-size-and-responsibility-rules.md`](docs/source-code-size-and-responsibility-rules.md).
+
+## Definition of Done
+
+A change is complete only when all of the following hold:
+
+- The implementation matches the confirmed functional scope and acceptance conditions;
+- Significant design choices have been checked against the applicability of mature solutions; where a custom solution was adopted, the inapplicable constraints, primary trade-offs, and verification method are recorded;
+- Existing architectural boundaries and dependency direction are preserved, with no unrelated responsibilities or incidental changes added;
+- Applicable project- and technology-specific development rules are satisfied;
+- Relevant tests, static checks, format checks, and build verification pass;
+- The single authoritative documents, machine contracts, and validation are synchronized as required by the development rules;
+- No secrets, credentials, personal data, build artifacts, or unrelated files are committed;
+- The source code size and responsibility rules have been applied, and any long files that need explanation are reported.
+<!-- write-project-docs:shared-contributing:end -->

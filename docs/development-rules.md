@@ -1,12 +1,14 @@
-# Development guidelines
+# Development Rules
 
-## General size and responsibility rules
+<!-- write-project-docs:development-source-size:start -->
+## General Size and Responsibility Rules
 
-Source code size, responsibility boundaries, long-file review, and
-splitting requirements follow the [source size and responsibility rules](source-size-and-responsibility-rules.md).
+Source code size, responsibility boundaries, long-file review, and splitting requirements are governed by [Source Code Size and Responsibility Rules](source-code-size-and-responsibility-rules.md).
 
-This file does not repeat or rewrite that special policy's general
-thresholds.
+This file does not repeat or restate the general thresholds in that dedicated policy.
+<!-- write-project-docs:development-source-size:end -->
+
+## Shared rules
 
 The shared development workflow, design and implementation principles, and
 definition of done follow the [contribution guide](../CONTRIBUTING.md).
@@ -25,16 +27,17 @@ follow the [architecture](architecture.md).
 
 ## Directories and tests
 
-- There are no runtime directories yet. The first implementation prefers
-  `src/` for runtime code, `tests/` for mirroring tests, and `assets/` for
-  static resources; if the framework has a mature convention, adopt it and
-  sync the architecture document.
+- The monorepo layout is fixed by the framework conventions: `frontend/`
+  (Vite + React + TypeScript, colocated `*.test.ts(x)` next to sources,
+  Playwright specs under `e2e/`), `backend/` (FastAPI, tests under
+  `tests/`), and `templates/` (versioned data and JSON Schemas).
 - New behavior requires automated tests; bug fixes require regression cases
   that reproduce the problem.
 - Never weaken assertions, mask legitimate errors, or remove necessary
   behavior to make checks pass.
-- Introducing the first toolchain must provide stable development, test,
-  check, and build commands.
+- The stable development, test, check, and build commands are recorded in
+  the [contribution guide](../CONTRIBUTING.md) and must be kept in sync
+  with the actual toolchain.
 
 ## Portrait Booth implementation rules
 

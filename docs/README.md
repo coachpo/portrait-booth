@@ -8,19 +8,23 @@ by the single authoritative document listed in the tables below.
 | Document | Sole authoritative scope |
 | --- | --- |
 | [Project entry](../README.md) | Project description, ordinary install and startup, derived-status summary, and documentation entry |
-| [Project status](../STATUS.md) | Lifecycle, implementation status, data and compatibility policies, and permitted and forbidden changes |
-| [Contribution guide](../CONTRIBUTING.md) | Development environment, stable commands, development workflow, shared principles, and definition of done |
-| [Product overview](PRODUCT.md) | Product problem, users, goals, scope, flows, requirements, and acceptance facts |
+| [Project status](../STATUS.md) | Lifecycle, deployment, users, data and compatibility policy, and permitted and forbidden changes |
+| [Contribution guide](../CONTRIBUTING.md) | Development environment, stable commands, development workflow, current iteration strategy, shared principles, and definition of done |
+| [Product overview](product.md) | Product problem, users, goals, current delivery intent, scope, non-goals, flows, requirements, and acceptance facts |
 | [Architecture](architecture.md) | Current repository architecture, planned boundaries, responsibilities, data flows, security boundaries, and risks |
-| [Development guidelines](development-guidelines.md) | Portrait Booth-specific code style, review requirements, and technical implementation rules |
-| [Source size and responsibility rules](source-size-and-responsibility-rules.md) | Technology-independent uniform size, responsibility, and splitting strategies |
+| [Development Rules](development-rules.md) | Portrait Booth-specific code style, review requirements, and technical implementation rules |
+| [Source Code Size and Responsibility Rules](source-code-size-and-responsibility-rules.md) | Technology-independent uniform size, responsibility, and splitting strategies |
 
-The [contribution guide](../CONTRIBUTING.md) is the entry to the development
-workflow, shared design principles, implementation principles, and the
-definition of done; [development guidelines](development-guidelines.md) carry
-only this project's specific rules; [source size and responsibility
-rules](source-size-and-responsibility-rules.md) are a standalone special
-policy.
+The [contribution guide](../CONTRIBUTING.md) is the entry to the derived
+current iteration strategy, the development workflow, the shared design
+principles, implementation principles, and the definition of done; it is a
+derived execution default, not an authority for project facts. The current
+iteration strategy is derived from `STATUS.md`, the product overview, the
+architecture, and the Development Rules, which remain authoritative.
+[Development Rules](development-rules.md) carry only this project's
+specific rules; [Source Code Size and Responsibility
+Rules](source-code-size-and-responsibility-rules.md) are a standalone
+special policy.
 
 ## Topic documents
 

@@ -68,6 +68,19 @@ dimensions must match.
 
 ## 4. Product goals and non-goals
 
+### 4.0 Current delivery intent
+
+As of 2026-08-17 the product is delivered as a local development and
+demonstration loop: the create → export/stage → KEY retrieval → delete
+flows are walked end to end locally (two-process dev topology or the
+full-stack Docker container), always bound to the reviewed templates and
+their official source text. There is no release environment, no
+test-deployment environment, no external users, and no public retrieval
+implementation; observable acceptance is that the flows stay walkable
+locally with the applicable tests, static checks, and builds passing. The
+launch-blocking constraints in §6.2 apply to any future external exposure,
+not to the current local demonstration.
+
 ### 4.1 MVP goals
 
 - Cover both upload and browser-camera inputs.

@@ -1,11 +1,17 @@
 # Project status
 
-> Last review date based on repository evidence: 2026-08-15
+> Last review date based on repository evidence: 2026-08-17
 
 ## Lifecycle
 
-Portrait Booth is in its first MVP implementation stage. The product and
-technical specifications ([product overview](docs/PRODUCT.md),
+Portrait Booth is in its first MVP implementation stage and is currently in
+local development, local debugging, and demonstration. It is not deployed
+anywhere: there is no release environment, no test-deployment environment,
+no external users, and no non-discardable data; automated checks run
+locally and in CI. No security hardening is required at this local-only
+demonstration stage - the items in "Known gaps" bind the public-launch
+gate, not current development. The product and technical specifications
+([product overview](docs/product.md),
 [SPEC](docs/SPEC.md)) are complete and the P0 retrieval policy is decided
 (`key_only_ephemeral`, staging TTL 30 days; see SPEC §1.2.1). The two main
 flows - create and retrieve - are closed end to end and fully walkable;
@@ -216,14 +222,15 @@ deliberate deviation**:
 ## Data and compatibility
 
 - The repository itself contains no user photos, runtime databases, or
-  application-generated data.
+  application-generated data; the project is not deployed, has no external
+  users, and has no non-discardable data.
 - There are no production-verified browser, API, configuration, or storage
   compatibility promises today; target browsers and lifecycle constraints
   follow the [SPEC](docs/SPEC.md) implementation draft.
 
 ## Permitted changes
 
-- Implement and fix the application per the [product overview](docs/PRODUCT.md)
+- Implement and fix the application per the [product overview](docs/product.md)
   and [SPEC](docs/SPEC.md).
 - Maintain the toolchain, runtime code, and automated tests, keeping the
   stable commands recorded in sync.
