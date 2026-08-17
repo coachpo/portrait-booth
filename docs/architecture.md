@@ -24,6 +24,8 @@ portrait-booth/
 ├── docker-compose.yml            # full-stack container orchestration
 ├── Dockerfile                    # backend container (hosts the frontend build)
 ├── .env.example
+├── scripts/
+│   └── demo.sh                   # local demo runner with demo-safe limits and a persistent root key
 ├── templates/                    # shared template data
 │   ├── revisions/                # <id>@<version>.json
 │   └── schema/                   # versioned JSON Schemas
