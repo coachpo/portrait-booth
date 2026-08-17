@@ -11,7 +11,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": { target: "http://localhost:8000", changeOrigin: false },
+      // IPv4 loopback explicit: the backend listens on 127.0.0.1, and on some
+      // hosts `localhost` resolves to ::1 first, where an unrelated service may
+      // hold the port and silently swallow /api requests.
+      "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
     },
   },
   test: {
