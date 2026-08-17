@@ -3,15 +3,17 @@
 Portrait Booth is a web app for producing personal portraits and common
 passport and visa photos: upload or on-device camera capture, face-angle
 guidance, template cropping, basic editing, local export, and short-term
-cross-device retrieval. See the [product overview](docs/PRODUCT.md) and
+cross-device retrieval. See the [product overview](docs/product.md) and
 [SPEC](docs/SPEC.md).
 
 ## Current status
 
-The project is in its first MVP implementation stage
-([project status](STATUS.md)). The repository is a monorepo: `frontend/`
-(Vite + React + TypeScript), `backend/` (FastAPI + SQLite + local disk
-storage), and `templates/` (versioned template data).
+The project is in its first MVP implementation stage and is currently
+developed, debugged, and demonstrated locally (summary; see
+[project status](STATUS.md), which is authoritative for lifecycle,
+deployment, users, data, and compatibility policy). The repository is a
+monorepo: `frontend/` (Vite + React + TypeScript), `backend/` (FastAPI +
+SQLite + local disk storage), and `templates/` (versioned template data).
 
 ## Install and run
 
@@ -65,6 +67,6 @@ development workflow.
 
 - [Project status](STATUS.md)
 - [Documentation index](docs/README.md)
-- [Product overview](docs/PRODUCT.md)
+- [Product overview](docs/product.md)
 - [Architecture](docs/architecture.md)
 - [Contribution guide](CONTRIBUTING.md)
